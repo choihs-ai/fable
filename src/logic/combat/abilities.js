@@ -89,6 +89,7 @@ function teleport(state, bus, actor, effect, action) {
 
 /** 효과 목록을 실행한다. action 은 방향(dirX, dirY)과 목표 지점(targetX, targetY)을 담는다. */
 export function runEffects(state, bus, actor, effects, action) {
+  const nav = navOf(state.world);
   for (const effect of effects) {
     switch (effect.type) {
       case 'arc': {
@@ -99,6 +100,8 @@ export function runEffects(state, bus, actor, effects, action) {
           if (d > effect.range + target.radius) continue;
           // 겹쳐 있으면 방향과 무관하게 맞는다.
           if (d > 1e-6 && (dx * action.dirX + dy * action.dirY) / d < effect.cosHalf) continue;
+          // 벽 너머로는 맞지 않는다.
+          if (!lineOfSight(nav, actor.x, actor.y, target.x, target.y)) continue;
           applyHit(state, bus, target, effect, actor.id, actor.x, actor.y);
         }
         break;
@@ -109,6 +112,7 @@ export function runEffects(state, bus, actor, effects, action) {
           const dy = target.y - actor.y;
           const reach = effect.radius + target.radius;
           if (dx * dx + dy * dy > reach * reach) continue;
+          if (!lineOfSight(nav, actor.x, actor.y, target.x, target.y)) continue;
           applyHit(state, bus, target, effect, actor.id, actor.x, actor.y);
         }
         break;

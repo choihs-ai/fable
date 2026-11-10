@@ -86,6 +86,8 @@ export function dealDamage(state, bus, target, amount, { sourceId = null, kind =
     }
   }
 
+  // 남은 체력보다 많이 깎을 수는 없다(돌려주는 값과 이벤트의 피해량은 실제로 깎인 양이다).
+  if (dmg > target.hp) dmg = target.hp;
   target.hp -= dmg;
   if (target.ai && sourceId !== null && sourceId === state.playerId) target.ai.provoked = true;
 

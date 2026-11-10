@@ -3,6 +3,8 @@
 import { EVENTS } from '../core/events.js';
 import { ticksOf } from '../core/time.js';
 import { opponentsOf } from '../entities/actors.js';
+import { lineOfSight } from '../world/los.js';
+import { navOf } from '../world/nav.js';
 import { applyHit } from './hit.js';
 
 export function spawnHazard(state, bus, owner, effect, x, y) {
@@ -31,6 +33,7 @@ export function spawnHazard(state, bus, owner, effect, x, y) {
 
 export function updateHazards(state, bus) {
   if (state.hazards.length === 0) return;
+  const nav = navOf(state.world);
   const alive = [];
   for (const hz of state.hazards) {
     if (state.tick >= hz.nextAt) {
@@ -38,6 +41,8 @@ export function updateHazards(state, bus) {
         const dx = target.x - hz.x;
         const dy = target.y - hz.y;
         if (dx * dx + dy * dy > hz.radius * hz.radius) continue;
+        // 벽 너머로는 맞지 않는다(장판 중심이 벽 안이면 아무도 맞지 않는다).
+        if (!lineOfSight(nav, hz.x, hz.y, target.x, target.y)) continue;
         applyHit(state, bus, target, hz, hz.ownerId, hz.x, hz.y);
       }
       bus.emit(EVENTS.HAZARD_TRIGGERED, { id: hz.id, x: hz.x, y: hz.y, radius: hz.radius });

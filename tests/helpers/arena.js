@@ -47,7 +47,8 @@ export function createArena(rows, { seed = 'arena', player } = {}) {
   const { state, bus } = game;
   state.world = { floor: 1, zoneId: 'test', kind: 'normal', algorithm: 'test', width, height, tiles, start: null, stairs: null, rooms: [], eventRooms: [], spawns: [] };
   const log = [];
-  for (const type of Object.values(EVENTS)) bus.on(type, (payload) => log.push({ type, tick: state.tick, ...payload }));
+  // 이벤트 이름은 event 에 담는다(payload 에 type 이라는 항목이 따로 있는 이벤트가 있다).
+  for (const event of Object.values(EVENTS)) bus.on(event, (payload) => log.push({ ...payload, event, tick: state.tick }));
   const start = player ?? marks.P;
   const p = start ? spawnPlayer(state, bus, start.x, start.y) : null;
   if (p) resetVision(state);
@@ -68,7 +69,8 @@ export function createArena(rows, { seed = 'arena', player } = {}) {
         tick(game, DT);
       }
     },
-    events: (type) => log.filter((e) => e.type === type),
+    /** 지금까지 나온 이 이름의 이벤트들(payload 에 event, tick 이 덧붙는다). */
+    events: (event) => log.filter((e) => e.event === event),
   };
 }
 

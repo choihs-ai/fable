@@ -6,7 +6,7 @@
 //   cooldown  재사용 대기(초). 발동 시점부터 센다.
 //   range / minRange   AI 가 이 거리 안(밖)에서만 쓴다.
 //   needsLos  false 면 시야가 막혀도 쓴다(기본 true).  needsClearPath  몸이 지나갈 직선 길이 있어야 쓴다(돌진).
-//   effects   발동 시 순서대로 일어나는 일:
+//   effects   발동 시 순서대로 일어나는 일(부채꼴·원·장판은 벽 너머의 대상을 맞히지 못한다):
 //     { type:'arc', range, cosHalf, damage, status?, lifesteal? }        앞쪽 부채꼴 (cosHalf = 반각의 코사인)
 //     { type:'circle', radius, damage, status? }                         자기 둘레 원
 //     { type:'projectile', speed, radius, range, damage, status?, spread? }   투사체. spread 는 조준 방향 기준 회전 [cos, sin] 목록
