@@ -31,6 +31,11 @@ const IMPURE_GLOBALS = [
 ];
 const IMPURE_RE = new RegExp(`(?<![.\\w$])(${IMPURE_GLOBALS.join('|')})\\b`, 'g');
 const MATH_RANDOM_RE = /\bMath\s*\.\s*random\b/;
+/**
+ * 순수 계층에서 쓸 수 없는 Math 함수: 결과의 마지막 자리가 엔진마다 다를 수 있다(명세가 정확한 반올림을 요구하지 않는다).
+ * 같은 시드가 기기마다 같은 결과를 내려면 사칙연산과 Math.sqrt·floor·ceil·round·abs·min·max·imul 만 쓴다.
+ */
+const INEXACT_MATH_RE = /\bMath\s*\.\s*(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|exp|expm1|log|log2|log10|log1p|pow|hypot|cbrt)\b/g;
 
 const REGEX_PRECEDING_CHARS = new Set('(,=:[!&|?{};+-*%<>~^');
 const REGEX_PRECEDING_WORDS = /(?:^|[^\w$.])(?:return|typeof|case|in|of|void|delete|throw|new|yield|await)$/;
@@ -149,6 +154,10 @@ export function checkFile(relPath, source) {
   }
 
   if (layer.pure) {
+    for (const name of new Set([...codeOnly.matchAll(INEXACT_MATH_RE)].map((m) => m[1]))) {
+      violations.push(`${relPath}: 순수 계층에서 Math.${name} 사용 금지 (엔진마다 결과가 다를 수 있음 — 값을 미리 계산해 data 에 두거나 sqrt 로 푼다)`);
+    }
+    if (/\*\*/.test(codeOnly)) violations.push(`${relPath}: 순수 계층에서 ** 연산자 사용 금지 (Math.pow 와 같음 — 곱셈으로 쓴다)`);
     const found = new Set([...codeOnly.matchAll(IMPURE_RE)].map((m) => m[1]));
     for (const name of found) {
       violations.push(`${relPath}: 순수 계층에서 "${name}" 사용 금지 (DOM·브라우저 API·시계는 바깥 계층에서 주입)`);

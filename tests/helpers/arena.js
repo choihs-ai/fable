@@ -1,0 +1,76 @@
+// 테스트용 작은 전장. 글자 그림으로 맵을 만들고 플레이어·적을 놓는다.
+//   '#' 벽, 그 밖은 바닥. 'P' 는 플레이어 자리, 나머지 글자는 표식(arena.at('a') 로 좌표를 얻는다).
+
+import { EVENTS } from '../../src/logic/core/events.js';
+import { PHASE } from '../../src/logic/core/state.js';
+import { TICK_RATE } from '../../src/logic/core/time.js';
+import { setInput } from '../../src/logic/combat/player.js';
+import { spawnEnemy, spawnPlayer } from '../../src/logic/entities/actors.js';
+import { resetVision } from '../../src/logic/entities/vision.js';
+import { createGame, setPhase, tick } from '../../src/logic/game.js';
+import { navOf } from '../../src/logic/world/nav.js';
+
+export const DT = 1 / TICK_RATE;
+
+export function parseRows(rows) {
+  const height = rows.length;
+  const width = rows[0].length;
+  const tiles = [];
+  const marks = {};
+  rows.forEach((row, y) => {
+    if (row.length !== width) throw new Error('모든 줄의 길이가 같아야 함');
+    for (let x = 0; x < width; x++) {
+      const ch = row[x];
+      tiles.push(ch === '#' ? 0 : 1);
+      if (ch !== '#' && ch !== '.') marks[ch] = { x: x + 0.5, y: y + 0.5 };
+    }
+  });
+  return { width, height, tiles, marks };
+}
+
+/** 사방이 벽인 빈 방. */
+export function openRoom(width, height) {
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    rows.push(y === 0 || y === height - 1 ? '#'.repeat(width) : `#${'.'.repeat(width - 2)}#`);
+  }
+  return rows;
+}
+
+/**
+ * @param {string[]} rows
+ * @param {{ seed?: string, player?: {x:number,y:number} }} [options]
+ */
+export function createArena(rows, { seed = 'arena', player } = {}) {
+  const { width, height, tiles, marks } = parseRows(rows);
+  const game = createGame({ seed });
+  const { state, bus } = game;
+  state.world = { floor: 1, zoneId: 'test', kind: 'normal', algorithm: 'test', width, height, tiles, start: null, stairs: null, rooms: [], eventRooms: [], spawns: [] };
+  const log = [];
+  for (const type of Object.values(EVENTS)) bus.on(type, (payload) => log.push({ type, tick: state.tick, ...payload }));
+  const start = player ?? marks.P;
+  const p = start ? spawnPlayer(state, bus, start.x, start.y) : null;
+  if (p) resetVision(state);
+  setPhase(game, PHASE.PLAYING);
+  return {
+    game, state, bus, log, marks, player: p,
+    nav: navOf(state.world),
+    at: (ch) => marks[ch],
+    /** 표식 자리(또는 좌표)에 적을 놓는다. */
+    enemy: (type, where, options) => {
+      const pos = typeof where === 'string' ? marks[where] : where;
+      return spawnEnemy(state, bus, type, pos.x, pos.y, options);
+    },
+    /** n 틱 진행한다. input 을 주면 매 틱 그 입력을 넣는다(함수면 틱마다 호출). */
+    step: (n = 1, input = null) => {
+      for (let i = 0; i < n; i++) {
+        if (input) setInput(state, typeof input === 'function' ? input(state) : input);
+        tick(game, DT);
+      }
+    },
+    events: (type) => log.filter((e) => e.type === type),
+  };
+}
+
+/** 초 → 틱(테스트 가독성용). */
+export const sec = (s) => Math.round(s * TICK_RATE);

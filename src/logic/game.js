@@ -4,6 +4,16 @@
 import { EventBus } from './core/event-bus.js';
 import { EVENTS } from './core/events.js';
 import { PHASE, createInitialState, rngOf } from './core/state.js';
+import { resolveDashes, updateActions } from './combat/abilities.js';
+import { runAI } from './combat/ai/brain.js';
+import { processDeaths } from './combat/deaths.js';
+import { updateHazards } from './combat/hazards.js';
+import { controlPlayer } from './combat/player.js';
+import { updateProjectiles } from './combat/projectiles.js';
+import { updateStatuses } from './combat/statuses.js';
+import { populateFloor } from './entities/actors.js';
+import { integrateMovement } from './entities/movement.js';
+import { resetVision, updateVision } from './entities/vision.js';
 import { generateFloorFromRng } from './world/generate.js';
 
 const PHASE_VALUES = new Set(Object.values(PHASE));
@@ -35,18 +45,33 @@ export function enterFloor(game, floor) {
   const map = generateFloorFromRng(rngOf(game.state, 'world'), floor);
   game.state.run.floor = floor;
   game.state.world = map;
+  // 플레이어는 층을 넘어가도 유지되고(체력·재사용 대기 포함), 적·투사체·장판은 새로 만든다.
+  populateFloor(game.state, game.bus, map);
+  resetVision(game.state);
   game.bus.emit(EVENTS.FLOOR_ENTERED, { floor, zoneId: map.zoneId, kind: map.kind });
-  // TODO(entities 단계): map.spawns 로 엔티티를 만들고 플레이어를 map.start 에 놓는다.
 }
 
 /**
  * 로직을 한 틱 전진시킨다. PLAYING 이 아닐 때는 아무것도 하지 않는다.
  * @param {{ state: object, bus: EventBus }} game
- * @param {number} dtSec 고정 틱 길이(초). 아직 쓰는 시스템이 없다.
+ * @param {number} dtSec 고정 틱 길이(초)
  */
 export function tick(game, dtSec) {
   const { state } = game;
   if (state.phase !== PHASE.PLAYING) return;
   state.tick += 1;
-  // TODO(이후 단계): 입력 커맨드 처리 → entities → combat → items 순으로 시스템 실행.
+  if (!state.world) return;
+  const { bus } = game;
+  // 순서가 곧 규칙이다. 바꾸면 같은 시드·같은 입력의 결과가 달라진다.
+  updateStatuses(state, bus); //   1) 지속 피해, 만료, 행동 불가·둔화 계산
+  controlPlayer(state, bus); //    2) 입력 → 플레이어 이동 의도, 회피·기술 시작
+  runAI(state, bus); //            3) 적: 어그로·리쉬, 이동 의도, 기술 시작
+  updateActions(state, bus); //    4) 준비가 끝난 기술 발동, 경직 종료
+  integrateMovement(state, dtSec); // 5) 이동·돌진, 벽 충돌, 서로 밀어내기
+  resolveDashes(state, bus); //    6) 돌진 명중과 뒷처리
+  updateProjectiles(state, bus, dtSec); // 7) 투사체
+  updateHazards(state, bus); //    8) 장판
+  if (processDeaths(state, bus)) setPhase(game, PHASE.GAME_OVER); // 9) 죽음 처리
+  updateVision(state); //         10) 플레이어 시야
+  // TODO(items 단계): 아이템 줍기·사용.
 }

@@ -4,7 +4,7 @@
 import { Rng } from './prng.js';
 
 /** 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다. */
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
@@ -41,12 +41,25 @@ export function createInitialState({ seed }) {
     /** 현재 층 맵(logic/world/generate.js 의 결과). 층에 들어가기 전에는 null. */
     world: null,
     entities: {
+      /** 행동체·투사체·장판이 함께 쓰는 일련번호. */
       nextId: 1,
-      /** id → 엔티티. TODO(entities 단계): 엔티티 형태 정의. */
+      /** id → 행동체(플레이어·적·보스). 형태는 logic/entities/actors.js 참고. */
       byId: {},
     },
-    /** 플레이어 엔티티 id. TODO(entities 단계). */
+    /** 플레이어 행동체 id. 층에 들어가기 전에는 null. */
     playerId: null,
+    /** 날아가는 투사체 목록(logic/combat/projectiles.js). */
+    projectiles: [],
+    /** 예고 중이거나 남아 있는 장판 목록(logic/combat/hazards.js). */
+    hazards: [],
+    /** 플레이어 시야(logic/entities/vision.js). 층에 들어가기 전에는 null. */
+    vision: null,
+    /**
+     * 이번 틱의 플레이어 입력. ui 가 setInput 으로 채우고 로직이 읽는다.
+     * move/aim 은 방향 벡터(aim 이 0 이면 자동 조준), skill 은 기술 칸 번호(-1 = 없음).
+     * skill 과 dodge 는 한 번 처리되면 로직이 지운다.
+     */
+    input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, skill: -1, dodge: false },
   };
 }
 
