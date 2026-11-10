@@ -126,6 +126,15 @@ export const DROPS = deepFreeze({
 /** 가격. 구매가 = 등급 기준가 × (1 + perLevel × (레벨 - 1)), 판매가 = 구매가 × sellRatio (최소 1). */
 export const PRICES = deepFreeze({ perLevel: 0.08, sellRatio: 0.25 });
 
+/**
+ * 장비 점수 가중치. 능력치 1당 점수이고, 비교값(어느 장비가 더 나은가)과 자동 정리에 쓴다.
+ * 전투 공식이 아니라 "대략 얼마나 값진가"의 어림이다.
+ */
+export const SCORE_WEIGHTS = deepFreeze({
+  maxHp: 1, power: 3, armor: 10, speed: 1.5, haste: 3, critChance: 3, critDamage: 1, lifesteal: 6, regen: 3,
+  goldFind: 0.4, xpGain: 0.8, burnChance: 1.2, poisonChance: 1.2, slowChance: 1,
+});
+
 export const INVENTORY = deepFreeze({
   /** 가방 칸 수(장비). 착용 중인 장비는 칸을 차지하지 않는다. */
   capacity: 16,
