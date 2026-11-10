@@ -300,7 +300,7 @@ test('방어/탱커: 몸을 천천히 돌린다 — 뒤로 돌아가면 한동�
   // 등 뒤에서 온 피해는 막지 못한다.
   const before = a.enemy.hp;
   dealDamage(a.state, a.bus, a.enemy, 20, { sourceId: a.player.id, fromX: a.player.x, fromY: a.player.y });
-  assert.equal(before - a.enemy.hp, 17);
+  assert.equal(before - a.enemy.hp, 14, '방어력 12 만 적용된다(정면 방어 없음)');
   a.step(sec(2));
   assert.ok(a.enemy.facingX > 0.8, '결국 돌아본다');
 });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { BOSSES } from '../../../data/bosses.js';
+import { COMBAT } from '../../../data/combat.js';
 import { EVENTS } from '../../../src/logic/core/events.js';
 import { dealDamage, heal } from '../../../src/logic/combat/damage.js';
 import { applyStatus } from '../../../src/logic/combat/statuses.js';
@@ -26,13 +27,20 @@ test('피해: 체력이 줄고 이벤트가 나간다. 피해는 정수로 반�
   assert.equal(events(EVENTS.DAMAGE_DEALT)[0].hp, 53);
 });
 
-test('방어력은 피해에서 빼고, 그래도 최소 1 은 들어간다', () => {
+test('방어력은 피해를 비율로 줄이고(K ÷ (K + 방어력)), 그래도 최소 1 은 들어간다', () => {
   const { target, hit } = lone('dark_knight');
+  const k = COMBAT.armorK;
+  assert.equal(target.armor, 8);
   // 뒤(바라보는 방향의 반대)에서 때려 정면 방어를 피한다.
   const behind = { fromX: target.x, fromY: target.y - 2 };
+  assert.equal(hit(38, behind), Math.round((38 * k) / (k + 8)));
   assert.equal(hit(10, behind), 8);
-  assert.equal(hit(2, behind), 1);
   assert.equal(hit(1, behind), 1);
+  // 방어력이 아무리 높아도 피해가 0 이 되지는 않고, 방어력이 K 와 같으면 절반이 된다.
+  target.armor = 100000;
+  assert.equal(hit(50, behind), 1);
+  target.armor = k;
+  assert.equal(hit(50, behind), 25);
 });
 
 test('정면 방어: 앞에서 온 피해만 줄이고, 행동 불가일 때는 막지 못한다', () => {
@@ -41,13 +49,13 @@ test('정면 방어: 앞에서 온 피해만 줄이고, 행동 불가일 때는 
   const front = { fromX: target.x, fromY: target.y + 2 };
   const side = { fromX: target.x + 2, fromY: target.y };
 
-  assert.equal(hit(20, front), 6, '20 × (1 - 0.6) - 방어력 2');
-  assert.equal(hit(20, side), 18, '옆은 막지 못한다');
-  assert.equal(hit(20), 18, '위치를 모르는 피해는 막지 못한다');
+  assert.equal(hit(20, front), 6, '20 × (1 - 0.6) 을 방어력 8 로 줄인 값');
+  assert.equal(hit(20, side), 16, '옆은 막지 못한다(방어력만 적용)');
+  assert.equal(hit(20), 16, '위치를 모르는 피해는 막지 못한다');
   assert.deepEqual(events(EVENTS.DAMAGE_DEALT).map((e) => e.blocked), [true, false, false]);
 
   applyStatus(state, bus, target, 'stun');
-  assert.equal(hit(20, front), 18, '기절 중에는 막지 못한다');
+  assert.equal(hit(20, front), 16, '기절 중에는 막지 못한다');
 });
 
 test('무적인 동안에는 피해를 받지 않는다', () => {
@@ -122,7 +130,7 @@ test('보스: 전환 중에는 무적이고, 걸려 있던 상태이상과 준�
   assert.equal(hit(100), 0, '전환 중 무적');
   assert.equal(applyStatus(state, bus, target, 'burn'), false, '전환 중에는 상태이상도 걸리지 않는다');
   step(sec(1.5));
-  assert.equal(hit(100), 99, '전환이 끝나면 다시 맞는다(방어력 1)');
+  assert.equal(hit(100), 88, '전환이 끝나면 다시 맞는다(방어력 4)');
 });
 
 test('보스: 마지막 페이즈에서만 죽는다 — 최종보스는 두 번의 전환을 모두 거친다', () => {

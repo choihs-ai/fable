@@ -6,6 +6,7 @@ import { PHASE } from '../../src/logic/core/state.js';
 import { TICK_RATE } from '../../src/logic/core/time.js';
 import { setInput } from '../../src/logic/combat/player.js';
 import { spawnEnemy, spawnPlayer } from '../../src/logic/entities/actors.js';
+import { enemyDef } from '../../src/logic/entities/defs.js';
 import { resetVision } from '../../src/logic/entities/vision.js';
 import { createGame, setPhase, tick } from '../../src/logic/game.js';
 import { navOf } from '../../src/logic/world/nav.js';
@@ -57,10 +58,18 @@ export function createArena(rows, { seed = 'arena', player } = {}) {
     game, state, bus, log, marks, player: p,
     nav: navOf(state.world),
     at: (ch) => marks[ch],
-    /** 표식 자리(또는 좌표)에 적을 놓는다. */
-    enemy: (type, where, options) => {
+    /**
+     * 표식 자리(또는 좌표)에 적을 놓는다. 층별 난이도 배율은 걷어 내고 데이터의 기본 수치로 둔다
+     * (전투 규칙 테스트가 난이도 곡선 수치에 흔들리지 않도록). options.scaled 를 주면 배율을 그대로 둔다.
+     */
+    enemy: (type, where, options = {}) => {
       const pos = typeof where === 'string' ? marks[where] : where;
-      return spawnEnemy(state, bus, type, pos.x, pos.y, options);
+      const actor = spawnEnemy(state, bus, type, pos.x, pos.y, options);
+      if (!options.scaled) {
+        actor.maxHp = actor.hp = enemyDef(type).hp;
+        actor.power = 1;
+      }
+      return actor;
     },
     /** n 틱 진행한다. input 을 주면 매 틱 그 입력을 넣는다(함수면 틱마다 호출). */
     step: (n = 1, input = null) => {

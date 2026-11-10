@@ -17,6 +17,8 @@ import { createNavMemory, steerAway, steerToward } from '../../src/logic/combat/
 import { setInput } from '../../src/logic/combat/player.js';
 import { allActors, getPlayer, spawnEnemy, spawnPlayer } from '../../src/logic/entities/actors.js';
 import { defOf, isBossType } from '../../src/logic/entities/defs.js';
+import { floorScaling } from '../../src/logic/entities/scaling.js';
+import { refreshPlayerStats } from '../../src/logic/entities/stats.js';
 import { resetVision } from '../../src/logic/entities/vision.js';
 import { createGame, setPhase, tick } from '../../src/logic/game.js';
 import { circleFree } from '../../src/logic/world/collide.js';
@@ -31,7 +33,7 @@ export const DT = 1 / TICK_RATE;
 export const MODES = Object.freeze({
   /** 싸운다: 다가가 때리고, 기술을 쓰고, 예고된 공격을 절반쯤 피한다. */
   FIGHT: 'fight',
-  /** 싸우되 체력을 400배로 늘린다 — 보스를 끝까지 잡아 모든 페이즈를 거치게 하려는 용도. */
+  /** 싸우되 체력을 크게 늘리고 공격력을 보스 체력 배율만큼 올린다 — 보스를 끝까지 잡아 모든 페이즈를 거치게 하려는 용도. */
   TANKY: 'tanky',
   /** 아무것도 하지 않는다 — 적이 가만히 있는 상대를 끝내 잡는지 본다. */
   PASSIVE: 'passive',
@@ -69,24 +71,41 @@ function floorFor(type, rng) {
 
 /**
  * 1:1 대결을 차린다.
- * @param {{ seed: string, type: string, mode: string }} options
+ * @param {object} options
+ * @param {string} options.seed
+ * @param {string} options.type 적 또는 보스 종류
+ * @param {string} options.mode MODES 중 하나
+ * @param {number} [options.floor] 싸울 층. 생략하면 그 종류가 나오는 구역의 층
+ * @param {{ inventory:object, run:object, meta:object }} [options.build] 플레이어의 장비·강화 상태(진행 시뮬레이션에서 가져온 것).
+ *   생략하면 아무것도 없는 기준 스탯
  */
-export function setupDuel({ seed, type, mode }) {
+export function setupDuel({ seed, type, mode, floor: fixedFloor, build }) {
   const setupRng = Rng.fromSeed(`duel:${seed}`);
-  const floor = floorFor(type, setupRng);
-  const game = createGame({ seed });
+  const floor = fixedFloor ?? floorFor(type, setupRng);
+  const game = createGame({ seed, meta: build ? build.meta : undefined });
   const { state, bus } = game;
   const map = generateFloor({ seed, floor });
   state.world = map;
   state.run.floor = floor;
   const nav = navOf(map);
+  if (build) {
+    state.inventory = structuredClone(build.inventory);
+    Object.assign(state.run, structuredClone({
+      level: build.run.level, xp: build.run.xp, upgrades: build.run.upgrades, boons: build.run.boons,
+    }));
+  }
+
+  if (mode === MODES.TANKY) {
+    // 층별 난이도로 강해진 보스도 끝까지 잡을 수 있게: 체력을 크게 늘리고, 공격력은 보스 체력 배율만큼 올린다.
+    // 능력치 합산을 거치는 영구 효과로 넣어야 도중에 능력치가 다시 계산돼도 유지된다.
+    const scale = floorScaling(floor, isBossType(type));
+    state.run.boons.push({ source: 'sim:tanky', stats: { maxHp: 40000, power: Math.round((scale.hp - 1) * 100) } });
+  }
 
   const player = spawnPlayer(state, bus, map.start.x + 0.5, map.start.y + 0.5);
-  if (mode === MODES.TANKY) {
-    // 층별 난이도로 강해진 보스도 끝까지 잡을 수 있을 만큼 넉넉히 늘린다.
-    player.maxHp *= 400;
-    player.hp = player.maxHp;
-  }
+  refreshPlayerStats(state);
+  player.hp = player.maxHp;
+
   resetVision(state);
 
   let enemy;

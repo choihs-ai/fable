@@ -140,11 +140,12 @@ function resolveChoices(game, rng, violations) {
 
 /**
  * 런 하나를 처음부터 끝까지 돌린다.
- * @param {{ seed:string, meta?:object, floors?:number }} options
+ * @param {{ seed:string, meta?:object, floors?:number, onFloor?:Function }} options
+ *   onFloor(game, floor) 는 층에 들어선 직후(스냅샷을 찍은 뒤)에 불린다
  * @returns {{ floors:object[], violations:string[], state:object }}
  *   floors[i] = 그 층에 들어섰을 때의 스냅샷 { floor, level, sheet, maxHp, armor, gold, relics, sets }
  */
-export function simulateRun({ seed, meta, floors = TOTAL_FLOORS }) {
+export function simulateRun({ seed, meta, floors = TOTAL_FLOORS, onFloor = null }) {
   const game = createGame({ seed, meta });
   const { state, bus } = game;
   const rng = Rng.fromSeed(`progress:${seed}`);
@@ -171,6 +172,7 @@ export function simulateRun({ seed, meta, floors = TOTAL_FLOORS }) {
       upgrades: Object.values(state.run.upgrades).reduce((a, b) => a + b, 0),
       rarity: Object.values(state.inventory.equipped).map((item) => (item ? item.rarity : null)),
     });
+    if (onFloor) onFloor(game, floor);
 
     // 1) 적을 모두 잡는다(전투 없이 처치 보상만 받는다).
     for (const actor of allActors(state)) {
