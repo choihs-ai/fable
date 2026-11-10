@@ -3,7 +3,8 @@
 //
 //   node scripts/verify-items.mjs                전체 (약 1분)
 //   node scripts/verify-items.mjs --runs 100     진행 시뮬레이션 횟수 (기본 400)
-//   node scripts/verify-items.mjs --duels 0      곡선 표의 실전 대조(1:1 대결)를 끈다 (기본: 런 40개 × 전 층)
+//   node scripts/verify-items.mjs --duels 0      곡선 표의 실전 대조(일반 층 1:1 대결)를 끈다 (기본: 런 40개 × 일반 층)
+//   node scripts/verify-items.mjs --boss-duels 0 보스 실전 대결을 끈다 (기본: 런 150개 × 보스 4종)
 //   node scripts/verify-items.mjs --only curve   한 부분만: drops | ranges | sets | choices | curve
 //
 //   1. 드롭 확률 분포    — 등급·종류·부위·세트·옵션 수가 설정한 확률대로 나오는가
@@ -437,7 +438,7 @@ function sectionChoices() {
 
 // ── 5. 전투력 곡선 ───────────────────────────────────────────────────────────
 
-function sectionCurve(runs, duelRuns) {
+function sectionCurve(runs, duelRuns, bossDuelRuns) {
   console.log('\n━━ 5. 층별 기대 전투력과 적 강도 ━━');
   const perFloor = Array.from({ length: TOTAL_FLOORS }, () => []);
   const duels = Array.from({ length: TOTAL_FLOORS }, () => ({ n: 0, wins: 0, hpLost: 0, sec: 0 }));
@@ -445,15 +446,16 @@ function sectionCurve(runs, duelRuns) {
   let digestA = null;
   for (let n = 0; n < runs; n++) {
     const seed = `curve-${n}`;
-    const withDuels = n < duelRuns;
     const result = simulateRun({
       seed,
-      onFloor: withDuels
-        ? (game, floor) => {
+      onFloor:
+        n < Math.max(duelRuns, bossDuelRuns)
+          ? (game, floor) => {
             // 실전 대조: 이 시점의 장비·강화로 그 층의 적 하나와 실제로 싸워 본다.
             const { state } = game;
             const zone = ZONES[Math.floor((floor - 1) / 5)];
             const strength = enemyStrength(floor);
+            if (n >= (strength.boss ? bossDuelRuns : duelRuns)) return;
             const pickRng = Rng.fromSeed(`duel-pick:${seed}:${floor}`);
             const type = strength.boss ? zone.boss.id : zone.enemies[pickRng.weightedIndex(zone.enemies.map((e) => e.weight))].id;
             const r = runDuel({
@@ -469,7 +471,7 @@ function sectionCurve(runs, duelRuns) {
             }
             for (const issue of r.issues) violations.push(`대결 "${seed}-f${floor}" (${type}): ${issue.code} ${issue.detail}`);
           }
-        : null,
+          : null,
     });
     for (const v of result.violations) violations.push(`시드 "${seed}" ${v}`);
     result.floors.forEach((snap, i) => perFloor[i].push(snap));
@@ -506,7 +508,8 @@ function sectionCurve(runs, duelRuns) {
   console.log('  플DPS = 기술 초당 피해 × 공격력 × 치명타 기대값 ÷ (1 - 재사용 대기 감소)   유효체력 = 최대 체력 × (K + 방어력) ÷ K');
   console.log('  TTK = 적 체력 ÷ 플DPS (적 하나를 잡는 초)   TTD = 유효체력 ÷ 적 DPS (적 하나가 계속 때릴 때 쓰러지는 초)');
   console.log('  위협 = TTK ÷ TTD (적 하나를 잡는 동안 잃는 체력 비율, 회피 없음 가정)   부담 = 위협 × 적 수');
-  console.log(`  실전 = 그 시점의 장비·강화로 그 층의 적 하나와 1:1 (런 ${duelRuns}개, 자동 조작): 승률 / 이겼을 때 잃은 체력\n`);
+  console.log(`  실전 = 그 시점의 장비·강화로 그 층의 적 하나와 1:1 (자동 조작, 물약 없음; 일반 층 ${duelRuns}회, 보스 ${bossDuelRuns}회): 승률 / 이겼을 때 잃은 체력`);
+  console.log('  급변 기준: 일반 층은 앞 층 대비 위협·TTK·TTD ±12%, 부담 ±25%. 보스는 앞 보스 대비 실전 승률 ±20%p(계산값은 참고).\n');
   console.log('   층   레벨 유물  금화  공격% 치확% 가속%  체력 방어 │ 플DPS 유효체력 │  적HP 적DPS 적수 │   TTK   TTD   위협   부담 │ 변화(위협)  │ 실전');
   const flags = [];
   let prevNormal = null;
@@ -519,11 +522,19 @@ function sectionCurve(runs, duelRuns) {
       const dTtk = r.ttk / prev.ttk - 1;
       const dTtd = r.ttd / prev.ttd - 1;
       const dLoad = r.load / prev.load - 1;
-      change = `${dThreat >= 0 ? '+' : ''}${(dThreat * 100).toFixed(1)}%`;
-      // 급변 기준: 일반 층끼리는 위협·TTK·TTD ±12%, 부담 ±25%. 보스끼리는 위협 ±25%.
-      const limit = r.boss ? 0.25 : 0.12;
+      change = r.boss ? '(계산 참고)' : `${dThreat >= 0 ? '+' : ''}${(dThreat * 100).toFixed(1)}%`;
       const bad = [];
-      if (Math.abs(dThreat) > limit) bad.push(`위협 ${change}`);
+      if (!r.boss && Math.abs(dThreat) > 0.12) bad.push(`위협 ${change}`);
+      if (r.boss) {
+        // 보스는 패턴마다 위험도가 달라 계산값이 잘 맞지 않는다 — 실전 승률로 본다.
+        const now = duels[r.floor - 1];
+        const before = duels[prev.floor - 1];
+        if (now.n >= 30 && before.n >= 30) {
+          const dWin = now.wins / now.n - before.wins / before.n;
+          change = `승률 ${dWin >= 0 ? '+' : ''}${(dWin * 100).toFixed(0)}%p`;
+          if (Math.abs(dWin) > 0.2) bad.push(`실전 승률 ${(dWin * 100).toFixed(0)}%p`);
+        }
+      }
       if (!r.boss && Math.abs(dTtk) > 0.12) bad.push(`TTK ${(dTtk * 100).toFixed(1)}%`);
       if (!r.boss && Math.abs(dTtd) > 0.12) bad.push(`TTD ${(dTtd * 100).toFixed(1)}%`);
       if (!r.boss && Math.abs(dLoad) > 0.25) bad.push(`부담 ${(dLoad * 100).toFixed(1)}%`);
@@ -547,7 +558,7 @@ function sectionCurve(runs, duelRuns) {
   console.log(`    층   ${RARITIES.map((r) => RARITY[r].name.padStart(5)).join(' ')}   빈칸`);
   for (const floor of [1, 5, 10, 15, 20, 25, 30]) {
     const r = rows[floor - 1];
-    const empty = SLOTS.length - r.gear.reduce((a, b) => a + b, 0);
+    const empty = Math.max(0, SLOTS.length - r.gear.reduce((a, b) => a + b, 0));
     console.log(`    ${pad(floor, 2)}   ${r.gear.map((v) => v.toFixed(2).padStart(6)).join(' ')}   ${empty.toFixed(2)}`);
   }
 
@@ -580,13 +591,14 @@ function option(name, fallback) {
 const only = option('only', 'all');
 const runs = Number(option('runs', '400'));
 const duelRuns = Math.min(runs, Number(option('duels', '40')));
+const bossDuelRuns = Math.min(runs, Number(option('boss-duels', '150')));
 const started = performance.now();
 const want = (name) => only === 'all' || only === name;
 
 if (want('drops') || want('ranges')) sectionDrops(want('ranges'));
 if (want('sets')) sectionSets();
 if (want('choices')) sectionChoices();
-if (want('curve')) sectionCurve(runs, duelRuns);
+if (want('curve')) sectionCurve(runs, duelRuns, bossDuelRuns);
 
 console.log(`\n소요 ${((performance.now() - started) / 1000).toFixed(1)}초`);
 console.log(`문제: ${problems.length}건`);

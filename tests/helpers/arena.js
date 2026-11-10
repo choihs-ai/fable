@@ -7,6 +7,7 @@ import { TICK_RATE } from '../../src/logic/core/time.js';
 import { setInput } from '../../src/logic/combat/player.js';
 import { spawnEnemy, spawnPlayer } from '../../src/logic/entities/actors.js';
 import { enemyDef } from '../../src/logic/entities/defs.js';
+import { refreshPlayerStats } from '../../src/logic/entities/stats.js';
 import { resetVision } from '../../src/logic/entities/vision.js';
 import { createGame, setPhase, tick } from '../../src/logic/game.js';
 import { navOf } from '../../src/logic/world/nav.js';
@@ -42,9 +43,9 @@ export function openRoom(width, height) {
  * @param {string[]} rows
  * @param {{ seed?: string, player?: {x:number,y:number} }} [options]
  */
-export function createArena(rows, { seed = 'arena', player } = {}) {
+export function createArena(rows, { seed = 'arena', player, meta } = {}) {
   const { width, height, tiles, marks } = parseRows(rows);
-  const game = createGame({ seed });
+  const game = createGame({ seed, meta });
   const { state, bus } = game;
   state.world = { floor: 1, zoneId: 'test', kind: 'normal', algorithm: 'test', width, height, tiles, start: null, stairs: null, rooms: [], eventRooms: [], spawns: [] };
   const log = [];
@@ -52,7 +53,10 @@ export function createArena(rows, { seed = 'arena', player } = {}) {
   for (const event of Object.values(EVENTS)) bus.on(event, (payload) => log.push({ ...payload, event, tick: state.tick }));
   const start = player ?? marks.P;
   const p = start ? spawnPlayer(state, bus, start.x, start.y) : null;
-  if (p) resetVision(state);
+  if (p) {
+    refreshPlayerStats(state);
+    resetVision(state);
+  }
   setPhase(game, PHASE.PLAYING);
   return {
     game, state, bus, log, marks, player: p,
