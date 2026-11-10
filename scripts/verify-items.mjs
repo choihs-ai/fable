@@ -207,7 +207,8 @@ function sectionDrops(checkRanges) {
         for (let k = 0; k < 40; k++) {
           const item = rollEquipment(rng, { ilvl, rarity, base });
           audit(item);
-          for (const opt of [...item.implicit, ...item.affixes]) {
+          // 표에 쓸 것: 무작위 옵션으로 실제 나온 값의 최소·최대(고유 옵션은 범위가 달라 따로다).
+          for (const opt of item.affixes) {
             const key = `${opt.stat}|${rarity}|${ilvl}`;
             const r = reach.get(key) ?? [Infinity, -Infinity];
             reach.set(key, [Math.min(r[0], opt.value), Math.max(r[1], opt.value)]);
@@ -380,15 +381,18 @@ function sectionChoices() {
         shortage[eligible]++;
         if (first === -1) first = pick;
       }
-      const index = rng.int(0, options.length - 1);
+      // 강화가 하나라도 있으면 강화 가운데서 무작위로 고른다(끝까지 다 찍어 후보가 바닥나는 상황을 만들기 위해).
+      const upgradeSlots = options.map((o, i) => (o.kind === 'upgrade' ? i : -1)).filter((i) => i >= 0);
+      const index = upgradeSlots.length > 0 ? rng.pick(upgradeSlots) : rng.int(0, options.length - 1);
       const result = takeChoice(run, index);
       if (result.kind === 'upgrade') picked[result.id] = (picked[result.id] ?? 0) + 1;
     }
     firstFiller.push(first);
     finalRanks.push(Object.values(run.upgrades).reduce((a, b) => a + b, 0));
-    // 끝까지 가면 남은 강화가 없어야 한다(배타 관계인 둘 중 하나만 빼고).
+    // 강화를 우선해 75번 골랐으므로 남은 강화가 없어야 한다(배타 관계인 둘 중 하나만 빼고).
     const left = expectedEligible(run.upgrades);
     if (left.length > 0) problem('3택1', `시드 "verify:choices:${n}": 75번 고른 뒤에도 후보가 남음 (${left.join(', ')})`);
+    if (finalRanks[finalRanks.length - 1] !== totalRanks - 1) problem('3택1', `시드 "verify:choices:${n}": 최종 ${finalRanks[finalRanks.length - 1]}단계 (기대 ${totalRanks - 1})`);
     for (const [id, rank] of Object.entries(run.upgrades)) if (rank > UPGRADES[id].maxRank) problem('3택1', `${id} 단계 ${rank}`);
     if (run.upgrades.glass_cannon && run.upgrades.juggernaut) problem('3택1', '배타 강화를 둘 다 가짐');
   }

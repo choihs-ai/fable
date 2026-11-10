@@ -18,8 +18,8 @@ export const DIFFICULTY = deepFreeze({
     { hp: [2.01, 2.53], damage: [2.2, 2.64] },
     { hp: [2.39, 2.98], damage: [2.92, 3.37], boss: { hp: 0.99, damage: 0.86 } },
     { hp: [2.48, 3.08], damage: [3.29, 3.8] },
-    { hp: [3.15, 3.96], damage: [4.0, 4.47], boss: { hp: 1.07, damage: 0.7 } },
-    { hp: [2.84, 3.57], damage: [4.54, 5.15], boss: { hp: 1.06, damage: 0.76 } },
+    { hp: [3.15, 3.96], damage: [4.0, 4.47], boss: { hp: 1.2, damage: 1.3 } },
+    { hp: [2.84, 3.57], damage: [4.54, 5.15], boss: { hp: 1.06, damage: 0.85 } },
   ],
   /** 밀도: 구역 안에서 층이 하나 깊어질 때마다 적 수가 이만큼 늘어난다(소수점은 버린다). */
   enemiesPerFloorInZone: 0.5,

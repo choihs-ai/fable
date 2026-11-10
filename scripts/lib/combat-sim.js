@@ -216,9 +216,38 @@ export function driveBot(duel, bot) {
     const dy = player.y - hz.y;
     const d = Math.sqrt(dx * dx + dy * dy);
     if (d > hz.radius + 0.4 || hz.nextAt - tick > 45) continue;
-    // 오래 남는 장판(독 구름)은 상대와 붙어 싸우는 중이면 무시한다. 안 그러면 구름만 피해 다니다 끝난다.
-    if (hz.interval > 0 && target && targetD < 2.2 + target.radius) continue;
     const away = d > 1e-3 ? { x: dx / d, y: dy / d } : { x: 1, y: 0 };
+    if (hz.interval > 0 && target) {
+      // 오래 남는 장판(독 구름): 싸움을 멈추지 않고 상대 둘레를 돌면서 빠져나온다.
+      // (그냥 멀어지기만 하면 구름을 피해 다니다 끝나고, 무시하면 구름 속에서 계속 맞는다.)
+      const tx = target.x - player.x;
+      const ty = target.y - player.y;
+      const td = Math.sqrt(tx * tx + ty * ty) || 1;
+      let sx = -ty / td;
+      let sy = tx / td;
+      // 장판 중심에서 멀어지는 쪽으로 돈다. 막혀 있으면 반대쪽.
+      if (sx * away.x + sy * away.y < 0) {
+        sx = -sx;
+        sy = -sy;
+      }
+      if (!circleFree(nav, player.x + sx * 0.8, player.y + sy * 0.8, player.radius)) {
+        sx = -sx;
+        sy = -sy;
+      }
+      // 상대와 멀면 다가가면서, 가까우면 거리를 유지하면서.
+      const pull = targetD > 1.4 + target.radius ? 0.6 : 0;
+      input.moveX = sx + (tx / td) * pull;
+      input.moveY = sy + (ty / td) * pull;
+      const los = lineOfSight(nav, player.x, player.y, target.x, target.y);
+      if (los) {
+        const ready = (id) => (player.cooldowns[id] ?? 0) <= tick;
+        input.attack = targetD <= 1.5 + target.radius;
+        if (targetD <= 1.8 + target.radius && ready('whirlwind')) input.skill = 0;
+        else if (targetD >= 2 && targetD <= 8 && ready('firebolt')) input.skill = 1;
+      }
+      setInput(state, input);
+      return;
+    }
     input.moveX = away.x;
     input.moveY = away.y;
     if (dodgeReady && hz.nextAt - tick <= 10) input.dodge = true;
