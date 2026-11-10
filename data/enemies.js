@@ -136,7 +136,7 @@ export const ENEMIES = deepFreeze({
     abilities: { strike: { ...strike(9, { status: { id: 'bleed' } }), cooldown: 1.1 } },
   },
   stone_golem: {
-    name: '돌 골렘', ai: 'tank', hp: 130, speed: 1.6, radius: 0.48, mass: 4, armor: 3,
+    name: '돌 골렘', ai: 'tank', hp: 130, speed: 1.6, radius: 0.48, mass: 4, armor: 12,
     immune: ['poison', 'bleed'], statusResist: { stun: 0.5 },
     block: { cosHalf: 0.3, factor: 0.7 },
     aiParams: { bash: 'bash', slam: 'slam', turnRate: 0.08 },
@@ -185,7 +185,7 @@ export const ENEMIES = deepFreeze({
 
   // ── 심연의 성채 ──
   dark_knight: {
-    name: '암흑 기사', ai: 'tank', hp: 110, speed: 2.2, radius: 0.42, mass: 3, armor: 2,
+    name: '암흑 기사', ai: 'tank', hp: 110, speed: 2.2, radius: 0.42, mass: 3, armor: 8,
     statusResist: { stun: 0.6 },
     block: { cosHalf: 0.4, factor: 0.6 },
     aiParams: { bash: 'bash', slam: 'slam', turnRate: 0.12 },
@@ -209,7 +209,7 @@ export const ENEMIES = deepFreeze({
     },
   },
   gargoyle: {
-    name: '가고일', ai: 'swooper', hp: 70, speed: 3.4, radius: 0.4, mass: 2, armor: 2, immune: ['bleed', 'poison'],
+    name: '가고일', ai: 'swooper', hp: 70, speed: 3.4, radius: 0.4, mass: 2, armor: 6, immune: ['bleed', 'poison'],
     aiParams: { dive: 'dive', melee: 'claw', orbit: 3.0 },
     abilities: {
       claw: { windup: 0.4, recovery: 0.3, cooldown: 1.5, range: 1.55, effects: [{ type: 'arc', range: 1.9, cosHalf: 0.5, damage: 8 }] },

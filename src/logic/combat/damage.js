@@ -1,8 +1,9 @@
 // 피해 처리. 모든 피해는 이 함수를 거친다.
 //
-// 순서: 무적이면 0 → (지속 피해가 아니면) 정면 방어 → 방어력 → 최소 1 → 보스 페이즈 경계에서 멈춤 → 체력 차감.
+// 순서: 무적이면 0 → (지속 피해가 아니면) 정면 방어 → 방어력(비율 감소) → 반올림, 최소 1 → 보스 페이즈 경계에서 멈춤 → 체력 차감.
 // 체력과 피해는 정수다.
 
+import { COMBAT } from '../../../data/combat.js';
 import { EVENTS } from '../core/events.js';
 import { ticksOf } from '../core/time.js';
 import { defOf } from '../entities/defs.js';
@@ -70,7 +71,8 @@ export function dealDamage(state, bus, target, amount, { sourceId = null, kind =
         blocked = true;
       }
     }
-    dmg -= target.armor;
+    // 방어력은 피해를 비율로 줄인다: 받는 피해 = 피해 × K ÷ (K + 방어력). 아무리 높아도 피해가 0 이 되지는 않는다.
+    if (target.armor > 0) dmg *= COMBAT.armorK / (COMBAT.armorK + target.armor);
   }
   dmg = Math.max(1, Math.round(dmg));
 

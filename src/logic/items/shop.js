@@ -32,7 +32,9 @@ export function generateShop(rng, { floor, meta, relics }) {
     const [id] = pool.splice(pick, 1);
     stock.push({ kind: 'consumable', id, price: shopPrice(CONSUMABLES[id].price, floor), sold: false });
   }
-  if (floor >= SHOP.relicFromFloor) {
+  // 유물 진열 여부는 층과 무관하게 항상 굴린다(품목 수열이 층 조건으로 밀리지 않도록).
+  const showRelic = rng.chance(SHOP.relicChance);
+  if (showRelic && floor >= SHOP.relicFromFloor) {
     const id = rollRelic(rng, meta, relics);
     if (id) stock.push({ kind: 'relic', id, price: shopPrice(RELICS[id].price, floor), sold: false });
   }

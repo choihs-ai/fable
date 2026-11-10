@@ -6,13 +6,15 @@ import { deepFreeze } from './freeze.js';
  * 상점. 품목은 (런 시드, 층)으로 정해져 다시 들어와도 같다.
  *   - 장비: equipment 개. 아이템 레벨은 그 층. 등급 가중치는 드롭보다 rarityShift 층만큼 앞선 것을 쓴다.
  *   - 소비 아이템: consumables 종. 그 층에 나올 수 있는 것 가운데 서로 다른 종류.
- *   - 유물: relicFromFloor 층부터 한 개(아직 없는 것 가운데).
+ *   - 유물: relicFromFloor 층부터 relicChance 확률로 한 개(아직 없는 것 가운데).
  * 가격 = 기준가 × (1 + pricePerFloor × (층 - 1)). 장비는 여기에 아이템 레벨에 따른 가격이 이미 들어 있다.
  */
 export const SHOP = deepFreeze({
   equipment: 4,
   consumables: 3,
   relicFromFloor: 3,
+  /** 유물이 진열될 확률(나올 수 있는 층에서). */
+  relicChance: 0.5,
   rarityShift: 4,
   pricePerFloor: 0.04,
 });

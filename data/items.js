@@ -10,6 +10,7 @@ import { deepFreeze } from './freeze.js';
 export const STATS = deepFreeze({
   maxHp: { name: '최대 체력', unit: '', floor: -90 },
   power: { name: '공격력', unit: '%', floor: -80 },
+  /** 받는 피해를 비율로 줄인다(data/combat.js 의 armorK 참고). */
   armor: { name: '방어력', unit: '', floor: 0 },
   speed: { name: '이동 속도', unit: '%', floor: -50, cap: 60 },
   haste: { name: '재사용 대기 감소', unit: '%', floor: 0, cap: 50 },
@@ -52,11 +53,11 @@ export const RARITY = deepFreeze({
 export const BASES = deepFreeze({
   blade: { slot: 'weapon', name: '검', implicit: [{ stat: 'power', min: 8, max: 12, growth: 0.11 }] },
   wand: { slot: 'weapon', name: '지팡이', implicit: [{ stat: 'power', min: 5, max: 8, growth: 0.11 }, { stat: 'haste', min: 3, max: 5, growth: 0.02 }] },
-  plate: { slot: 'armor', name: '판금 갑옷', implicit: [{ stat: 'maxHp', min: 10, max: 14, growth: 0.1 }, { stat: 'armor', min: 1, max: 2, growth: 0.06 }] },
-  robe: { slot: 'armor', name: '로브', implicit: [{ stat: 'maxHp', min: 16, max: 22, growth: 0.1 }] },
-  helm: { slot: 'helm', name: '투구', implicit: [{ stat: 'maxHp', min: 6, max: 10, growth: 0.1 }, { stat: 'armor', min: 1, max: 1, growth: 0.06 }] },
-  hood: { slot: 'helm', name: '두건', implicit: [{ stat: 'maxHp', min: 4, max: 7, growth: 0.1 }, { stat: 'critChance', min: 2, max: 4, growth: 0.02 }] },
-  greaves: { slot: 'boots', name: '각반', implicit: [{ stat: 'speed', min: 3, max: 5, growth: 0.01 }, { stat: 'armor', min: 1, max: 1, growth: 0.06 }] },
+  plate: { slot: 'armor', name: '판금 갑옷', implicit: [{ stat: 'maxHp', min: 10, max: 14, growth: 0.05 }, { stat: 'armor', min: 1, max: 2, growth: 0.02 }] },
+  robe: { slot: 'armor', name: '로브', implicit: [{ stat: 'maxHp', min: 16, max: 22, growth: 0.05 }] },
+  helm: { slot: 'helm', name: '투구', implicit: [{ stat: 'maxHp', min: 6, max: 10, growth: 0.05 }, { stat: 'armor', min: 1, max: 1, growth: 0.02 }] },
+  hood: { slot: 'helm', name: '두건', implicit: [{ stat: 'maxHp', min: 4, max: 7, growth: 0.05 }, { stat: 'critChance', min: 2, max: 4, growth: 0.02 }] },
+  greaves: { slot: 'boots', name: '각반', implicit: [{ stat: 'speed', min: 3, max: 5, growth: 0.01 }, { stat: 'armor', min: 1, max: 1, growth: 0.02 }] },
   sandals: { slot: 'boots', name: '샌들', implicit: [{ stat: 'speed', min: 5, max: 8, growth: 0.01 }] },
   ring: { slot: 'accessory', name: '반지', implicit: [{ stat: 'critChance', min: 3, max: 5, growth: 0.02 }] },
   amulet: { slot: 'accessory', name: '목걸이', implicit: [{ stat: 'power', min: 4, max: 6, growth: 0.11 }] },
@@ -68,8 +69,8 @@ export const BASES = deepFreeze({
  */
 export const AFFIXES = deepFreeze([
   { stat: 'power', min: 3, max: 6, growth: 0.11, slots: ['weapon', 'accessory'], weight: 10 },
-  { stat: 'maxHp', min: 6, max: 12, growth: 0.1, slots: ['armor', 'helm', 'boots', 'accessory'], weight: 10 },
-  { stat: 'armor', min: 1, max: 2, growth: 0.06, slots: ['armor', 'helm', 'boots'], weight: 8 },
+  { stat: 'maxHp', min: 6, max: 12, growth: 0.05, slots: ['armor', 'helm', 'boots', 'accessory'], weight: 10 },
+  { stat: 'armor', min: 1, max: 2, growth: 0.02, slots: ['armor', 'helm', 'boots'], weight: 8 },
   { stat: 'speed', min: 2, max: 4, growth: 0.01, slots: ['boots', 'accessory'], weight: 6 },
   { stat: 'haste', min: 2, max: 4, growth: 0.02, slots: ['weapon', 'helm', 'accessory'], weight: 6 },
   { stat: 'critChance', min: 2, max: 4, growth: 0.02, slots: ['weapon', 'helm', 'accessory'], weight: 8 },
@@ -114,17 +115,17 @@ export const DROPS = deepFreeze({
   /** 희귀 이상 장비가 세트 장비일 확률. */
   setChance: 0.25,
   /** 일반 적: 각각 따로 굴린다. 금화는 [최소, 최대] × (1 + goldPerFloor × (층 - 1)). */
-  enemy: { equipment: 0.07, consumable: 0.06, goldChance: 0.7, gold: [2, 5] },
+  enemy: { equipment: 0.07, consumable: 0.06, goldChance: 0.6, gold: [1, 4] },
   /** 보스: 장비 개수(등급 하한 있음), 유물 확률. */
-  boss: { equipment: 2, minRarity: 'rare', relic: 0.6, consumable: 2, gold: [40, 60] },
+  boss: { equipment: 2, minRarity: 'rare', relic: 0.4, consumable: 2, gold: [40, 60] },
   /** 맵에 놓인 아이템 자리(상자): 셋 중 하나. */
-  chest: { equipment: 0.55, consumable: 0.3, relic: 0.15 },
-  goldPerFloor: 0.08,
+  chest: { equipment: 0.64, consumable: 0.33, relic: 0.03 },
+  goldPerFloor: 0.06,
   /** 소환·분열로 생긴 적은 아무것도 주지 않는다(무한 수급 방지). */
 });
 
 /** 가격. 구매가 = 등급 기준가 × (1 + perLevel × (레벨 - 1)), 판매가 = 구매가 × sellRatio (최소 1). */
-export const PRICES = deepFreeze({ perLevel: 0.08, sellRatio: 0.25 });
+export const PRICES = deepFreeze({ perLevel: 0.08, sellRatio: 0.2 });
 
 /**
  * 장비 점수 가중치. 능력치 1당 점수이고, 비교값(어느 장비가 더 나은가)과 자동 정리에 쓴다.

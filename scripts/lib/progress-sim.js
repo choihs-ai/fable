@@ -8,6 +8,7 @@
 //   - 레벨업·제단: 무작위로 고른다(특정 빌드에 치우치지 않은 평균을 보기 위해).
 
 import { BOSSES } from '../../data/bosses.js';
+import { COMBAT } from '../../data/combat.js';
 import { DIFFICULTY } from '../../data/difficulty.js';
 import { ENEMIES } from '../../data/enemies.js';
 import { PLAYER } from '../../data/player.js';
@@ -47,7 +48,9 @@ function threatOf(def) {
   for (const ability of Object.values(def.abilities)) {
     const hit = ability.effects.reduce((s, e) => s + (e.damage ?? 0), 0);
     if (hit === 0) continue;
-    const cycle = (ability.windup ?? 0) + Math.max(ability.cooldown ?? 0, ability.recovery ?? 0);
+    // 자폭은 한 번뿐이므로 한 번의 교전(약 5초)에 한 번 터지는 것으로 본다.
+    const once = ability.effects.some((e) => e.type === 'die');
+    const cycle = once ? 5 : (ability.windup ?? 0) + Math.max(ability.cooldown ?? 0, ability.recovery ?? 0);
     const dps = hit / Math.max(cycle, 0.2);
     if (dps > best.dps) best = { hit, dps };
   }
@@ -58,7 +61,11 @@ function scaling(floor) {
   const per = WORLD.floorsPerZone;
   const zone = DIFFICULTY.zones[Math.floor((floor - 1) / per)];
   const t = ((floor - 1) % per) / (per - 1);
-  return { hp: zone.hp[0] + (zone.hp[1] - zone.hp[0]) * t, damage: zone.damage[0] + (zone.damage[1] - zone.damage[0]) * t };
+  return {
+    hp: zone.hp[0] + (zone.hp[1] - zone.hp[0]) * t,
+    damage: zone.damage[0] + (zone.damage[1] - zone.damage[0]) * t,
+    boss: zone.boss ?? { hp: 1, damage: 1 },
+  };
 }
 
 /**
@@ -78,7 +85,7 @@ export function enemyStrength(floor) {
       .filter((p) => p.hit > 0);
     const hit = patterns.reduce((s, p) => s + p.hit, 0) / patterns.length;
     const cycle = patterns.reduce((s, p) => s + p.cycle, 0) / patterns.length;
-    return { boss: true, hp: def.hp * mul.hp * DIFFICULTY.boss.hp, dps: (hit / cycle) * mul.damage * DIFFICULTY.boss.damage, hit: hit * mul.damage, count: 1 };
+    return { boss: true, hp: def.hp * mul.hp * mul.boss.hp, dps: (hit / cycle) * mul.damage * mul.boss.damage, hit: hit * mul.damage * mul.boss.damage, count: 1 };
   }
   let weight = 0;
   let hp = 0;
@@ -96,9 +103,9 @@ export function enemyStrength(floor) {
   return { boss: false, hp: (hp / weight) * mul.hp, dps: (dps / weight) * mul.damage, hit: (hit / weight) * mul.damage, count };
 }
 
-/** 유효 체력: 방어력이 그 층 적의 평균 타격을 얼마나 줄이는지 반영한 체력. */
-export function effectiveHp(maxHp, armor, enemyHit) {
-  return (maxHp * enemyHit) / Math.max(1, enemyHit - armor);
+/** 유효 체력: 방어력으로 줄어드는 피해를 반영한 체력. */
+export function effectiveHp(maxHp, armor) {
+  return (maxHp * (COMBAT.armorK + Math.max(0, armor))) / COMBAT.armorK;
 }
 
 // ── 자동 조작 ────────────────────────────────────────────────────────────────
@@ -216,7 +223,7 @@ export function simulateRun({ seed, meta, floors = TOTAL_FLOORS }) {
           if (entry.sold || entry.price > state.inventory.gold) return;
           let value = 0;
           if (entry.kind === 'equipment') value = compareEquipment(state, entry.item).scoreDelta / entry.price;
-          else if (entry.kind === 'relic') value = 40 / entry.price;
+          else if (entry.kind === 'relic') value = state.inventory.relics.includes(entry.id) ? 0 : 40 / entry.price;
           else if ((state.inventory.consumables[entry.id] ?? 0) < 2) value = 5 / entry.price;
           if (value > bestValue) {
             bestValue = value;

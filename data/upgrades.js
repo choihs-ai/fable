@@ -24,7 +24,7 @@ export const LEVELING = deepFreeze({
 /** stats 는 한 단계마다 더해지는 능력치. */
 export const UPGRADES = deepFreeze({
   sharpness: { name: '날카로움', maxRank: 5, tags: ['offense'], weight: 10, stats: { power: 10 } },
-  vitality: { name: '활력', maxRank: 5, tags: ['defense'], weight: 10, stats: { maxHp: 18 } },
+  vitality: { name: '활력', maxRank: 5, tags: ['defense'], weight: 10, stats: { maxHp: 15 } },
   toughness: { name: '강인함', maxRank: 4, tags: ['defense'], weight: 7, stats: { armor: 1 } },
   swiftness: { name: '신속', maxRank: 3, tags: ['mobility'], weight: 6, stats: { speed: 5 } },
   focus: { name: '집중', maxRank: 4, tags: ['utility'], weight: 6, stats: { haste: 5 } },

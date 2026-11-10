@@ -5,7 +5,7 @@ import { WORLD } from '../../../data/world.js';
 
 /**
  * @param {number} floor 1 이상
- * @param {boolean} [boss] 보스면 보스 배율을 더 곱한다
+ * @param {boolean} [boss] 보스면 그 구역의 보스 배율을 더 곱한다
  * @returns {{ hp:number, damage:number }}
  */
 export function floorScaling(floor, boss = false) {
@@ -16,5 +16,6 @@ export function floorScaling(floor, boss = false) {
   const t = per > 1 ? ((floor - 1) % per) / (per - 1) : 0;
   const hp = zone.hp[0] + (zone.hp[1] - zone.hp[0]) * t;
   const damage = zone.damage[0] + (zone.damage[1] - zone.damage[0]) * t;
-  return boss ? { hp: hp * DIFFICULTY.boss.hp, damage: damage * DIFFICULTY.boss.damage } : { hp, damage };
+  if (boss && zone.boss) return { hp: hp * zone.boss.hp, damage: damage * zone.boss.damage };
+  return { hp, damage };
 }

@@ -29,7 +29,7 @@ const TRIANGLE = [[0, 0], [1.8, 1.4], [-1.8, 1.4]];
 export const BOSSES = deepFreeze({
   // ── 지하 묘지 중간보스: 근접 위주, 뼈 투척, 내려찍기, 2페이즈에 해골 소환 ──
   bone_warden: {
-    name: '뼈의 감시자', hp: 420, speed: 2.4, radius: 0.7, mass: 10, armor: 1, aggroRadius: 10,
+    name: '뼈의 감시자', hp: 420, speed: 2.4, radius: 0.7, mass: 10, armor: 4, aggroRadius: 10,
     immune: ['poison', 'bleed'], statusResist: { stun: 0.4, freeze: 0, slow: 0.5 },
     transitionSec: 1.5,
     phases: [
@@ -109,7 +109,7 @@ export const BOSSES = deepFreeze({
 
   // ── 용암 굴 중간보스: 빠르다. 화염 숨결, 돌진, 불비 ──
   cinder_drake: {
-    name: '잿불 드레이크', hp: 460, speed: 3.0, radius: 0.75, mass: 10, armor: 1, aggroRadius: 10,
+    name: '잿불 드레이크', hp: 460, speed: 3.0, radius: 0.75, mass: 10, armor: 4, aggroRadius: 10,
     immune: ['burn'], statusResist: { stun: 0.4, freeze: 0.5, slow: 0.5 },
     transitionSec: 1.5,
     phases: [
@@ -155,7 +155,7 @@ export const BOSSES = deepFreeze({
 
   // ── 최종보스: 3페이즈. 1) 근접+탄막  2) 순간이동·전방위 탄막·그림자 소환  3) 광폭화 + 공허 장판 ──
   abyss_lord: {
-    name: '심연의 군주', hp: 700, speed: 2.6, radius: 0.9, mass: 20, armor: 2, aggroRadius: 12,
+    name: '심연의 군주', hp: 700, speed: 2.6, radius: 0.9, mass: 20, armor: 8, aggroRadius: 12,
     immune: ['poison'], statusResist: { stun: 0.3, freeze: 0, slow: 0.5, bleed: 0.5, burn: 0.5 },
     transitionSec: 2.0,
     phases: [
