@@ -1,6 +1,6 @@
 // 전리품: 층에 들어갈 때 상자·상점·제단을 만들고, 적을 잡으면 보상을 주고, 바닥의 것을 줍는다.
 
-import { DROPS, INVENTORY } from '../../../data/items.js';
+import { INVENTORY } from '../../../data/items.js';
 import { RELICS } from '../../../data/relics.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
@@ -183,5 +183,3 @@ export function applyFloorRelics(state) {
     if (onFloor && onFloor.healPct) heal(player, (player.maxHp * onFloor.healPct) / 100);
   }
 }
-
-export { DROPS };
