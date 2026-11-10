@@ -18,6 +18,8 @@ export function spawnHazard(state, bus, owner, effect, x, y) {
     y,
     radius: effect.radius,
     damage: effect.damage,
+    /** 깔린 순간의 공격 배율. */
+    power: owner.power,
     status: effect.status ?? null,
     /** 다음에 터지는 틱, 다시 터지는 간격(0 이면 한 번만), 사라지는 틱. */
     nextAt: armAt,

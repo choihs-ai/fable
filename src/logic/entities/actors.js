@@ -8,6 +8,7 @@ import { circleFree } from '../world/collide.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
 import { ACTOR_KIND, enemyDef, isBossType } from './defs.js';
+import { floorScaling } from './scaling.js';
 
 function createActor(state, kind, type, def, x, y) {
   const id = state.entities.nextId++;
@@ -27,6 +28,17 @@ function createActor(state, kind, type, def, x, y) {
     maxHp: def.hp,
     armor: def.armor ?? 0,
     speed: def.speed,
+    /** 주는 피해의 배율. 플레이어는 능력치에서, 적은 층별 난이도에서 정해진다. */
+    power: 1,
+    /** 치명타 확률(0~1)과 치명타 피해 배율, 흡혈(준 피해 대비 회복 비율), 재사용 대기 감소(0~0.5). */
+    critChance: 0,
+    critDamage: 1.5,
+    lifesteal: 0,
+    haste: 0,
+    /** 10초당 체력 재생. */
+    regen: 0,
+    /** 공격이 맞을 때 걸 수 있는 상태이상: { id, chance } 목록 또는 null. */
+    onHit: null,
     /** 이번 틱에 움직이려는 방향(길이 1 이하)과 속도 배율. 조작·AI 가 정하고 이동 단계가 읽는다. */
     moveX: 0,
     moveY: 0,
@@ -104,6 +116,11 @@ export function spawnEnemy(state, bus, type, x, y, options = {}) {
   if (!def) throw new RangeError(`spawnEnemy: 알 수 없는 적 "${type}"`);
   const boss = isBossType(type);
   const actor = createActor(state, boss ? ACTOR_KIND.BOSS : ACTOR_KIND.ENEMY, type, def, x, y);
+  // 층별 난이도: 체력과 공격 배율.
+  const scale = floorScaling(state.run.floor, boss);
+  actor.maxHp = Math.max(1, Math.round(def.hp * scale.hp));
+  actor.hp = actor.maxHp;
+  actor.power = scale.damage;
   actor.summonerId = options.summonerId ?? null;
   actor.ai = {
     /** 'idle'(대기) | 'combat'(전투) | 'return'(자리로 복귀) */
@@ -178,6 +195,7 @@ export function populateFloor(state, bus, map) {
   state.entities.byId = {};
   state.projectiles = [];
   state.hazards = [];
+  state.drops = [];
   const sx = map.start.x + 0.5;
   const sy = map.start.y + 0.5;
   if (player && !player.dead) {

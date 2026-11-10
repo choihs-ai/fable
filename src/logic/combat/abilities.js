@@ -23,6 +23,12 @@ export function abilityOf(actor, abilityId) {
   return ability;
 }
 
+/** 재사용 대기(틱). 재사용 대기 감소(haste)를 반영하고, 0 보다 큰 대기는 최소 1틱이다. */
+export function cooldownTicks(actor, seconds) {
+  const base = ticksOf(seconds);
+  return actor.haste > 0 && base > 0 ? Math.max(1, Math.round(base * (1 - actor.haste))) : base;
+}
+
 export function isReady(state, actor, abilityId) {
   return (actor.cooldowns[abilityId] ?? 0) <= state.tick;
 }
@@ -193,7 +199,7 @@ export function startAbility(state, bus, actor, abilityId, aimX, aimY, targetX, 
   actor.moveX = 0;
   actor.moveY = 0;
   const windup = ticksOf(ability.windup ?? 0);
-  actor.cooldowns[abilityId] = state.tick + windup + ticksOf(ability.cooldown ?? 0);
+  actor.cooldowns[abilityId] = state.tick + windup + cooldownTicks(actor, ability.cooldown ?? 0);
   const action = { ability: abilityId, phase: 'windup', until: state.tick + windup, dirX, dirY, targetX, targetY };
   if (windup === 0) {
     fire(state, bus, actor, ability, action);

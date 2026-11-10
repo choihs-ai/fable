@@ -17,6 +17,8 @@ export function spawnProjectile(state, bus, owner, effect, dirX, dirY) {
     vy: dirY * effect.speed,
     radius: effect.radius,
     damage: effect.damage,
+    /** 쏜 순간의 공격 배율. */
+    power: owner.power,
     status: effect.status ?? null,
     expiresAt: state.tick + ticksOf(effect.range / effect.speed),
   };

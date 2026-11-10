@@ -6,7 +6,7 @@ import { TICK_RATE, ticksOf } from '../core/time.js';
 import { getPlayer, opponentsOf } from '../entities/actors.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
-import { isReady, startAbility } from './abilities.js';
+import { cooldownTicks, isReady, startAbility } from './abilities.js';
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -76,7 +76,7 @@ export function controlPlayer(state, bus) {
     const dodge = PLAYER.dodge;
     const dirX = moveLen > 1e-6 ? input.moveX / moveLen : player.facingX;
     const dirY = moveLen > 1e-6 ? input.moveY / moveLen : player.facingY;
-    player.cooldowns.dodge = state.tick + ticksOf(dodge.cooldown);
+    player.cooldowns.dodge = state.tick + cooldownTicks(player, dodge.cooldown);
     player.invulnUntil = Math.max(player.invulnUntil, state.tick + ticksOf(dodge.invuln));
     player.dash = {
       dirX, dirY, speed: dodge.speed, endAt: state.tick + Math.max(1, Math.round(dodge.duration * TICK_RATE)),

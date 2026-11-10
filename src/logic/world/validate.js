@@ -5,6 +5,7 @@ import { WORLD } from '../../../data/world.js';
 import { EVENT_KINDS } from './event-rooms.js';
 import { FLOOR_KIND, floorPlan } from './floors.js';
 import { bfsDistances } from './grid.js';
+import { extraEnemies } from './place.js';
 import { TILE } from './tiles.js';
 
 const ALGORITHMS = {
@@ -203,7 +204,8 @@ export function validateFloor(map) {
 
   if (plan.kind === FLOOR_KIND.NORMAL) {
     if (bosses > 0) fail('unexpected-boss');
-    if (enemies < zone.enemyCount[0] || enemies > zone.enemyCount[1]) fail('enemy-count', `${enemies}`);
+    const extra = extraEnemies(plan.floorInZone);
+    if (enemies < zone.enemyCount[0] + extra || enemies > zone.enemyCount[1] + extra) fail('enemy-count', `${enemies}`);
     if (items < zone.itemCount[0] || items > zone.itemCount[1]) fail('item-count', `${items}`);
   } else {
     if (bosses !== 1) fail('boss-count', `${bosses}`);

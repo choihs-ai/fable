@@ -58,7 +58,7 @@ function populate(rng, plan, algorithm, w, h, tiles, rooms, start, stairs, event
   occupied[start.y * w + start.x] = 1;
   occupied[stairs.y * w + stairs.x] = 1;
   const spawns = placeSpawns(rng.fork('place'), {
-    tiles, w, dist, occupied, forbidden: inside, zone: plan.zone, cfg: WORLD.placement,
+    tiles, w, dist, occupied, forbidden: inside, zone: plan.zone, cfg: WORLD.placement, floorInZone: plan.floorInZone,
   });
   return finishMap(plan, algorithm, w, h, tiles, { start, stairs, rooms, eventRooms, spawns, ...repair });
 }

@@ -20,7 +20,7 @@ export const EVENTS = Object.freeze({
   PLAYER_DODGED: 'player:dodged',
 
   // ── 전투 ──
-  /** payload: { targetId, sourceId, amount, kind: 'hit'|'dot', hp, blocked } */
+  /** payload: { targetId, sourceId, amount, kind: 'hit'|'dot', hp, blocked, crit } */
   DAMAGE_DEALT: 'damage:dealt',
   /** payload: { targetId, status, stacks, ticks } */
   STATUS_APPLIED: 'status:applied',
@@ -40,4 +40,32 @@ export const EVENTS = Object.freeze({
   HAZARD_TRIGGERED: 'hazard:triggered',
   /** payload: { id, type, from, to, phases, ticks } — 보스 페이즈 전환(연출용). ticks 동안 보스는 무적 */
   BOSS_PHASE_CHANGED: 'boss:phaseChanged',
+
+  // ── 아이템과 성장 ──
+  /** payload: { id, x, y, kind } — 바닥에 전리품이 생김 */
+  DROP_SPAWNED: 'drop:spawned',
+  /** payload: { id, kind, amount?, itemId?, uid? } — 전리품을 주움 */
+  DROP_COLLECTED: 'drop:collected',
+  /** payload: { reason } — 가방·착용·소비 아이템·유물·금화가 바뀜(ui 가 다시 그릴 때) */
+  INVENTORY_CHANGED: 'inventory:changed',
+  /** payload: { id } */
+  CONSUMABLE_USED: 'consumable:used',
+  /** payload: { amount, level, xp } */
+  XP_GAINED: 'xp:gained',
+  /** payload: { level } */
+  LEVEL_UP: 'level:up',
+  /** payload: { options } — 강화 3택1 후보가 제시됨 */
+  UPGRADE_OFFERED: 'upgrade:offered',
+  /** payload: { kind, id, rank? } */
+  UPGRADE_CHOSEN: 'upgrade:chosen',
+  /** payload: { kind, price } */
+  SHOP_PURCHASE: 'shop:purchase',
+  /** payload: { uid, gold } */
+  SHOP_SALE: 'shop:sale',
+  /** payload: { tier, cost, reward } */
+  ALTAR_ACCEPTED: 'altar:accepted',
+  /** payload: { hp } — 유물로 되살아남 */
+  PLAYER_REVIVED: 'player:revived',
+  /** payload: { victory, souls, floor, kills, bossKills } — 런이 끝나 메타 정산을 마침 */
+  RUN_ENDED: 'run:ended',
 });

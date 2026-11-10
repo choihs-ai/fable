@@ -50,9 +50,10 @@ function beginPhaseTransition(state, bus, target, def) {
  * @param {'hit'|'dot'} [options.kind] dot(지속 피해)는 방어력·정면 방어를 무시한다
  * @param {number} [options.fromX] 피해가 온 위치(정면 방어 판정용)
  * @param {number} [options.fromY]
+ * @param {boolean} [options.crit] 치명타였는가(이벤트에 실어 보낼 뿐, 피해량은 이미 반영돼 있어야 한다)
  * @returns {number} 실제로 깎인 체력
  */
-export function dealDamage(state, bus, target, amount, { sourceId = null, kind = 'hit', fromX, fromY } = {}) {
+export function dealDamage(state, bus, target, amount, { sourceId = null, kind = 'hit', fromX, fromY, crit = false } = {}) {
   if (target.dead || !(amount > 0)) return 0;
   if (target.invulnUntil > state.tick) return 0;
   const def = defOf(target);
@@ -100,7 +101,7 @@ export function dealDamage(state, bus, target, amount, { sourceId = null, kind =
     interrupt(state, bus, target);
     cleanse(state, bus, target, 'removed');
   }
-  bus.emit(EVENTS.DAMAGE_DEALT, { targetId: target.id, sourceId, amount: dmg, kind, hp: target.hp, blocked });
+  bus.emit(EVENTS.DAMAGE_DEALT, { targetId: target.id, sourceId, amount: dmg, kind, hp: target.hp, blocked, crit });
   if (transition && !target.dead) beginPhaseTransition(state, bus, target, def);
   return dmg;
 }
