@@ -31,11 +31,15 @@ node scripts/verify-maps.mjs        # 맵 생성 대량 검증: 시드 5000개 �
 node scripts/verify-maps.mjs --show <시드> <층>   # 한 층을 글자로 출력
 node scripts/sim-combat.mjs         # 전투 시뮬레이션: 적·보스마다 1:1 대결 2000회 (약 70초)
 node scripts/sim-combat.mjs --one <종류> <방식> <번호>   # 대결 하나를 다시 돌려 문제를 출력
+node scripts/verify-items.mjs       # 아이템·성장 검증: 드롭 분포, 옵션 범위, 세트, 3택1, 전투력 곡선 (약 35초)
+node scripts/verify-items.mjs --only curve       # 한 부분만: drops | ranges | sets | choices | curve
 ```
 
 `src/logic/world/**` 나 `data/world.js`·`data/zones.js` 를 바꾸면 `verify-maps.mjs` 를 다시 돌리고, 실패 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 실패한 시드는 시드 값·층과 함께 기록한다.
 
 `src/logic/entities/**`·`src/logic/combat/**`·`src/logic/world/{collide,los,fov,pathfind,nav}.js` 나 `data/{combat,player,enemies,bosses,statuses}.js` 를 바꾸면 `sim-combat.mjs` 를 다시 돌리고, 문제 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 문제가 나온 대결은 시드(`<종류>-<방식>-<번호>`)와 함께 기록한다.
+
+`src/logic/items/**`·`src/logic/commands.js`·`src/logic/combat/loot.js`·`src/logic/entities/{stats,scaling}.js` 나 `data/{items,consumables,relics,upgrades,difficulty,shop,meta}.js` 를 바꾸면 `verify-items.mjs` 를 다시 돌리고, 문제 0건(급변 구간 없음 포함)을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 전투 수치(`data/player.js`·`enemies.js`·`bosses.js`·`combat.js`)를 바꿔도 곡선이 달라지므로 함께 돌린다.
 
 ES 모듈은 `file://` 로 열 수 없으므로 브라우저 확인은 항상 로컬 서버를 거친다.
 
@@ -57,11 +61,19 @@ data/                      설정·밸런스 수치 (순수 값, data 끼리만 
   enemies.js               적 20종(행동 방식 10가지)
   bosses.js                중간보스 3종, 최종보스 1종(페이즈·패턴)
   statuses.js              상태이상 6종과 중첩·지속·면역 규칙
+  items.js                 능력치 목록, 장비 등급·기본 종류·옵션 풀·세트, 드롭 규칙, 가격, 인벤토리
+  consumables.js           소비 아이템 6종
+  relics.js                패시브 유물 14종
+  upgrades.js              레벨 곡선, 강화 17종, 3택1 규칙, 채움 보상
+  difficulty.js            층별 난이도 곡선(구역별 적 체력·공격 배율, 보스 배율, 밀도)
+  shop.js                  상점 품목·가격, 제단의 대가와 보상
+  meta.js                  영혼석 획득량, 영구 해금 13종
   freeze.js                설정 객체 동결 도우미
 src/
   main.js                  조립 지점: 로직·렌더·UI 를 만들어 연결하는 유일한 곳
   logic/                   ── 순수 로직 (DOM·Three.js 금지, Node 테스트 대상)
-    game.js                로직 최상단: 상태+버스 묶음, 틱마다 시스템 실행 순서 결정
+    game.js                로직 최상단: 런 시작·종료, 층 진입, 틱마다 시스템 실행 순서
+    commands.js            로직 최상단: 플레이어 명령(착용·소비·사고팔기·제단·강화 선택·메타 해금)
     core/
       prng.js              시드 PRNG(sfc32) + fork 서브스트림
       event-bus.js         동기식 이벤트버스
@@ -86,12 +98,21 @@ src/
       los.js               시야선(DDA), 몸 폭을 고려한 직선 통과 판정
       fov.js               시야 계산(레이캐스트)
       pathfind.js          격자 A*
-    items/      (예정)     아이템 정의·획득·사용
+    items/                 아이템과 성장 (아래 "아이템과 성장" 참고) — 평범한 객체만 다루고 행동체를 모른다
+      equipment.js         장비 생성, 옵션 범위, 등급 가중치, 가격
+      stats.js             능력치 합산(세트 효과 포함), 비교값
+      inventory.js         가방·착용·소비 아이템·유물·금화
+      drops.js             적·보스·상자의 전리품 굴림
+      shop.js  altar.js    상점 품목과 거래, 제단 제안
+      levelup.js           경험치, 강화 3택1
+      meta.js              영혼석, 영구 해금, 런 정산
     entities/              행동체(플레이어·적·보스)
       actors.js            생성·조회, 층 배치
       defs.js              데이터 정의 찾기
       movement.js          이동·돌진, 벽 충돌, 서로 밀어내기
       vision.js            플레이어 시야(안개용 자료)
+      scaling.js           층별 난이도 배율
+      stats.js             합산 능력치를 플레이어 수치로 반영
     combat/                전투 (아래 "엔티티와 전투" 참고)
       damage.js            피해 처리, 보스 페이즈 전환
       statuses.js          상태이상
@@ -99,7 +120,8 @@ src/
       hit.js               명중 처리(피해+흡혈+상태이상)
       projectiles.js  hazards.js   투사체, 장판
       player.js            입력 → 플레이어 행동
-      deaths.js            죽음 처리(사망 효과, 정리)
+      deaths.js            죽음 처리(사망 효과, 처치 보상, 되살아남, 정리)
+      loot.js              층의 상자·상점·제단 배치, 처치 보상, 줍기, 물약 효과 만료·체력 재생
       ai/brain.js          어그로·리쉬 상태 관리
       ai/behaviors.js      행동 방식 10가지 + 보스
       ai/steer.js          조향(직선/A* 경로 따라가기, 물러나기)
@@ -118,6 +140,9 @@ scripts/
   verify-maps.mjs          맵 생성 대량 검증(시드 × 전 층, 통계 출력)
   sim-combat.mjs           전투 시뮬레이션(종류 × 대결 방식, 통계 출력)
   lib/combat-sim.js        대결 차리기, 자동 조작, 매 틱 불변식 검사
+  verify-items.mjs         아이템·성장 검증(드롭 분포·옵션 범위·세트·3택1·전투력 곡선)
+  lib/item-checks.js       로직과 따로 구현한 계산기와 불변식 검사
+  lib/progress-sim.js      진행 시뮬레이터(전투 없이 30층을 실제 로직으로 진행), 전투력 지표
 tests/                     src 와 같은 경로 구조. *.test.js
   architecture.test.js     아래 의존 규칙을 자동 검사
   helpers/architecture.js  규칙 정의(LAYERS, LOGIC_RANK)와 검사기
@@ -126,6 +151,8 @@ tests/                     src 와 같은 경로 구조. *.test.js
   logic/world/*.test.js
   logic/entities/*.test.js
   logic/combat/*.test.js
+  logic/items/*.test.js
+  logic/commands.test.js
 ```
 
 모듈과 디렉터리의 대응: core·entities·combat·items 는 `src/logic/<모듈>`, world 는 `src/logic/world`(생성) + `src/render/world`(그리기), save 는 `src/logic/save`(직렬화) + `src/save`(저장소), ui·audio 는 `src/ui`·`src/audio`.
@@ -152,10 +179,12 @@ main.js ──▶ render ─┐
 로직 내부 순위(낮은 쪽만 import 가능, 같은 순위끼리는 불가):
 
 ```
-core(0) ◀ world(1), items(1) ◀ entities(2) ◀ combat(3) ◀ save(4) ◀ game.js(최상단)
+core(0) ◀ world(1), items(1) ◀ entities(2) ◀ combat(3) ◀ save(4) ◀ game.js·commands.js(최상단)
 ```
 
-모듈끼리 조율이 필요하면 `logic/game.js` 가 순서대로 호출한다. 로직 모듈은 `game.js` 를 import 하지 않는다.
+모듈끼리 조율이 필요하면 최상단 파일(`logic/game.js`, `logic/commands.js`)이 순서대로 호출한다. 로직 모듈은 최상단 파일을 import 하지 않는다.
+
+items 는 순위가 낮아서 행동체(entities)를 모른다: 인벤토리·런 진행 같은 평범한 객체만 고친다. 그 결과를 플레이어에게 반영하는 것은 `entities/stats.js`, 전투와 엮는 것은 `combat/loot.js`, 명령으로 묶는 것은 `commands.js` 다.
 
 entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모른다. 피해·상태이상·기술·AI·플레이어 조작은 모두 combat 에 있다(적 AI 는 `combat/ai/`). 격자 기하(충돌·시야선·길찾기)는 world 에 있다.
 
@@ -164,7 +193,7 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 ## 데이터 흐름
 
 - **로직 → 바깥**: 로직이 `EventBus` 로 "일어난 일"을 알리고, render/ui/audio 가 구독한다. 이벤트 이름은 `logic/core/events.js` 상수를 쓴다.
-- **바깥 → 로직**: ui 는 상태를 직접 고치지 않는다. 입력은 커맨드로 만들어 로직에 넘긴다(입력 단계에서 구현, `TODO.md`).
+- **바깥 → 로직**: ui 는 상태를 직접 고치지 않는다. 매 틱의 조작은 `setInput(state, …)`, 그 밖의 행동(착용·구매·강화 선택 등)은 `logic/commands.js` 의 명령으로 넘긴다. 명령은 `{ ok:true, … }` 또는 `{ ok:false, reason }` 을 돌려준다.
 - **프레임**: `main.js` 가 `requestAnimationFrame` 마다 경과 시간을 `FixedStepLoop.advance()` 에 넘김 → 고정 dt 로 `tick()` 0회 이상 → `render(state, alpha)`.
 
 ## 맵 생성
@@ -181,7 +210,7 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 ## 엔티티와 전투
 
 - **실시간이다.** 위치는 칸 단위 실수이고 칸 (x, y) 는 [x, x+1) × [y, y+1) 을 차지한다. 몸은 원이다(일반 적은 반지름 0.5 미만, 보스는 그보다 크다).
-- **틱 순서**(`logic/game.js` 의 `tick`): 상태이상 → 플레이어 조작 → 적 AI → 기술 발동 → 이동·충돌 → 돌진 명중 → 투사체 → 장판 → 죽음 처리 → 시야. 순서를 바꾸면 같은 시드·같은 입력의 결과가 달라진다.
+- **틱 순서**(`logic/game.js` 의 `tick`): 상태이상 → 플레이어 조작 → 적 AI → 기술 발동 → 이동·충돌 → 돌진 명중 → 투사체 → 장판 → 죽음 처리(처치 보상) → 줍기 → 물약 만료·재생 → 시야. 순서를 바꾸면 같은 시드·같은 입력의 결과가 달라진다.
 - **타이머는 정수 틱이다.** 데이터의 시간은 초로 적고 `ticksOf()` 로 바꾼다. "언제까지"는 `state.tick` 과 비교하는 틱 번호로 저장한다(실수 시간을 누적하지 않는다).
 - **입력**: ui 는 `setInput(state, { moveX, moveY, aimX, aimY, attack, skill, dodge })` 만 부른다. 조준이 0 이면 가까운 적을 자동으로 겨눈다.
 - **기술**은 플레이어·적·보스가 같은 형식(`data/player.js` 머리말)과 같은 실행기(`combat/abilities.js`)를 쓴다. 새 효과 종류는 `runEffects` 에 추가한다.
@@ -193,6 +222,19 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 - **같은 편끼리는 겹쳐 지나갈 수 있고**(약하게만 밀어냄), 플레이어와 적은 겹치지 않는다. 돌진·회피 중인 몸은 다른 몸을 통과한다.
 - 렌더가 읽을 것: `state.entities.byId`(행동체), `state.projectiles`, `state.hazards`, `state.vision.visible/explored`(안개), 그리고 이벤트(`core/events.js`).
 - 새 적을 추가하려면 `data/enemies.js` 에 정의하고 구역의 적 풀에 넣는다. 새 행동 방식은 `combat/ai/behaviors.js` 에 함수를 추가한다. `tests/logic/combat/data.test.js` 가 빠진 항목과 "아무것도 못 하는 거리 구간"을 잡아 준다.
+
+## 아이템과 성장
+
+- **능력치는 항상 처음부터 다시 합산한다**(`items/stats.js` 의 `computeSheet`). 장비·유물·강화·영구 효과·물약 효과가 바뀌면 `refreshPlayerStats(state)` 를 부른다. 능력치를 더했다 빼는 식으로 고치지 않는다 — 세트 효과가 두 번 들어가거나 값이 틀어지는 일을 원천적으로 막는다.
+- **능력치는 전부 정수**이고 목록·상한·하한은 `data/items.js` 의 `STATS` 에 있다. 새 능력치를 추가하면 `STATS`, `SCORE_WEIGHTS`, `entities/stats.js`(플레이어에 반영), `scripts/lib/item-checks.js`(독립 검사)를 함께 고친다.
+- **장비**: `{ kind:'equipment', uid, base, slot, rarity, ilvl, setId, implicit:[{stat,value}], affixes:[{stat,value}] }`. 옵션 값의 범위는 `optionRange(옵션, 등급, 레벨)` 한 곳에서 정해진다. 등급별 옵션 수와 배율은 `RARITY`.
+- **세트**: 2개 이상이면 2세트, 4개 이상이면 4세트 효과가 각각 한 번 붙는다(4개면 둘 다).
+- **피해 공식**: 효과의 기본 피해 × 가해자의 `power` × (치명타면 `critDamage`) → 정면 방어 → 방어력(받는 피해 × K ÷ (K + 방어력), `COMBAT.armorK`) → 반올림. 지속 피해는 공격력·방어력과 무관하다.
+- **난수**: 적 처치 보상·레벨업 후보·제단의 유물은 `rngOf(state, 'items')` 를 차례로 쓴다. 층의 상자·상점·제단은 `rngOf(state, 'items').fork(`floor:${n}`)` 에서 갈라 쓰므로 (런 시드, 층)으로 정해진다. 확률 굴림은 결과와 무관하게 같은 횟수만큼 굴린다(수치를 조정해도 뒤의 수열이 밀리지 않도록).
+- **강화 3택1 규칙**은 `data/upgrades.js` 머리말이 기준이다(중복·선행 조건·배타·시너지·채움 보상).
+- **난이도 곡선**은 `data/difficulty.js` 에 있고, `verify-items.mjs` 의 곡선 표로 맞춘다. 일반 층은 계산 지표(위협 = 적 하나를 잡는 시간 ÷ 버티는 시간)가, 보스는 실제 1:1 대결 승률이 층을 따라 고르게 변해야 한다. 급변 기준은 스크립트에 있다.
+- **메타 진행**은 `state.meta` 에 있다. `createGame({ seed, meta })` 로 넘기면 복사해서 쓰고, 런이 끝나면(`endRun`) 영혼석과 기록이 여기에 더해진다. 저장 단계에서는 런과 따로 보관해야 한다.
+- 소환·분열로 생긴 적과 플레이어가 잡지 않은 적은 경험치·전리품을 주지 않는다.
 
 ## 코드 규약
 
