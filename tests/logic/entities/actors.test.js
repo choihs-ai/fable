@@ -8,6 +8,7 @@ import { PHASE, STATE_VERSION } from '../../../src/logic/core/state.js';
 import { setInput } from '../../../src/logic/combat/player.js';
 import { allActors, findFreeSpot, getPlayer, opponentsOf, spawnEnemy, spawnPlayer } from '../../../src/logic/entities/actors.js';
 import { defOf, enemyDef, isBossType, statusResistOf } from '../../../src/logic/entities/defs.js';
+import { floorScaling } from '../../../src/logic/entities/scaling.js';
 import { isVisible } from '../../../src/logic/entities/vision.js';
 import { createGame, enterFloor, setPhase, tick } from '../../../src/logic/game.js';
 import { circleFree } from '../../../src/logic/world/collide.js';
@@ -39,7 +40,10 @@ test('층에 들어가면 플레이어가 시작점에, 맵의 배치대로 적�
       assert.equal(e.kind, isBossType(e.type) ? 'boss' : 'enemy');
       assert.equal(e.ai.mode, 'idle');
       assert.deepEqual([e.ai.homeX, e.ai.homeY], [e.x, e.y]);
-      assert.equal(e.hp, enemyDef(e.type).hp);
+      const scale = floorScaling(floor, isBossType(e.type));
+      assert.equal(e.maxHp, Math.round(enemyDef(e.type).hp * scale.hp), `${floor}층 ${e.type} 체력`);
+      assert.equal(e.hp, e.maxHp);
+      assert.equal(e.power, scale.damage);
       assert.ok(circleFree(nav, e.x, e.y, e.radius), `${floor}층 ${e.type} 가 벽과 겹침 @${e.x},${e.y} r=${e.radius}`);
     }
     assert.equal(new Set(allActors(state).map((a) => a.id)).size, allActors(state).length, 'id 중복 없음');
@@ -85,7 +89,7 @@ test('플레이어는 층을 넘어가도 유지되고, 적·투사체·장판�
 test('상태 버전과 새 항목', () => {
   const game = createGame({ seed: 'shape' });
   assert.equal(game.state.version, STATE_VERSION);
-  assert.ok(STATE_VERSION >= 3);
+  assert.ok(STATE_VERSION >= 4);
   assert.deepEqual(game.state.projectiles, []);
   assert.deepEqual(game.state.hazards, []);
   assert.equal(game.state.vision, null);

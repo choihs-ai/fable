@@ -18,7 +18,7 @@ const worldRng = (seed) => Rng.fromSeed(seed).fork('world');
 const FABLE_SUMMARY = [
   'rooms 40x40 open=606 start=8,35 stairs=32,17 spawns=10 events=-',
   'bossMid 21x37 open=321 start=10,33 stairs=10,3 spawns=2 events=-',
-  'cave 48x48 open=1405 start=4,22 stairs=39,36 spawns=13 events=altar',
+  'cave 48x48 open=1405 start=4,22 stairs=39,36 spawns=14 events=altar',
   'bossFinal 27x41 open=467 start=13,37 stairs=- spawns=1 events=-',
 ];
 

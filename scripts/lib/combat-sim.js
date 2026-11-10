@@ -31,7 +31,7 @@ export const DT = 1 / TICK_RATE;
 export const MODES = Object.freeze({
   /** 싸운다: 다가가 때리고, 기술을 쓰고, 예고된 공격을 절반쯤 피한다. */
   FIGHT: 'fight',
-  /** 싸우되 체력을 크게 늘린다 — 보스를 끝까지 잡아 모든 페이즈를 거치게 하려는 용도. */
+  /** 싸우되 체력을 400배로 늘린다 — 보스를 끝까지 잡아 모든 페이즈를 거치게 하려는 용도. */
   TANKY: 'tanky',
   /** 아무것도 하지 않는다 — 적이 가만히 있는 상대를 끝내 잡는지 본다. */
   PASSIVE: 'passive',
@@ -83,7 +83,8 @@ export function setupDuel({ seed, type, mode }) {
 
   const player = spawnPlayer(state, bus, map.start.x + 0.5, map.start.y + 0.5);
   if (mode === MODES.TANKY) {
-    player.maxHp *= 25;
+    // 층별 난이도로 강해진 보스도 끝까지 잡을 수 있을 만큼 넉넉히 늘린다.
+    player.maxHp *= 400;
     player.hp = player.maxHp;
   }
   resetVision(state);

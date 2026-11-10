@@ -16,7 +16,11 @@ test('초기 상태의 기본 구조', () => {
   assert.equal(state.tick, 0);
   assert.equal(state.phase, PHASE.TITLE);
   assert.deepEqual(Object.keys(state.rng), [...RNG_STREAMS]);
-  assert.deepEqual(state.run, { floor: 1 });
+  assert.equal(state.run.floor, 1);
+  assert.equal(state.run.level, 1);
+  assert.deepEqual([state.run.xp, state.run.kills, state.run.pendingChoices], [0, 0, 0]);
+  assert.deepEqual([state.run.upgrades, state.run.boons, state.run.buffs, state.run.choice], [{}, [], [], null]);
+  assert.deepEqual([state.inventory, state.meta, state.shop, state.altar, state.drops], [null, null, null, null, []]);
   assert.equal(state.world, null);
   assert.deepEqual(state.entities, { nextId: 1, byId: {} });
   assert.equal(state.playerId, null);
