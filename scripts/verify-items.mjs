@@ -382,6 +382,7 @@ function sectionChoices() {
         shortage[eligible]++;
         if (first === -1) first = pick;
       }
+      if (options.length === 0) break; // 후보가 하나도 없으면 위에서 이미 위반으로 기록됐다. 더 고를 수 없다.
       // 강화가 하나라도 있으면 강화 가운데서 무작위로 고른다(끝까지 다 찍어 후보가 바닥나는 상황을 만들기 위해).
       const upgradeSlots = options.map((o, i) => (o.kind === 'upgrade' ? i : -1)).filter((i) => i >= 0);
       const index = upgradeSlots.length > 0 ? rng.pick(upgradeSlots) : rng.int(0, options.length - 1);
