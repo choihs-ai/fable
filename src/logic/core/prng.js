@@ -148,6 +148,34 @@ export class Rng {
     return array[this.int(0, array.length - 1)];
   }
 
+  /**
+   * 가중치에 비례한 확률로 인덱스 하나를 고른다. 가중치는 0 이상의 유한한 수이고 합이 0보다 커야 한다.
+   * 난수를 정확히 한 번 소비한다.
+   * @param {number[]} weights
+   */
+  weightedIndex(weights) {
+    if (!Array.isArray(weights) || weights.length === 0) {
+      throw new RangeError('Rng.weightedIndex: 비어 있지 않은 가중치 배열이 필요합니다');
+    }
+    let total = 0;
+    for (const w of weights) {
+      if (typeof w !== 'number' || !Number.isFinite(w) || w < 0) {
+        throw new RangeError(`Rng.weightedIndex: 잘못된 가중치 ${w}`);
+      }
+      total += w;
+    }
+    if (!(total > 0)) throw new RangeError('Rng.weightedIndex: 가중치 합이 0보다 커야 합니다');
+    let r = this.float() * total;
+    let last = 0;
+    for (let i = 0; i < weights.length; i++) {
+      if (weights[i] === 0) continue;
+      last = i;
+      r -= weights[i];
+      if (r < 0) return i;
+    }
+    return last;
+  }
+
   /** 배열을 제자리에서 섞고(Fisher–Yates) 같은 배열을 돌려준다. */
   shuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {

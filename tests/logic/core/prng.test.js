@@ -324,3 +324,37 @@ test('shuffle 은 모든 순열을 고르게 만든다(원소 3개 → 6가지)'
   assert.equal(counts.size, 6);
   for (const [key, count] of counts) assert.ok(Math.abs(count - 2000) < 200, `${key}: ${count}`);
 });
+
+test('weightedIndex 는 가중치에 비례해 고르고 가중치 0 은 절대 고르지 않는다', () => {
+  const rng = Rng.fromSeed('weights');
+  const counts = [0, 0, 0, 0];
+  for (let i = 0; i < 40_000; i++) counts[rng.weightedIndex([1, 0, 3, 4])]++;
+
+  assert.equal(counts[1], 0);
+  assert.ok(Math.abs(counts[0] / 40_000 - 1 / 8) < 0.01, `비율 ${counts[0] / 40_000}`);
+  assert.ok(Math.abs(counts[2] / 40_000 - 3 / 8) < 0.015, `비율 ${counts[2] / 40_000}`);
+  assert.ok(Math.abs(counts[3] / 40_000 - 4 / 8) < 0.015, `비율 ${counts[3] / 40_000}`);
+  assert.equal(rng.weightedIndex([0, 0, 5]), 2);
+  assert.equal(rng.weightedIndex([7]), 0);
+});
+
+test('weightedIndex 는 난수를 정확히 한 번 소비하고 결과가 재현된다', () => {
+  const a = Rng.fromSeed('fable');
+  const b = Rng.fromSeed('fable');
+  a.weightedIndex([1, 2, 3]);
+  b.nextUint32();
+  assert.equal(a.nextUint32(), b.nextUint32());
+
+  const picks = (seed) => {
+    const rng = Rng.fromSeed(seed);
+    return Array.from({ length: 20 }, () => rng.weightedIndex([5, 3, 2]));
+  };
+  assert.deepEqual(picks('fable'), picks('fable'));
+});
+
+test('weightedIndex 는 잘못된 가중치를 거부한다', () => {
+  const rng = Rng.fromSeed('weights');
+  for (const bad of [[], [0, 0], [1, -1], [1, NaN], [1, Infinity], [1, '2'], 'abc', null]) {
+    assert.throws(() => rng.weightedIndex(bad), RangeError, JSON.stringify(bad));
+  }
+});

@@ -3,7 +3,7 @@
 import { LOOP, RENDER } from '../data/config.js';
 import { FixedStepLoop } from './logic/core/loop.js';
 import { PHASE } from './logic/core/state.js';
-import { createGame, setPhase, tick } from './logic/game.js';
+import { createGame, enterFloor, setPhase, tick } from './logic/game.js';
 import { createRenderer } from './render/renderer.js';
 import { createDebugOverlay } from './ui/debug-overlay.js';
 
@@ -30,7 +30,8 @@ const loop = new FixedStepLoop({
   update: (dtSec) => tick(game, dtSec),
 });
 
-// TODO(ui 단계): 타이틀 화면이 생기면 바로 PLAYING 으로 넘어가지 않는다.
+// TODO(ui 단계): 타이틀 화면이 생기면 바로 1층에 들어가 PLAYING 으로 넘어가지 않는다.
+enterFloor(game, 1);
 setPhase(game, PHASE.PLAYING);
 
 let lastTime = null;

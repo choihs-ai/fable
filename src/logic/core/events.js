@@ -4,4 +4,6 @@
 export const EVENTS = Object.freeze({
   /** payload: { from: string, to: string } */
   PHASE_CHANGED: 'phase:changed',
+  /** payload: { floor: number, zoneId: string, kind: string } — state.world 가 새 층으로 바뀐 직후 */
+  FLOOR_ENTERED: 'floor:entered',
 });

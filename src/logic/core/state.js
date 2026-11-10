@@ -4,7 +4,7 @@
 import { Rng } from './prng.js';
 
 /** 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다. */
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
@@ -38,7 +38,7 @@ export function createInitialState({ seed }) {
     run: {
       floor: 1,
     },
-    /** 현재 층 맵. TODO(world 단계): 맵 생성 결과를 넣는다. */
+    /** 현재 층 맵(logic/world/generate.js 의 결과). 층에 들어가기 전에는 null. */
     world: null,
     entities: {
       nextId: 1,

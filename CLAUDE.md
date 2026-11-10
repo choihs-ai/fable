@@ -27,7 +27,11 @@
 node scripts/run-tests.mjs          # 전체 테스트 (= node --test, npm test)
 node scripts/run-tests.mjs prng     # 경로에 "prng" 가 들어간 테스트만
 node scripts/serve.mjs              # http://127.0.0.1:8000 (--port, --host 0.0.0.0)
+node scripts/verify-maps.mjs        # 맵 생성 대량 검증: 시드 5000개 × 전 층 (약 40초)
+node scripts/verify-maps.mjs --show <시드> <층>   # 한 층을 글자로 출력
 ```
+
+`src/logic/world/**` 나 `data/world.js`·`data/zones.js` 를 바꾸면 `verify-maps.mjs` 를 다시 돌리고, 실패 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 실패한 시드는 시드 값·층과 함께 기록한다.
 
 ES 모듈은 `file://` 로 열 수 없으므로 브라우저 확인은 항상 로컬 서버를 거친다.
 
@@ -40,8 +44,11 @@ index.html                 진입 HTML. importmap(Three.js 버전 고정) + 캔�
 package.json               "type": "module" 선언과 스크립트 별칭만. 의존성 없음
 .nojekyll                  GitHub Pages 가 Jekyll 처리 없이 그대로 배포하도록
 CLAUDE.md  BUGS.md  TODO.md  README.md
-data/                      설정·밸런스 수치 (순수 값, import 없음)
+data/                      설정·밸런스 수치 (순수 값, data 끼리만 import)
   config.js                루프 주파수, 렌더 설정
+  world.js                 맵 생성 수치: 재시도 상한, 배치 거리, 생성기·보스층 설정
+  zones.js                 구역 6개: 맵 크기, 알고리즘 비율, 타일셋, 색감, 적 풀, 보스
+  freeze.js                설정 객체 동결 도우미
 src/
   main.js                  조립 지점: 로직·렌더·UI 를 만들어 연결하는 유일한 곳
   logic/                   ── 순수 로직 (DOM·Three.js 금지, Node 테스트 대상)
@@ -52,7 +59,18 @@ src/
       events.js            이벤트 이름 상수
       state.js             게임 상태 구조, 페이즈, RNG 스트림
       loop.js              고정 타임스텝 루프 (시간은 주입)
-    world/      (예정)     맵 생성
+    world/                 맵 생성 (아래 "맵 생성" 참고)
+      generate.js          진입점: generateFloor, 재시도 상한, 비상 레이아웃
+      floors.js            층 계획: 층 → 구역·종류(일반/중간보스/최종보스)
+      gen-rooms.js         방+복도(BSP)
+      gen-cave.js          동굴형(셀룰러 오토마타)
+      gen-boss.js          보스층 전용 레이아웃
+      connect.js           연결 보정: 떨어진 구역을 잇거나 메움
+      event-rooms.js       이벤트방(상점·제단)
+      place.js             적·아이템 배치
+      validate.js          검증기: 층이 규칙을 지키는지 확인
+      grid.js  tiles.js    격자 탐색 도구, 타일 종류
+      ascii.js             맵을 글자로 출력(디버그)
     items/      (예정)     아이템 정의·획득·사용
     entities/   (예정)     플레이어·적, 이동, AI
     combat/     (예정)     피해 계산, 상태이상
@@ -68,10 +86,12 @@ src/
 scripts/
   run-tests.mjs            테스트 러너
   serve.mjs                로컬 정적 서버
+  verify-maps.mjs          맵 생성 대량 검증(시드 × 전 층, 통계 출력)
 tests/                     src 와 같은 경로 구조. *.test.js
   architecture.test.js     아래 의존 규칙을 자동 검사
   helpers/architecture.js  규칙 정의(LAYERS, LOGIC_RANK)와 검사기
   logic/core/*.test.js
+  logic/world/*.test.js
 ```
 
 모듈과 디렉터리의 대응: core·entities·combat·items 는 `src/logic/<모듈>`, world 는 `src/logic/world`(생성) + `src/render/world`(그리기), save 는 `src/logic/save`(직렬화) + `src/save`(저장소), ui·audio 는 `src/ui`·`src/audio`.
@@ -111,10 +131,21 @@ core(0) ◀ world(1), items(1) ◀ entities(2) ◀ combat(3) ◀ save(4) ◀ gam
 - **바깥 → 로직**: ui 는 상태를 직접 고치지 않는다. 입력은 커맨드로 만들어 로직에 넘긴다(입력 단계에서 구현, `TODO.md`).
 - **프레임**: `main.js` 가 `requestAnimationFrame` 마다 경과 시간을 `FixedStepLoop.advance()` 에 넘김 → 고정 dt 로 `tick()` 0회 이상 → `render(state, alpha)`.
 
+## 맵 생성
+
+- 전체 30층 = 구역 6개 × 5층(`data/zones.js` 순서대로). 구역 마지막 층은 `zone.boss` 가 있으면 보스층이다(지금은 5·15·25층 중간보스, 30층 최종보스).
+- `generateFloor({ seed, floor })` 는 (런 시드, 층 번호)만으로 결정된다. 층을 만드는 순서·횟수와 무관하고, 상태의 난수 스트림을 소비하지 않는다.
+- 난수 흐름: 런 시드 → `fork('world')` → `fork('floor:N')` → `fork('algorithm')` / `fork('attempt:K')` / `fork('fallback')`, 시도 안에서는 `fork('layout')` / `fork('events')` / `fork('place')`. 새 난수 용도가 생기면 기존 스트림에 끼워 넣지 말고 fork 를 추가한다(기존 결과가 밀리지 않도록).
+- 맵은 격자 타일이다. `tiles[y * width + x]` 가 `0`(벽) 또는 `1`(바닥)이고, 이동·연결은 상하좌우 4방향으로만 센다.
+- 맵 객체: `{ floor, zoneId, kind, algorithm, width, height, tiles, start, stairs, rooms, eventRooms, spawns, gen }`. 최종보스층은 `stairs` 가 `null` 이다. `spawns` 는 `{ kind: 'enemy'|'boss'|'item', id?, x, y }`.
+- 생성기는 `validateFloor` 를 통과한 층만 내보낸다. 실패한 시도는 버리고 다시 만들며, `WORLD.maxAttempts` 번을 넘기면 큰 방 하나짜리 비상 레이아웃으로 대체한다.
+- 규칙(전부 `validate.js` 가 검사): 테두리는 벽 / 시작점에서 모든 바닥에 닿을 수 있음(상인·제단 칸은 막힌 것으로 봄) / 계단·적·아이템·이벤트방은 시작점에서 정해진 걸음 수 이상 / 같은 칸에 둘 이상 놓지 않음 / 이벤트방 안에는 적·아이템·시작점·계단이 없음.
+- 규칙을 추가·변경하면 `validate.js`, `tests/logic/world/validate.test.js`, `scripts/verify-maps.mjs` 의 독립 검사를 함께 고친다.
+
 ## 코드 규약
 
 - **상태는 JSON 으로 그대로 직렬화되는 평범한 객체다.** 클래스 인스턴스·함수·Map/Set·순환 참조를 상태에 넣지 않는다. 구조를 바꾸면 `STATE_VERSION` 을 올린다.
 - **난수 쓰는 법**: 모듈은 `rngOf(state, '<스트림>')` 로 자기 스트림을 꺼내 쓴다. 스트림은 `RNG_STREAMS`(world, entities, combat, items)에 있다. 층·방처럼 "언제 뽑든 결과가 같아야 하는 것"은 `rngOf(state, 'world').fork(`floor:${n}`)` 처럼 fork 한다 — fork 는 부모를 소비하지 않고 라벨만으로 결정된다.
-- `tests/logic/core/prng.test.js` 의 고정값 테스트가 깨지면 기존 시드·세이브의 결과가 바뀐다는 뜻이다. 의도한 변경이 아니면 구현을 되돌린다.
+- `tests/logic/core/prng.test.js` 와 `tests/logic/world/generate.test.js` 의 고정값 테스트가 깨지면 기존 시드·세이브의 결과가 바뀐다는 뜻이다. 의도한 변경이 아니면 구현을 되돌린다. 의도한 변경이면 값을 갱신하고 `BUGS.md` 에 적는다.
 - 로직 함수는 잘못된 인자에 예외를 던진다(조용히 넘어가지 않는다).
 - 주석·문서·테스트 이름은 한국어로 쓴다.
