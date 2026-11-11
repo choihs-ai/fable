@@ -1,161 +1,352 @@
-// 행동체(플레이어·적·보스) 그리기. 행동체마다 작은 그룹(몸통, 방향 표시, 체력 막대, 상태이상 원)을 풀에서 꺼내 쓴다.
-// 지오메트리·머티리얼은 공유 자원이다. 위치는 직전 틱과 이번 틱 사이를 alpha 로 보간한다.
+// 행동체 그리기: 플레이어·적·보스를 로우폴리 모델로 그리고, 걷기·공격·준비·피격·대시 자세를 매 프레임 계산한다.
+//
+// - 위치는 직전 틱과 이번 틱 사이를 alpha 로 보간한다. 처음 본 행동체·순간이동·틱을 건너뛴 경우는 보간하지 않는다.
+// - 공격·피격은 이벤트로만 알 수 있으므로 renderer 가 이벤트를 받아 attack()/hurt() 를 부른다.
+// - 쓰러진 적은 목록에서 사라지지만, 그 모델은 맞은 방향으로 튕겨 나가는 연출(FEEL.corpse)을 마친 뒤에야 풀로 돌아간다.
+// - 모델은 생김새(종류)별로 풀에 모아 다시 쓴다. 모델은 공유 지오메트리·머티리얼만 쓰므로 GPU 자원을 늘리지 않는다.
 
 import * as THREE from 'three';
-import { RENDER } from '../../../data/config.js';
-import { isVisible } from '../../logic/entities/vision.js';
-import { createPool } from '../pool.js';
+import { LOOP, RENDER } from '../../../data/config.js';
+import { FEEL } from '../../../data/feel.js';
+import { WEAPONS } from '../../../data/weapons.js';
+import { defOf } from '../../logic/entities/defs.js';
+import { LOOKS, buildFigure, equip, lookOf } from './models.js';
+import { SWING, corpseAt, poseOf } from './pose.js';
 
-const STATUS_COLORS = { poison: 0x7fd14a, burn: 0xff7a2a, bleed: 0xc0283a, slow: 0x6aa8ff, freeze: 0x9fe8ff, stun: 0xffe14a };
-/** 카메라가 내려다보는 각도에 맞춰 체력 막대를 눕힌다. */
-const BAR_TILT = -Math.atan2(RENDER.camera.height, RENDER.camera.back);
+const TICK_SEC = 1 / LOOP.tickRate;
+const STATUS_COLORS = { burn: 0xff7a3a, freeze: 0x8ae4ff, slow: 0x5a8aff, stun: 0xffe14a, poison: 0x7ad35a, bleed: 0xd83a4a, warp: 0x8a7cff };
+const STATUS_PRIORITY = ['freeze', 'stun', 'warp', 'burn', 'poison', 'bleed', 'slow'];
+const ATTACK_SEC = 0.28;
 
-/** 종류 이름에서 색을 정한다(같은 종류는 언제나 같은 색). */
-function colorOfType(type) {
-  let hash = 0;
-  for (let i = 0; i < type.length; i++) hash = Math.imul(hash ^ type.charCodeAt(i), 0x01000193) >>> 0;
-  return new THREE.Color().setHSL((hash % 360) / 360, 0.42, 0.56).getHex();
+/** 모델의 키(풀의 서랍): 생김새와 정예 여부. */
+const keyOf = (type, elite) => `${type}${elite ? ':elite' : ''}`;
+/** 플레이어의 생김새는 캐릭터로 정한다. */
+const lookKeyOf = (actor) => (actor.kit ? actor.kit.character : actor.type);
+/** 적이 쓰는 무기 모양. 플레이어는 든 무기. */
+function weaponLookOf(actor, look) {
+  if (actor.kit) {
+    const id = actor.kit.weapons[actor.kit.slot];
+    return id ? WEAPONS[id].look : null;
+  }
+  return look.weapon === undefined ? 'claw' : look.weapon;
 }
 
 export function createActorViews({ scene, assets }) {
-  const typeColors = new Map();
-  const colorFor = (actor) => {
-    if (actor.kind === 'player') return RENDER.colors.player;
-    if (actor.kind === 'boss') return RENDER.colors.boss;
-    if (!typeColors.has(actor.type)) typeColors.set(actor.type, colorOfType(actor.type));
-    return typeColors.get(actor.type);
-  };
-
-  const pool = createPool({
-    max: 192,
-    create() {
-      const group = new THREE.Group();
-      const pivot = new THREE.Group();
-      const body = new THREE.Mesh(assets.geometries.body, assets.lit(0xffffff));
-      const nose = new THREE.Mesh(assets.geometries.nose, assets.lit(0xffffff));
-      body.castShadow = true;
-      pivot.add(body, nose);
-      const ring = new THREE.Mesh(assets.geometries.disc, assets.flat(0xffffff, 0.45));
-      ring.position.y = 0.03;
-      const barBack = new THREE.Mesh(assets.geometries.bar, assets.materials.barBack);
-      const barFill = new THREE.Mesh(assets.geometries.bar, assets.materials.barFill);
-      barBack.rotation.x = BAR_TILT;
-      barFill.rotation.x = BAR_TILT;
-      barBack.renderOrder = 10;
-      barFill.renderOrder = 11;
-      group.add(pivot, ring, barBack, barFill);
-      scene.add(group);
-      return { group, pivot, body, nose, ring, barBack, barFill, id: 0, prevX: 0, prevY: 0, x: 0, y: 0, flash: 0, fresh: true };
-    },
-    activate(view) {
-      view.group.visible = true;
-      view.fresh = true;
-      view.flash = 0;
-    },
-    deactivate(view) {
-      view.group.visible = false;
-      view.id = 0;
-    },
-  });
+  /** 키 → 쉬고 있는 모델들. */
+  const free = new Map();
   /** 행동체 id → 뷰. */
   const views = new Map();
+  /** 쓰러져 날아가는 중인 뷰. */
+  const corpses = [];
+  let created = 0;
   let lastTick = -1;
+  let clock = 0;
+  const barBack = [];
+
+  function acquire(key, look, elite) {
+    const list = free.get(key);
+    if (list && list.length > 0) {
+      const fig = list.pop();
+      fig.root.visible = true;
+      return fig;
+    }
+    created++;
+    const fig = buildFigure(assets, look, { elite });
+    // 체력 막대(적만 쓴다)와 상태이상 고리.
+    fig.bar = new THREE.Group();
+    const back = new THREE.Mesh(assets.geometries.bar, assets.materials.barBack);
+    const fill = new THREE.Mesh(assets.geometries.bar, assets.materials.barFill);
+    back.position.x = -0.5;
+    fill.position.x = -0.5;
+    back.renderOrder = 10;
+    fill.renderOrder = 11;
+    fig.bar.add(back, fill);
+    fig.barFill = fill;
+    fig.bar.visible = false;
+    scene.add(fig.bar);
+    barBack.push(fig.bar);
+    fig.ring = new THREE.Mesh(assets.geometries.ring, assets.flat(0xffffff, 0.8));
+    fig.ring.position.y = 0.02;
+    fig.ring.visible = false;
+    fig.root.add(fig.ring);
+    scene.add(fig.root);
+    return fig;
+  }
+
+  function release(view) {
+    const { fig } = view;
+    fig.root.visible = false;
+    fig.bar.visible = false;
+    setFlash(fig, false);
+    if (!free.has(view.key)) free.set(view.key, []);
+    free.get(view.key).push(fig);
+  }
+
+  function setFlash(fig, on) {
+    if (fig.flashing === on) return;
+    fig.flashing = on;
+    for (const p of fig.parts) p.mesh.material = on ? assets.materials.flash : p.material;
+  }
+
+  function createView(actor) {
+    const lookKey = lookKeyOf(actor);
+    const look = lookOf(lookKey);
+    const key = keyOf(lookKey, actor.elite);
+    const fig = acquire(key, look, actor.elite);
+    const view = {
+      key, fig, look, id: actor.id, kind: actor.kind,
+      prevX: actor.x, prevY: actor.y, x: actor.x, y: actor.y,
+      walk: 0, speed: 0, yaw: Math.atan2(actor.facingX, actor.facingY), weaponLook: undefined,
+      attackAt: -1, swing: 'slash', hurtAt: -1, flashUntil: -1, offhand: false,
+    };
+    const size = actor.radius / 0.32;
+    fig.root.scale.setScalar(look.form === 'biped' && actor.kind !== 'boss' ? Math.max(0.85, Math.min(1.3, size)) : actor.kind === 'boss' ? 1 : size);
+    if (actor.elite) fig.root.scale.multiplyScalar(1.15);
+    fig.shadow.scale.setScalar(actor.radius * 1.25 / fig.root.scale.x);
+    return view;
+  }
+
+  function syncWeapon(view, actor) {
+    const look = weaponLookOf(actor, view.look);
+    if (look === view.weaponLook) return;
+    view.weaponLook = look;
+    equip(assets, view.fig, look);
+  }
+
+  function windupOf(actor) {
+    if (!actor.action || actor.action.phase !== 'windup') return -1;
+    const ability = defOf(actor).abilities[actor.action.ability];
+    const total = Math.max(1, Math.round((ability && ability.windup ? ability.windup : 0) * LOOP.tickRate));
+    return 1 - Math.max(0, actor.action.until - lastTick) / total;
+  }
+
+  function pose(view, actor, alpha, dtSec) {
+    const { fig } = view;
+    const x = view.prevX + (view.x - view.prevX) * alpha;
+    const y = view.prevY + (view.y - view.prevY) * alpha;
+    fig.root.position.set(x, 0, y);
+    // 바라보는 방향: 짧은 쪽으로 돌린다.
+    const target = Math.atan2(actor.facingX, actor.facingY);
+    let d = target - view.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    view.yaw += d * Math.min(1, dtSec * 18);
+    fig.root.rotation.y = view.yaw;
+
+    // 걸음: 실제로 움직인 거리만큼 위상이 돈다.
+    const moved = Math.hypot(view.x - view.prevX, view.y - view.prevY) / TICK_SEC;
+    const speedNow = Math.min(1, moved / Math.max(1, actor.speed));
+    view.speed += (speedNow - view.speed) * Math.min(1, dtSec * 12);
+    view.walk += moved * dtSec * 4.2 / Math.max(0.6, view.look.scale);
+    const attackT = view.attackAt >= 0 ? (clock - view.attackAt) / ATTACK_SEC : -1;
+    if (attackT > 1) view.attackAt = -1;
+    const hurt = view.hurtAt >= 0 ? Math.max(0, 1 - (clock - view.hurtAt) / 0.25) : 0;
+    const p = poseOf({
+      walk: view.walk, speed: view.speed, attack: attackT > 1 ? -1 : attackT, swing: view.swing, windup: windupOf(actor),
+      hurt, dash: actor.dash !== null, time: clock + view.id,
+    });
+    const { body } = fig;
+    body.position.y = (fig.form === 'biped' ? 0.5 : fig.form === 'bat' ? fig.hover + Math.sin(clock * 9 + view.id) * 0.08 : 0.22) + p.bob;
+    body.rotation.set(p.lean, p.twist, 0);
+    body.scale.set(1, p.squash, 1);
+    if (fig.form === 'biped') {
+      fig.legL.rotation.x = p.legL;
+      fig.legR.rotation.x = p.legR;
+      // 좀비는 두 팔을 앞으로 내밀고 걷는다.
+      fig.armL.rotation.set(view.look.reach ? -1.3 + p.armL * 0.2 : p.armL, 0, -0.08);
+      fig.armR.rotation.set(view.look.reach ? -1.3 + p.armR * 0.2 : p.armR, 0, p.armRSide * 0.5 + 0.08);
+      if (view.offhand && attackT >= 0 && attackT <= 1) fig.armL.rotation.x = p.armR;
+      if (fig.weapon) fig.weapon.position.y = -p.weaponPush;
+      fig.head.rotation.x = p.head;
+    } else if (fig.form === 'bat') {
+      const flap = Math.sin(clock * 22 + view.id) * 0.9;
+      fig.wings[0].rotation.z = flap;
+      fig.wings[1].rotation.z = -flap;
+    } else if (fig.quadLegs) {
+      fig.quadLegs.forEach((leg, i) => {
+        leg.rotation.x = Math.sin(view.walk * 1.6 + (i % 2 === 0 ? 0 : Math.PI) + (i > 1 ? Math.PI : 0)) * 0.7 * view.speed;
+      });
+    }
+    // 맞았을 때 하얗게 번쩍인다.
+    setFlash(fig, clock < view.flashUntil);
+
+    // 상태이상 고리.
+    let status = null;
+    for (const id of STATUS_PRIORITY) {
+      if (actor.statuses[id]) {
+        status = id;
+        break;
+      }
+    }
+    fig.ring.visible = status !== null;
+    if (status) {
+      fig.ring.material = assets.flat(STATUS_COLORS[status], 0.75);
+      fig.ring.scale.setScalar((actor.radius + 0.18) / fig.root.scale.x);
+    }
+    // 체력 막대: 다친 적만.
+    const showBar = actor.kind === 'enemy' && actor.hp < actor.maxHp;
+    fig.bar.visible = showBar;
+    if (showBar) {
+      const height = (fig.form === 'bat' ? 1.5 : fig.form === 'quad' ? 0.8 : 1.45 * view.look.scale) * fig.root.scale.x;
+      fig.bar.position.set(x, height, y);
+      fig.bar.scale.setScalar(Math.max(0.6, actor.radius * 2));
+      fig.barFill.scale.x = Math.max(0, actor.hp / actor.maxHp);
+      fig.barFill.material = actor.elite ? assets.materials.barBoss : assets.materials.barFill;
+    }
+  }
 
   return {
     /**
-     * 상태에 맞춰 뷰를 만들고 없애고 갱신한다.
      * @param {object} state 로직 상태(읽기만 한다)
-     * @param {number} alpha 직전 틱과 이번 틱 사이의 보간 계수
-     * @param {number} dtSec 프레임 길이
+     * @param {number} alpha
+     * @param {number} dtSec
+     * @param {number} time 렌더러의 시계(초)
      */
-    update(state, alpha, dtSec) {
-      const byId = state.entities.byId;
-      const ticked = state.tick !== lastTick;
-      const jumped = state.tick - lastTick !== 1;
-      lastTick = state.tick;
-
-      for (const [id, view] of views) {
-        if (!Object.hasOwn(byId, id) || pool.active.indexOf(view) === -1) {
-          pool.release(view);
-          views.delete(id);
-        }
-      }
-      for (const key of Object.keys(byId)) {
-        const actor = byId[key];
-        let view = views.get(key);
+    update(state, alpha, dtSec, time) {
+      clock = time;
+      const tickChanged = state.tick !== lastTick;
+      const seen = new Set();
+      for (const key of Object.keys(state.entities.byId)) {
+        const actor = state.entities.byId[key];
+        seen.add(actor.id);
+        let view = views.get(actor.id);
         if (!view) {
-          view = pool.acquire();
-          // 풀이 가득 차 다른 행동체의 뷰를 되돌려 받았다면 그쪽 연결을 끊는다.
-          if (view.id) views.delete(String(view.id));
-          view.id = actor.id;
-          views.set(key, view);
-          const r = actor.radius;
-          const tall = actor.kind === 'boss' ? 1.5 + r : 0.75 + r;
-          view.body.scale.set(r * 2, tall, r * 2);
-          view.body.material = assets.lit(colorFor(actor));
-          view.nose.material = view.body.material;
-          view.nose.position.set(0, tall * 0.62, r * 0.6);
-          view.ring.scale.setScalar(r * 1.5);
-          view.barBack.position.set(-0.5, tall + 0.35, 0);
-          view.barFill.position.set(-0.5, tall + 0.35, 0);
-          view.barFill.material = actor.kind === 'boss' ? assets.materials.barBoss : assets.materials.barFill;
-          view.tall = tall;
+          view = createView(actor);
+          views.set(actor.id, view);
+        } else if (tickChanged) {
+          view.prevX = view.x;
+          view.prevY = view.y;
+          // 한 틱에 2칸 넘게 움직였으면 순간이동이다. 보간하지 않는다.
+          if (Math.hypot(actor.x - view.x, actor.y - view.y) > 2 || state.tick - lastTick > 3) {
+            view.prevX = actor.x;
+            view.prevY = actor.y;
+          }
         }
-        if (ticked || view.fresh) {
-          const dx = actor.x - view.x;
-          const dy = actor.y - view.y;
-          // 처음 보는 행동체, 틱을 건너뛴 경우(불러오기), 순간이동은 보간하지 않는다.
-          const snap = view.fresh || jumped || dx * dx + dy * dy > 4;
-          view.prevX = snap ? actor.x : view.x;
-          view.prevY = snap ? actor.y : view.y;
-          view.x = actor.x;
-          view.y = actor.y;
-          view.fresh = false;
+        view.x = actor.x;
+        view.y = actor.y;
+        syncWeapon(view, actor);
+        if (actor.dead && actor.kind === 'player') {
+          // 쓰러진 플레이어: 누운 자세.
+          view.fig.root.position.set(actor.x, 0, actor.y);
+          view.fig.body.rotation.set(-Math.PI / 2 + 0.2, 0, 0);
+          view.fig.body.position.y = 0.2;
+          setFlash(view.fig, false);
+          continue;
         }
-        const x = view.prevX + (view.x - view.prevX) * alpha;
-        const y = view.prevY + (view.y - view.prevY) * alpha;
-        view.group.position.set(x, 0, y);
-        view.pivot.rotation.y = Math.atan2(actor.facingX, actor.facingY);
-
-        const isPlayer = actor.kind === 'player';
-        view.group.visible = isPlayer || (!actor.dead && isVisible(state, actor.x, actor.y));
-        // 맞았을 때 잠깐 부풀고, 죽은 플레이어는 눕는다.
-        view.flash = Math.max(0, view.flash - dtSec * 6);
-        const pulse = 1 + view.flash * 0.25;
-        view.pivot.scale.set(pulse, actor.dead ? 0.25 : pulse, pulse);
-
-        const hurt = !actor.dead && (actor.kind === 'boss' || (!isPlayer && actor.hp < actor.maxHp));
-        view.barBack.visible = hurt;
-        view.barFill.visible = hurt;
-        if (hurt) view.barFill.scale.x = Math.max(0.001, actor.hp / actor.maxHp);
-
-        const statuses = Object.keys(actor.statuses);
-        view.ring.visible = statuses.length > 0 && !actor.dead;
-        if (view.ring.visible) view.ring.material = assets.flat(STATUS_COLORS[statuses[0]] ?? 0xffffff, 0.45);
+        pose(view, actor, alpha, dtSec);
       }
+      // 목록에서 사라진 행동체: 쓰러짐 연출이 걸려 있지 않으면 바로 돌려놓는다.
+      for (const [id, view] of views) {
+        if (seen.has(id)) continue;
+        views.delete(id);
+        if (!view.dying) release(view);
+      }
+      // 쓰러져 날아가는 몸.
+      for (let i = corpses.length - 1; i >= 0; i--) {
+        const c = corpses[i];
+        c.t += dtSec;
+        const life = FEEL.corpse.life;
+        if (c.t >= life) {
+          corpses.splice(i, 1);
+          c.view.dying = false;
+          release(c.view);
+          continue;
+        }
+        const at = corpseAt(c.motion, c.t);
+        const { fig } = c.view;
+        fig.root.position.set(c.x + at.dx, at.h, c.y + at.dz);
+        fig.body.rotation.set(-at.roll, fig.body.rotation.y, 0);
+        const fade = 1 - Math.max(0, (c.t - life * 0.6) / (life * 0.4));
+        fig.root.scale.setScalar(c.scale * Math.max(0.05, fade));
+        fig.bar.visible = false;
+        fig.ring.visible = false;
+        setFlash(fig, c.t < FEEL.flash.hit);
+      }
+      lastTick = state.tick;
     },
-    /** 맞았다는 표시. */
-    flash(id) {
-      const view = views.get(String(id));
-      if (view) view.flash = 1;
+    /** 공격 자세를 시작한다(이벤트로 안다). weaponLook 을 주면 그 무기의 휘두름. */
+    attack(id, weaponLook, offhand = false) {
+      const view = views.get(id);
+      if (!view) return;
+      view.attackAt = clock;
+      view.swing = SWING[weaponLook ?? view.weaponLook ?? 'none'] ?? 'slash';
+      view.offhand = offhand;
     },
-    /** 화면에 그려지고 있는 위치(카메라가 따라갈 곳). 없으면 null. */
+    /** 맞았다: 번쩍이고 움찔한다. */
+    hurt(id, isPlayer) {
+      const view = views.get(id);
+      if (!view) return;
+      view.hurtAt = clock;
+      view.flashUntil = clock + (isPlayer ? FEEL.flash.hurt : FEEL.flash.hit);
+    },
+    /**
+     * 쓰러졌다: 그 몸을 맞은 방향으로 튕겨 보낸다. kbX/kbY 가 작으면 fromX/fromY 의 반대쪽으로.
+     */
+    die(id, { x, y, kbX, kbY, fromX, fromY }) {
+      const view = views.get(id);
+      if (!view || view.kind === 'player') return;
+      let vx = kbX * FEEL.corpse.speedMul;
+      let vy = kbY * FEEL.corpse.speedMul;
+      const speed = Math.hypot(vx, vy);
+      if (speed < FEEL.corpse.minSpeed) {
+        let dx = x - fromX;
+        let dy = y - fromY;
+        const d = Math.hypot(dx, dy) || 1;
+        dx /= d;
+        dy /= d;
+        vx = dx * FEEL.corpse.minSpeed;
+        vy = dy * FEEL.corpse.minSpeed;
+      }
+      view.dying = true;
+      corpses.push({ view, x, y, t: 0, scale: view.fig.root.scale.x, motion: { vx, vy, up: FEEL.corpse.up, gravity: FEEL.corpse.gravity, spin: FEEL.corpse.spin } });
+      // 같은 몸이 corpses 에 있는 동안 새 행동체에 쓰이지 않도록 views 에서 미리 뺀다.
+      views.delete(id);
+    },
+    /** 손끝(총구) 위치: 총구 섬광·탄피용. */
+    muzzleOf(id) {
+      const view = views.get(id);
+      if (!view || !view.fig.hand) return null;
+      const v = new THREE.Vector3(0, -(view.fig.tip ?? 0.3), 0);
+      view.fig.hand.localToWorld(v);
+      return v;
+    },
+    /** 화면에 그리고 있는 위치(카메라 추적용). */
     positionOf(id) {
-      const view = views.get(String(id));
-      return view ? { x: view.group.position.x, y: view.group.position.z, tall: view.tall } : null;
+      const view = views.get(id);
+      return view ? { x: view.fig.root.position.x, y: view.fig.root.position.z } : null;
     },
-    /** 층을 옮길 때: 뷰를 모두 풀로 돌려놓는다(버리지 않고 다음 층에서 다시 쓴다). */
+    /** 미리 컴파일용: 모든 생김새를 하나씩 만들어 둔다(층에 들어갈 때 셰이더가 처음 쓰이며 멈칫하지 않도록). */
+    prewarm() {
+      const made = [];
+      for (const type of Object.keys(LOOKS)) {
+        for (const elite of [false, true]) {
+          const fig = acquire(keyOf(type, elite), LOOKS[type], elite);
+          for (const look of Object.values(WEAPONS).map((w) => w.look)) equip(assets, fig, look);
+          equip(assets, fig, null);
+          setFlash(fig, true);
+          made.push({ fig, key: keyOf(type, elite) });
+        }
+      }
+      return () => {
+        for (const { fig, key } of made) release({ fig, key });
+      };
+    },
     clear() {
-      pool.releaseAll();
+      for (const view of views.values()) release(view);
       views.clear();
+      for (const c of corpses) release(c.view);
+      corpses.length = 0;
       lastTick = -1;
     },
     stats() {
-      return pool.stats();
+      let resting = 0;
+      for (const list of free.values()) resting += list.length;
+      return { created, active: views.size, corpses: corpses.length, free: resting, max: RENDER.pools.actors };
     },
     dispose() {
-      pool.forEach((view) => scene.remove(view.group));
-      views.clear();
+      this.clear();
+      for (const list of free.values()) for (const fig of list) scene.remove(fig.root);
+      for (const bar of barBack) scene.remove(bar);
+      free.clear();
     },
   };
 }

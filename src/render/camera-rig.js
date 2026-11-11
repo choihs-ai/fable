@@ -1,4 +1,4 @@
-// 카메라 추적과 벽 가림 계산. 수식만 있다(Three.js 를 모른다) — Node 에서 테스트한다.
+// 카메라 추적·흔들림과 벽 가림 계산. 수식만 있다(Three.js 를 모른다) — Node 에서 테스트한다.
 
 /**
  * 부드러운 추적: 현재 값을 목표 쪽으로 옮긴다. 프레임 길이와 무관하게 같은 속도감이 나도록 지수 감쇠를 쓴다.
@@ -52,4 +52,28 @@ export function distanceScale(aspect, portraitScale) {
   // 가로세로 1:1 에서 1, 9:19.5 같은 긴 세로 화면에서 portraitScale 에 가까워진다.
   const t = Math.min(1, (1 - aspect) / 0.55);
   return 1 + (portraitScale - 1) * t;
+}
+
+/**
+ * 카메라 흔들림의 한 순간: 세기와 시간에서 정해지는 흔들림(여러 사인을 겹쳐 규칙적으로 보이지 않게 한다).
+ * @returns {{ x:number, y:number }} 칸 단위 어긋남
+ */
+export function shakeOffset(amplitude, timeSec, frequency) {
+  if (!(amplitude > 0)) return { x: 0, y: 0 };
+  const t = timeSec * frequency;
+  return {
+    x: amplitude * (Math.sin(t * 1.0) * 0.6 + Math.sin(t * 2.31 + 1.3) * 0.4),
+    y: amplitude * (Math.sin(t * 1.13 + 0.7) * 0.6 + Math.sin(t * 2.71 + 2.1) * 0.4),
+  };
+}
+
+/** 흔들림 세기를 더한다(상한 max). */
+export function addShake(current, amount, max) {
+  return Math.min(max, current + amount);
+}
+
+/** 흔들림 세기가 줄어든다: 초당 decay 배(지수). */
+export function decayShake(current, decay, dtSec) {
+  const next = current * Math.exp(-decay * Math.max(0, dtSec));
+  return next < 0.002 ? 0 : next;
 }

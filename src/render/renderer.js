@@ -1,17 +1,21 @@
 // Three.js 렌더러. 로직 상태는 읽기만 한다 — 여기서 state 를 수정하지 않는다.
-// 맵(render/world), 행동체(render/entities), 이펙트(render/effects)를 묶고, 카메라·조명·품질을 맡는다.
+// 맵(render/world), 행동체(render/entities), 이펙트(render/effects)를 묶고, 카메라·조명·품질·화면 페이드를 맡는다.
 //
 // 자원의 수명:
-//   - 공유 자원(지오메트리·머티리얼, assets.js)과 풀(행동체 뷰, 투사체, 입자, 피해 숫자): 렌더러와 함께 살고 층이 바뀌어도 다시 쓴다.
-//   - 층 자원(바닥·벽 InstancedMesh, 바닥 텍스처, 표식): state.world 가 바뀌면 앞 층의 것을 dispose 하고 새로 만든다.
+//   - 공유 자원(지오메트리·머티리얼, assets.js)과 풀(행동체 모델, 투사체, 입자, 피해 숫자…): 렌더러와 함께 살고 층이 바뀌어도 다시 쓴다.
+//   - 층 자원(바닥·벽·문·소품 InstancedMesh, 바닥 텍스처, 횃불 빛, 포털·상인): state.world 가 바뀌면 앞 층의 것을 dispose 하고 새로 만든다.
+//
+// 층에 들어갈 때: 화면을 검게 덮은 채로 그 층의 메시를 모두 만들고, 쓰일 머티리얼의 셰이더를 미리 컴파일(renderer.compile)한 뒤
+// 페이드 인한다. 플레이 중에 맵이 조각조각 생기거나, 처음 보는 머티리얼 때문에 멈칫하는 일이 없게 한다.
 
 import * as THREE from 'three';
+import { FEEL } from '../../data/feel.js';
+import { WEAPONS } from '../../data/weapons.js';
 import { ZONES } from '../../data/zones.js';
 import { EVENTS } from '../logic/core/events.js';
 import { Rng } from '../logic/core/prng.js';
-import { isVisible } from '../logic/entities/vision.js';
+import { addShake, decayShake, distanceScale, followStep, shakeOffset } from './camera-rig.js';
 import { createAssets } from './assets.js';
-import { distanceScale, followStep } from './camera-rig.js';
 import { createEffects } from './effects/effects.js';
 import { createActorViews } from './entities/actor-views.js';
 import { createFloorView } from './world/floor-view.js';
@@ -25,35 +29,51 @@ import { createFloorView } from './world/floor-view.js';
 export function createRenderer({ canvas, config, quality = 'medium' }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setClearColor(config.clearColor);
+  renderer.autoClear = false;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(config.fovDeg, 1, config.near, config.far);
-  const ambient = new THREE.AmbientLight(0xffffff, 1.5);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  const hemi = new THREE.HemisphereLight(0xbfd0ff, 0x2a2018, 1.4);
+  const sun = new THREE.DirectionalLight(0xfff0dd, 1.8);
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -14;
-  sun.shadow.camera.right = 14;
-  sun.shadow.camera.top = 14;
-  sun.shadow.camera.bottom = -14;
+  sun.shadow.camera.left = -16;
+  sun.shadow.camera.right = 16;
+  sun.shadow.camera.top = 16;
+  sun.shadow.camera.bottom = -16;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 40;
-  sun.shadow.bias = -0.002;
-  scene.add(ambient, sun, sun.target);
+  sun.shadow.camera.far = 50;
+  sun.shadow.bias = -0.0015;
+  scene.add(hemi, sun, sun.target);
 
-  // 꾸밈용 난수(입자 방향, 바닥 무늬). 게임 상태의 난수와 무관하다 — Math.random 은 쓰지 않는다.
+  // 화면 페이드: 장면 위에 덮는 검은 판(직교 카메라).
+  const overlayScene = new THREE.Scene();
+  const overlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const veilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 1, depthTest: false });
+  const veilGeometry = new THREE.PlaneGeometry(2, 2);
+  overlayScene.add(new THREE.Mesh(veilGeometry, veilMaterial));
+
+  // 꾸밈용 난수(입자 방향, 바닥 무늬, 소품). 게임 상태의 난수와 무관하다 — Math.random 은 쓰지 않는다.
   const rng = Rng.fromSeed('render:cosmetic');
   const assets = createAssets();
   const actors = createActorViews({ scene, assets });
   const effects = createEffects({ scene, assets, rng });
 
   let floorView = null;
-  /** 지금 그리고 있는 맵의 타일 배열. 바뀌면 층이 바뀐 것이다(층 이동, 새 런, 이어하기). */
+  /** 지금 그리고 있는 맵의 타일 배열. 바뀌면 층이 바뀐 것이다(층 진입, 새 런, 이어하기). */
   let shownTiles = null;
   let floorsBuilt = 0;
   let size = { width: 1, height: 1, pixelRatio: 1 };
   let level = config.quality[quality] ? quality : 'medium';
   const focus = { x: 0, y: 0 };
   let hasFocus = false;
+  let clock = 0;
+  /** 화면 페이드(1 = 완전히 가림)와, 페이드를 시작하기 전에 기다릴 프레임 수. */
+  let veil = 1;
+  let hold = 0;
+  let shake = 0;
+  let lastCompileMs = 0;
+  let compiles = 0;
 
   function applyQuality() {
     const q = config.quality[level];
@@ -81,85 +101,164 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     hasFocus = false;
   }
 
+  /** 쓰일 머티리얼을 모두 한 번씩 보이게 하고 셰이더를 미리 컴파일한다. */
+  function precompile() {
+    const started = performance.now();
+    const restoreActors = actors.prewarm();
+    const restoreEffects = effects.prewarm();
+    renderer.compile(scene, camera);
+    restoreEffects();
+    restoreActors();
+    lastCompileMs = performance.now() - started;
+    compiles++;
+  }
+
   function enterFloor(world) {
     leaveFloor();
     const zone = ZONES.find((z) => z.id === world.zoneId) ?? ZONES[0];
-    floorView = createFloorView({ scene, assets, world, rng });
+    floorView = createFloorView({ scene, assets, world, rng, quality: config.quality[level] });
     shownTiles = world.tiles;
     floorsBuilt++;
-    ambient.color.set(zone.palette.ambient);
+    hemi.color.set(zone.palette.ambient).lerp(new THREE.Color(0xffffff), 0.35);
     renderer.setClearColor(zone.palette.fog);
+    // 화면을 가린 채로 셰이더를 준비하고, 두 프레임을 그린 뒤(버퍼 업로드까지 끝난 뒤) 걷는다.
+    veil = 1;
+    hold = 2;
+    precompile();
   }
 
   return {
     /**
      * @param {object} state 로직 상태(읽기 전용)
      * @param {number} alpha 직전 틱과 이번 틱 사이의 보간 계수 [0, 1)
-     * @param {number} [dtSec] 직전 프레임부터 흐른 시간(초). 카메라 추적·입자에 쓴다
+     * @param {number} [dtSec] 직전 프레임부터 흐른 시간(초). 카메라·애니메이션·입자에 쓴다
      */
     render(state, alpha, dtSec = 1 / 60) {
+      clock += dtSec;
       const world = state.world;
+      renderer.clear();
       if (!world) {
         if (floorView) leaveFloor();
+        veil = 1;
         renderer.render(scene, camera);
+        renderer.render(overlayScene, overlayCamera);
         return;
       }
       if (world.tiles !== shownTiles) enterFloor(world);
 
-      actors.update(state, alpha, dtSec);
+      actors.update(state, alpha, dtSec, clock);
       const player = state.playerId !== null ? state.entities.byId[state.playerId] : null;
       const shown = player ? actors.positionOf(player.id) : null;
-      const stairsOpen = !Object.keys(state.entities.byId).some((key) => state.entities.byId[key].kind === 'boss' && !state.entities.byId[key].dead);
-      floorView.update(state, player, stairsOpen);
-      effects.update(state, alpha, dtSec);
+      floorView.update(state, shown, dtSec, clock);
+      effects.update(state, alpha, dtSec, clock);
 
       if (shown) {
+        // 바라보는 쪽으로 카메라를 조금 앞세운다.
+        const lead = { x: shown.x + player.facingX * config.camera.lead, y: shown.y + player.facingY * config.camera.lead };
         if (!hasFocus) {
-          focus.x = shown.x;
-          focus.y = shown.y;
+          focus.x = lead.x;
+          focus.y = lead.y;
           hasFocus = true;
-        } else followStep(focus, shown, config.camera.followRate, dtSec, config.camera.snapDistance);
+        } else followStep(focus, lead, config.camera.followRate, dtSec, config.camera.snapDistance);
       }
+      shake = decayShake(shake, FEEL.shake.decay, dtSec);
+      const jolt = shakeOffset(shake, clock, FEEL.shake.frequency);
       const far = distanceScale(camera.aspect, config.camera.portraitScale);
-      camera.position.set(focus.x, config.camera.height * far, focus.y + config.camera.back * far);
-      camera.lookAt(focus.x, 0, focus.y);
-      sun.position.set(focus.x - 6, 14, focus.y + 4);
+      camera.position.set(focus.x + jolt.x, config.camera.height * far, focus.y + config.camera.back * far + jolt.y);
+      camera.lookAt(focus.x + jolt.x, 0, focus.y + jolt.y);
+      sun.position.set(focus.x - 7, 16, focus.y + 5);
       sun.target.position.set(focus.x, 0, focus.y);
       renderer.render(scene, camera);
+
+      if (hold > 0) hold--;
+      else if (veil > 0) veil = Math.max(0, veil - dtSec / FEEL.reveal.screenFadeSec);
+      if (veil > 0) {
+        veilMaterial.opacity = veil;
+        renderer.render(overlayScene, overlayCamera);
+      }
+    },
+
+    /** 카메라를 흔든다(세기를 더한다). */
+    shake(amount) {
+      shake = addShake(shake, amount, FEEL.shake.max);
     },
 
     /**
-     * 이벤트버스에 연결한다: 피해 숫자·입자처럼 "일어난 일"로만 알 수 있는 연출을 받는다.
+     * 이벤트버스에 연결한다: 피해 숫자·입자·자세처럼 "일어난 일"로만 알 수 있는 연출을 받는다.
      * @param {object} bus
      * @param {() => object} getState 그 순간의 상태(읽기만 한다)
      * @returns {() => void} 연결을 끊는 함수
      */
     attach(bus, getState) {
+      const S = FEEL.shake;
+      const kick = (amount) => {
+        shake = addShake(shake, amount, S.max);
+      };
       const offs = [
         bus.on(EVENTS.DAMAGE_DEALT, (e) => {
           const state = getState();
           const target = state.entities.byId[e.targetId];
-          if (!target || !state.world || !isVisible(state, target.x, target.y)) return;
-          actors.flash(e.targetId);
-          if (e.kind === 'dot' && e.amount === 0) return;
-          effects.damage(target.x, target.y, target.kind === 'boss' ? 2.2 : 1.2, e.amount, { crit: e.crit, toPlayer: target.kind === 'player', blocked: e.blocked });
+          if (!target || !state.world || e.amount <= 0) return;
+          const toPlayer = target.kind === 'player';
+          actors.hurt(e.targetId, toPlayer);
+          const height = target.kind === 'boss' ? 2.6 : target.elite ? 1.7 : 1.3;
+          effects.damage(target.x, target.y, height, e.amount, { crit: e.crit, toPlayer, proc: Boolean(e.proc) });
+          if (toPlayer) kick(S.hurt);
+          else if (e.kind !== 'dot') kick(e.crit ? S.crit : S.hit);
         }),
         bus.on(EVENTS.ENTITY_DIED, (e) => {
           const state = getState();
-          if (state.world && isVisible(state, e.x, e.y)) effects.burst(e.x, e.y, 0.6, e.kind === 'boss' ? 0xffb020 : 0xd8dce6, e.kind === 'boss' ? 60 : 14);
+          if (!state.world) return;
+          const killer = e.killerId !== null ? state.entities.byId[e.killerId] : null;
+          actors.die(e.id, { x: e.x, y: e.y, kbX: e.kbX ?? 0, kbY: e.kbY ?? 0, fromX: killer ? killer.x : e.x, fromY: killer ? killer.y + 0.01 : e.y + 1 });
+          const boss = e.kind === 'boss';
+          effects.burst(e.x, e.y, 0.6, boss ? 0xffb020 : e.elite ? 0xff7a4a : 0xd8dce6, boss ? 70 : e.elite ? 30 : 14, boss ? 1.8 : 1.1);
+          if (e.kind !== 'player') kick(boss ? S.bossKill : S.kill);
         }),
-        bus.on(EVENTS.LEVEL_UP, () => {
+        bus.on(EVENTS.ABILITY_USED, (e) => {
           const state = getState();
-          const player = state.entities.byId[state.playerId];
-          if (!player) return;
-          effects.text(player.x, player.y, 1.4, 'LEVEL UP', config.colors.damageCrit);
-          effects.burst(player.x, player.y, 0.8, 0xffe14a, 24);
+          const actor = state.entities.byId[e.actorId];
+          if (actor && actor.kind !== 'player') actors.attack(e.actorId);
         }),
+        bus.on(EVENTS.WEAPON_USED, (e) => {
+          const state = getState();
+          const id = state.playerId;
+          const look = e.bash ? 'pistol' : WEAPONS[e.weapon].look;
+          actors.attack(id, e.bash ? 'none' : look, e.offhand);
+          if (e.kind === 'ranged' && !e.bash) {
+            const point = actors.muzzleOf(id);
+            effects.muzzle(point, e.dirX, e.dirY, look === 'laser' ? 0x7af0ff : look === 'staff' ? 0xb09aff : 0xffe08a);
+            if (['pistol', 'smg', 'shotgun', 'sniper'].includes(look)) effects.casing(point, e.dirX, e.dirY);
+            kick(look === 'shotgun' || look === 'sniper' || look === 'rocket' ? S.fire * 4 : S.fire);
+          }
+        }),
+        bus.on(EVENTS.BEAM_FIRED, (e) => effects.beam(e.x0, e.y0, e.x1, e.y1, e.width, e.faction)),
+        bus.on(EVENTS.EXPLOSION, (e) => {
+          effects.explosion(e.x, e.y, e.radius, e.faction, e.proc);
+          kick(S.explosion * Math.min(1, e.radius / 2));
+        }),
+        bus.on(EVENTS.CHAIN_LIGHTNING, (e) => effects.chain(e.points)),
+        bus.on(EVENTS.BULLETS_CLEARED, (e) => effects.burst(e.x, e.y, 0.7, 0x9fe8ff, Math.min(20, 4 + e.count * 2))),
+        bus.on(EVENTS.PLAYER_DASHED, () => {
+          const state = getState();
+          const p = state.entities.byId[state.playerId];
+          if (p) effects.burst(p.x, p.y, 0.3, 0xcfe8ff, 6, 0.6);
+        }),
+        bus.on(EVENTS.BOSS_PHASE_CHANGED, (e) => {
+          const state = getState();
+          const boss = state.entities.byId[e.id];
+          kick(S.bossSlam);
+          if (boss) effects.burst(boss.x, boss.y, 1.2, 0xff5a2a, 40, 1.6);
+        }),
+        bus.on(EVENTS.DOORS_LOCKED, () => kick(S.hit * 2)),
         bus.on(EVENTS.DROP_COLLECTED, (e) => {
           const state = getState();
           const player = state.entities.byId[state.playerId];
-          if (player && e.kind === 'gold') effects.text(player.x, player.y, 1.2, `+${e.amount}`, '#ffd34a');
+          if (!player) return;
+          if (e.kind === 'gold') effects.text(player.x, player.y, 1.3, `+${e.amount}`, '#ffd34a');
+          else if (e.kind === 'health') effects.text(player.x, player.y, 1.3, `+${e.amount}`, config.colors.heal);
         }),
+        bus.on(EVENTS.SECRET_FOUND, () => kick(S.explosion)),
       ];
       return () => offs.forEach((off) => off());
     },
@@ -171,14 +270,19 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       camera.updateProjectionMatrix();
     },
 
-    /** 그래픽 품질을 바꾼다: 'low' | 'medium' | 'high'. */
+    /** 그래픽 품질을 바꾼다: 'low' | 'medium' | 'high'. 횃불 빛·소품 수는 다음 층부터 바뀐다. */
     setQuality(name) {
       if (!config.quality[name]) throw new RangeError(`setQuality: 알 수 없는 품질 "${name}"`);
       level = name;
       applyQuality();
     },
 
-    /** GPU 자원과 풀의 현황(누수 확인용). */
+    /** 화면 페이드가 걷혔는가. */
+    get revealed() {
+      return veil === 0;
+    },
+
+    /** GPU 자원과 풀의 현황(누수·확인용). */
     info() {
       return {
         geometries: renderer.info.memory.geometries,
@@ -193,11 +297,20 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
         shadows: renderer.shadowMap.enabled,
         camera: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
         focus: { x: focus.x, y: focus.y },
+        shake,
+        veil,
+        compile: { count: compiles, lastMs: lastCompileMs },
         assets: assets.counts(),
         actors: actors.stats(),
         effects: effects.stats(),
         floor: floorView ? floorView.stats() : null,
+        icons: floorView ? floorView.rewardIcons() : [],
       };
+    },
+
+    /** 구역의 지금 밝기(방 공개 확인용). */
+    regionBrightness(region) {
+      return floorView ? floorView.brightnessOf(region) : null;
     },
 
     dispose() {
@@ -205,6 +318,8 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       actors.dispose();
       effects.dispose();
       assets.dispose();
+      veilGeometry.dispose();
+      veilMaterial.dispose();
       if (sun.shadow.map) sun.shadow.map.dispose();
       renderer.dispose();
     },
