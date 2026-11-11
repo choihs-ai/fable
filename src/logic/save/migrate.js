@@ -65,7 +65,15 @@ const RUN_MIGRATIONS = {
   },
 };
 
-export const MIGRATIONS = Object.freeze({ run: RUN_MIGRATIONS, meta: {}, settings: {} });
+const SETTINGS_MIGRATIONS = {
+  // v1 → v2(5단계): 조이스틱 감도가 생겼다.
+  1(settings) {
+    fill(settings, { sensitivity: 100 });
+    return settings;
+  },
+};
+
+export const MIGRATIONS = Object.freeze({ run: RUN_MIGRATIONS, meta: {}, settings: SETTINGS_MIGRATIONS });
 
 /**
  * 본문을 version 에서 target 버전까지 한 단계씩 올린다. 받은 본문을 직접 고친다(세이브에서 막 읽은 값이므로).

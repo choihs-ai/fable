@@ -155,3 +155,13 @@ test('옛 세이브의 봉투 버전이 거짓이면(본문은 v1 인데 봉투�
   assert.equal(read.damaged, true);
   assert.ok(read.problems.length > 0);
 });
+
+test('설정 v1 세이브(4단계가 쓴 것): 감도가 기본값으로 채워지고 나머지는 그대로다', async () => {
+  const { readSettings } = await import('../../../src/logic/save/codec.js');
+  // 4단계(설정 버전 1)의 serializeSettings 가 실제로 쓰던 본문 그대로다.
+  const v1 = { masterVolume: 35, musicVolume: 60, sfxVolume: 80, vibration: false, quality: 'high', leftHanded: true };
+  const read = readSettings(encodeEnvelope({ kind: 'settings', version: 1, data: v1, savedAt: 1 }));
+  assert.equal(read.reason, null);
+  assert.deepEqual(read.repaired, []);
+  assert.deepEqual(read.settings, { ...v1, sensitivity: 100 });
+});

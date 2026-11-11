@@ -681,3 +681,46 @@ test('상점에서 산 장비는 사본이 가방에 들어간다(품목 목록�
   assert.notEqual(bought.affixes[0], item.affixes[0]);
   assert.equal(state.shop.stock[0].sold, true);
 });
+
+test('계단: 가까이 있어야 내려가고, 보스가 살아 있으면 잠기고, 마지막 층에는 없다', async () => {
+  const { canDescend, descendStairs } = await import('../../src/logic/commands.js');
+  const game = createGame({ seed: 'stairs' });
+  enterFloor(game, 4);
+  assert.equal(canDescend(game).reason, 'not-playing', '타이틀 페이즈');
+  setPhase(game, PHASE.PLAYING);
+  const { state } = game;
+  const player = getPlayer(state);
+  assert.equal(canDescend(game).reason, 'too-far');
+  player.x = state.world.stairs.x + 0.5;
+  player.y = state.world.stairs.y + 0.5;
+  assert.deepEqual(canDescend(game), { ok: true });
+  const hp = (player.hp = 37);
+  const floors = [];
+  game.bus.on(EVENTS.FLOOR_ENTERED, (e) => floors.push(e.floor));
+  assert.deepEqual(descendStairs(game), { ok: true, floor: 5 });
+  assert.deepEqual(floors, [5]);
+  assert.equal(state.run.floor, 5);
+  assert.equal(state.world.kind, 'midBoss');
+  assert.equal(getPlayer(state).hp, hp, '체력은 층을 넘어 이어진다');
+  // 보스층: 보스가 살아 있으면 계단 위에 서도 잠겨 있다.
+  const p = getPlayer(state);
+  p.x = state.world.stairs.x + 0.5;
+  p.y = state.world.stairs.y + 0.5;
+  assert.equal(canDescend(game).reason, 'boss-alive');
+  assert.equal(descendStairs(game).ok, false);
+  for (const a of allActors(state)) if (a.kind === 'boss') dealDamage(state, game.bus, a, a.maxHp * 10, { sourceId: p.id });
+  for (let i = 0; i < 400 && allActors(state).some((a) => a.kind === 'boss'); i++) {
+    for (const a of allActors(state)) if (a.kind === 'boss') dealDamage(state, game.bus, a, a.maxHp * 10, { sourceId: p.id });
+    tick(game, 1 / 60);
+    p.x = state.world.stairs.x + 0.5;
+    p.y = state.world.stairs.y + 0.5;
+  }
+  if (state.phase === PHASE.PLAYING) assert.deepEqual(canDescend(game), { ok: true });
+  // 일시정지 중에는 내려가지 않는다. 마지막 층에는 계단이 없다.
+  const last = createGame({ seed: 'stairs-last' });
+  enterFloor(last, 30);
+  setPhase(last, PHASE.PLAYING);
+  assert.equal(canDescend(last).reason, 'no-stairs');
+  setPhase(last, PHASE.PAUSED);
+  assert.equal(canDescend(last).reason, 'not-playing');
+});

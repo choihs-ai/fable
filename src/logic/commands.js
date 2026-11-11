@@ -1,4 +1,4 @@
-// 플레이어 명령: 틱 바깥에서 ui 가 부르는 행동들(착용, 버리기, 소비 아이템, 사고팔기, 제단, 강화 선택, 메타 해금).
+// 플레이어 명령: 틱 바깥에서 ui 가 부르는 행동들(계단 내려가기, 착용, 버리기, 소비 아이템, 사고팔기, 제단, 강화 선택, 메타 해금).
 //
 // 모든 명령은 { ok:true, … } 또는 { ok:false, reason } 을 돌려준다. 안 되는 일을 시켜도 예외를 던지지 않고 이유를 알려 준다
 // (잘못된 형식의 인자만 예외). 명령은 인벤토리·런 진행을 고친 뒤 능력치를 다시 합산하고 이벤트를 낸다.
@@ -6,6 +6,7 @@
 
 import { CONSUMABLES } from '../../data/consumables.js';
 import { INVENTORY } from '../../data/items.js';
+import { WORLD } from '../../data/world.js';
 import { PHASE } from './core/state.js';
 import { EVENTS } from './core/events.js';
 import { rngOf } from './core/state.js';
@@ -13,7 +14,10 @@ import { ticksOf } from './core/time.js';
 import { runEffects } from './combat/abilities.js';
 import { cleanse, heal } from './combat/damage.js';
 import { offerPendingChoice } from './combat/loot.js';
-import { getPlayer } from './entities/actors.js';
+import { allActors, getPlayer } from './entities/actors.js';
+import { ACTOR_KIND } from './entities/defs.js';
+import { enterFloor } from './game.js';
+import { TOTAL_FLOORS } from './world/floors.js';
 import { refreshPlayerStats } from './entities/stats.js';
 import { canAccept, hpCost } from './items/altar.js';
 import { rollRelic } from './items/drops.js';
@@ -45,6 +49,35 @@ function nearby(player, place) {
   const dx = place.x - player.x;
   const dy = place.y - player.y;
   return dx * dx + dy * dy <= INVENTORY.interactRange * INVENTORY.interactRange;
+}
+
+// ── 층 이동 ──────────────────────────────────────────────────────────────────
+
+/**
+ * 지금 계단을 내려갈 수 있는가. ui 가 "내려가기" 버튼을 보일지 정할 때도 쓴다(상태를 바꾸지 않는다).
+ * @returns {{ ok:true } | { ok:false, reason:string }}
+ *   reason: 'not-playing' | 'no-stairs'(마지막 층) | 'too-far' | 'boss-alive'(보스를 잡아야 열린다)
+ */
+export function canDescend(game) {
+  const { state } = game;
+  const player = activePlayer(game);
+  if (!player || state.phase !== PHASE.PLAYING) return fail('not-playing');
+  const stairs = state.world ? state.world.stairs : null;
+  if (!stairs || state.run.floor >= TOTAL_FLOORS) return fail('no-stairs');
+  const dx = stairs.x + 0.5 - player.x;
+  const dy = stairs.y + 0.5 - player.y;
+  if (dx * dx + dy * dy > WORLD.stairs.useRange * WORLD.stairs.useRange) return fail('too-far');
+  if (WORLD.stairs.lockedByBoss && allActors(state).some((a) => a.kind === ACTOR_KIND.BOSS && !a.dead)) return fail('boss-alive');
+  return { ok: true };
+}
+
+/** 계단을 내려가 다음 층에 들어간다. @returns {{ ok:true, floor:number } | { ok:false, reason:string }} */
+export function descendStairs(game) {
+  const check = canDescend(game);
+  if (!check.ok) return check;
+  const floor = game.state.run.floor + 1;
+  enterFloor(game, floor);
+  return { ok: true, floor };
 }
 
 // ── 장비 ─────────────────────────────────────────────────────────────────────

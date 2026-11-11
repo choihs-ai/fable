@@ -6,6 +6,9 @@ export const WORLD = deepFreeze({
   /** 구역 하나의 층 수. 전체 층 수 = 구역 수 × floorsPerZone. */
   floorsPerZone: 5,
 
+  /** 계단: 계단 칸의 중심에서 이 거리 안이면 내려갈 수 있다. 보스가 살아 있으면 잠긴다. */
+  stairs: { useRange: 0.9, lockedByBoss: true },
+
   /** 한 층의 생성 재시도 상한. 넘으면 단순한 비상 레이아웃으로 대체한다(무한 재시도 방지). */
   maxAttempts: 8,
 
