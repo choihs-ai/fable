@@ -146,6 +146,15 @@ function attack(state, bus, player, input) {
         kit.emptyAt = tick + ticksOf(PLAYER.emptyNoticeSec);
         bus.emit(EVENTS.ENERGY_EMPTY, { need: cost, have: kit.energy });
       }
+      // 쏠 수 없으면 개머리판으로 친다.
+      if (isReady(state, player, 'bash')) {
+        aim = aimDirection(state, player, input);
+        if (startAbility(state, bus, player, 'bash', aim.x, aim.y, aim.tx, aim.ty)) {
+          bus.emit(EVENTS.WEAPON_USED, {
+            weapon: weaponId, slot: kit.slot, dash: false, offhand: false, bash: true, kind: 'melee', x: player.x, y: player.y, dirX: aim.x, dirY: aim.y,
+          });
+        }
+      }
     } else {
       aim = aimDirection(state, player, input);
       if (startAbility(state, bus, player, abilityId, aim.x, aim.y, aim.tx, aim.ty)) {

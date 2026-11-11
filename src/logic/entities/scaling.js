@@ -9,8 +9,8 @@ import { ENCOUNTERS } from '../../../data/encounters.js';
  */
 export function depthScaling(depth, { elite = false, boss = false } = {}) {
   const s = ENCOUNTERS.scaling;
-  let hp = Math.min(s.hpMax, 1 + s.hpPerDepth * depth);
-  let damage = Math.min(s.damageMax, 1 + s.damagePerDepth * depth);
+  let hp = Math.min(s.hpMax, s.hpBase + s.hpPerDepth * depth);
+  let damage = Math.min(s.damageMax, s.damageBase + s.damagePerDepth * depth);
   if (boss) {
     // 보스는 깊이와 무관하게 정해진 배율만 쓴다(어느 길로 왔든 같은 보스).
     hp = ENCOUNTERS.boss.hp;

@@ -14,20 +14,20 @@ export const ENCOUNTERS = deepFreeze({
   spawnMinPlayerDist: 4.5,
 
   /** 웨이브 수: 깊이가 shallowDepth 이하면 shallow, 넘으면 deep 가운데 하나. */
-  waves: { shallowDepth: 1, shallow: [2, 2], deep: [2, 3] },
+  waves: { shallowDepth: 1, shallow: [2, 3], deep: [3, 3] },
   /** 웨이브 하나의 예산 = base + perDepth × 깊이(상한 max). 뒤 웨이브일수록 laterWaveBonus 씩 늘어난다. */
-  budget: { base: 5, perDepth: 1.5, max: 14, laterWaveBonus: 1 },
+  budget: { base: 6, perDepth: 1.5, max: 16, laterWaveBonus: 1 },
   /** 웨이브 하나에 나오는 적 수의 상한. */
   maxPerWave: 7,
 
-  /** 깊이에 따른 적의 체력·공격 배율: 1 + perDepth × 깊이(상한 max). */
-  scaling: { hpPerDepth: 0.08, hpMax: 1.6, damagePerDepth: 0.05, damageMax: 1.35 },
+  /** 깊이에 따른 적의 체력·공격 배율: base + perDepth × 깊이(상한 max). */
+  scaling: { hpBase: 1.8, hpPerDepth: 0.12, hpMax: 2.7, damageBase: 1.3, damagePerDepth: 0.05, damageMax: 1.7 },
 
   /** 정예: 크고 단단하고 아프다. 정예방의 웨이브마다 정예가 perWave 마리 끼고, 나머지 예산은 budgetRatio 만큼만 쓴다. */
   elite: { hp: 2.6, damage: 1.3, radius: 1.25, speed: 1.1, perWave: 1, budgetRatio: 0.6, waves: [2, 2] },
 
   /** 보스: 깊이 배율과 별개로 곱한다. */
-  boss: { hp: 1, damage: 1 },
+  boss: { hp: 4.2, damage: 1.1 },
 
   /** 전투방 보상의 가중치. 한 층에 축복 방이 minBoon 개, 무기 방이 minWeapon 개 이상 나오도록 맞춘다. */
   rewards: {

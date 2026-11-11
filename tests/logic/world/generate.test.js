@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { ENCOUNTERS } from '../../../data/encounters.js';
 import { WORLD } from '../../../data/world.js';
 import { ZONES } from '../../../data/zones.js';
 import { EVENTS } from '../../../src/logic/core/events.js';
@@ -8,206 +9,278 @@ import { Rng } from '../../../src/logic/core/prng.js';
 import { rngOf } from '../../../src/logic/core/state.js';
 import { createGame, enterFloor } from '../../../src/logic/game.js';
 import { toAscii } from '../../../src/logic/world/ascii.js';
-import { FLOOR_KIND, TOTAL_FLOORS, floorPlan } from '../../../src/logic/world/floors.js';
-import { generateFloor, generateFloorFromRng } from '../../../src/logic/world/generate.js';
-import { labelRegions } from '../../../src/logic/world/grid.js';
+import { FLOOR_KIND, REWARD, ROOM_KIND, TOTAL_FLOORS, isFightRoom } from '../../../src/logic/world/floors.js';
+import { buildStage, generateFloor, generateFloorFromRng } from '../../../src/logic/world/generate.js';
+import { bfsDistances } from '../../../src/logic/world/grid.js';
+import { TILE } from '../../../src/logic/world/tiles.js';
 import { validateFloor } from '../../../src/logic/world/validate.js';
 
 const worldRng = (seed) => Rng.fromSeed(seed).fork('world');
+const FABLE_SUMMARY = 'rooms 62x65 open=1628 start=12,31 rooms=srscecccebe rewards=-w-wbbbbbb- doors=24';
+const SAMPLE = Array.from({ length: 150 }, (_, i) => generateFloor({ seed: `sample-${i}`, floor: 1 }));
 
-const FABLE_SUMMARY = [
-  'rooms 40x40 open=606 start=8,35 stairs=32,17 spawns=10 events=-',
-  'bossMid 21x37 open=321 start=10,33 stairs=10,3 spawns=2 events=-',
-  'cave 48x48 open=1405 start=4,22 stairs=39,36 spawns=14 events=altar',
-  'bossFinal 27x41 open=467 start=13,37 stairs=- spawns=1 events=-',
-];
+/** 맵을 한 줄로 요약한다(고정값 비교용). */
+function summarize(map) {
+  const open = map.tiles.filter((t) => t !== TILE.WALL).length;
+  const kinds = map.rooms.map((r) => r.kind[0]).join('');
+  const rewards = map.rooms.map((r) => (r.reward ? r.reward[0] : '-')).join('');
+  return `${map.algorithm} ${map.width}x${map.height} open=${open} start=${map.start.x},${map.start.y} rooms=${kinds} rewards=${rewards} doors=${map.doors.length}`;
+}
 
 // ── 결정적 생성 ──────────────────────────────────────────────────────────────
 
 test('같은 (시드, 층)은 항상 같은 층을 만든다', () => {
-  for (const floor of [1, 5, 8, 13, 22, 30]) {
-    assert.deepEqual(generateFloor({ seed: 'repeat', floor }), generateFloor({ seed: 'repeat', floor }), `${floor}층`);
+  for (const seed of ['repeat', 'repeat-2', 12345]) {
+    assert.deepEqual(generateFloor({ seed, floor: 1 }), generateFloor({ seed, floor: 1 }), `${seed}`);
   }
 });
 
-test('시드나 층이 다르면 다른 층이 나온다', () => {
-  const base = generateFloor({ seed: 'a', floor: 2 });
-  assert.notDeepEqual(generateFloor({ seed: 'b', floor: 2 }).tiles, base.tiles);
-  assert.notDeepEqual(generateFloor({ seed: 'a', floor: 3 }).tiles, base.tiles);
-  // 보스층도 시드에 따라 달라진다.
-  const bosses = new Set();
-  for (let n = 0; n < 20; n++) bosses.add(JSON.stringify(generateFloor({ seed: `boss-${n}`, floor: 5 }).tiles));
-  assert.ok(bosses.size >= 5, `보스층 변형 ${bosses.size}가지`);
+test('시드가 다르면 다른 층이 나온다', () => {
+  const layouts = new Set(SAMPLE.slice(0, 40).map((map) => JSON.stringify(map.tiles)));
+  assert.equal(layouts.size, 40);
 });
 
-test('층을 만드는 순서와 횟수는 결과에 영향을 주지 않는다', () => {
-  const forward = [];
-  for (let floor = 1; floor <= TOTAL_FLOORS; floor++) forward.push(generateFloor({ seed: 'order', floor }));
-  for (let floor = TOTAL_FLOORS; floor >= 1; floor--) {
-    assert.deepEqual(generateFloor({ seed: 'order', floor }), forward[floor - 1], `${floor}층`);
-  }
-});
-
-test('world 스트림을 소비하거나 다른 층을 만들어도 결과가 같고, 스트림 자체는 소비되지 않는다', () => {
+test('world 스트림을 소비하거나 다른 일을 해도 결과가 같고, 스트림 자체는 소비되지 않는다', () => {
   const rng = worldRng('stream');
   const before = rng.snapshot();
-  const first = generateFloorFromRng(rng, 7);
+  const first = generateFloorFromRng(rng, 1);
   assert.deepEqual(rng.snapshot(), before, 'generateFloorFromRng 는 world 스트림을 소비하지 않는다');
-
   for (let i = 0; i < 50; i++) rng.nextUint32();
-  generateFloorFromRng(rng, 3);
-  assert.deepEqual(generateFloorFromRng(rng, 7), first);
-  assert.deepEqual(generateFloor({ seed: 'stream', floor: 7 }), first);
+  assert.deepEqual(generateFloorFromRng(rng, 1), first);
+  assert.deepEqual(generateFloor({ seed: 'stream', floor: 1 }), first);
 });
 
 test('숫자 시드와 같은 내용의 문자열 시드는 같은 층을 만든다', () => {
-  assert.deepEqual(generateFloor({ seed: 2024, floor: 4 }), generateFloor({ seed: '2024', floor: 4 }));
+  assert.deepEqual(generateFloor({ seed: 42, floor: 1 }), generateFloor({ seed: '42', floor: 1 }));
 });
 
-// 고정값 테스트: 아래 값이 바뀌면 같은 시드의 던전이 달라진 것이다(기존 세이브·공유 시드와 어긋난다).
-// 의도한 변경이면 값을 갱신하고 BUGS.md 에 기록한다.
 test('고정값: 시드 "fable" 의 층 요약이 변하지 않는다', () => {
-  const summary = (floor) => {
-    const m = generateFloor({ seed: 'fable', floor });
-    const open = m.tiles.reduce((a, b) => a + b, 0);
-    return `${m.algorithm} ${m.width}x${m.height} open=${open} start=${m.start.x},${m.start.y} stairs=${m.stairs ? `${m.stairs.x},${m.stairs.y}` : '-'} spawns=${m.spawns.length} events=${m.eventRooms.map((r) => r.kind).join('+') || '-'}`;
-  };
-  assert.deepEqual([1, 5, 13, 30].map(summary), FABLE_SUMMARY);
+  // 이 값이 바뀌면 기존 시드·세이브의 맵이 달라진다는 뜻이다. 의도한 변경이면 값을 갱신하고 BUGS.md 에 적는다.
+  assert.equal(summarize(generateFloor({ seed: 'fable', floor: 1 })), FABLE_SUMMARY);
 });
 
 test('맵은 JSON 으로 왕복해도 그대로다(평범한 객체·배열만 쓴다)', () => {
-  for (const floor of [1, 5, 13, 30]) {
-    const map = generateFloor({ seed: 'json', floor });
-    assert.ok(Array.isArray(map.tiles), 'tiles 는 일반 배열');
-    assert.deepEqual(JSON.parse(JSON.stringify(map)), map);
+  const map = SAMPLE[0];
+  assert.deepEqual(JSON.parse(JSON.stringify(map)), map);
+  assert.ok(Array.isArray(map.tiles) && !ArrayBuffer.isView(map.tiles));
+});
+
+// ── 층의 구성 ────────────────────────────────────────────────────────────────
+
+test('표본 150개가 모두 검증을 통과하고, 비상 레이아웃을 쓰지 않는다', () => {
+  for (const map of SAMPLE) {
+    assert.deepEqual(validateFloor(map), [], toAscii(map));
+    assert.equal(map.gen.fallback, false);
+    assert.ok(map.gen.attempts >= 1 && map.gen.attempts <= WORLD.maxAttempts);
+    assert.equal(map.kind, FLOOR_KIND.STAGE);
+    assert.equal(map.zoneId, ZONES[0].id);
+    assert.equal(map.width, WORLD.layout.w);
+    assert.equal(map.height, WORLD.layout.h + WORLD.boss.bandH);
   }
 });
 
-// ── 구성 ─────────────────────────────────────────────────────────────────────
-
-test('층의 구역·종류·크기가 층 계획과 구역 데이터를 따른다', () => {
-  for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-    const plan = floorPlan(floor);
-    const map = generateFloor({ seed: 'plan', floor });
-    assert.equal(map.floor, floor);
-    assert.equal(map.zoneId, plan.zone.id);
-    assert.equal(map.kind, plan.kind);
-    if (plan.kind === FLOOR_KIND.NORMAL) {
-      assert.ok(['rooms', 'cave'].includes(map.algorithm));
-      assert.equal(map.width, plan.zone.size.w);
-      assert.equal(map.height, plan.zone.size.h);
-    }
+test('방은 8~12개이고(출구 방·숨은 방 제외), 시작·보스·출구가 하나씩 있다', () => {
+  const counts = new Set();
+  for (const map of SAMPLE) {
+    const kinds = map.rooms.map((r) => r.kind);
+    const counted = kinds.filter((k) => k !== ROOM_KIND.EXIT && k !== ROOM_KIND.BONUS).length;
+    counts.add(counted);
+    assert.ok(counted >= WORLD.roomCount[0] && counted <= WORLD.roomCount[1], `방 ${counted}개`);
+    for (const kind of [ROOM_KIND.START, ROOM_KIND.BOSS, ROOM_KIND.EXIT]) assert.equal(kinds.filter((k) => k === kind).length, 1, kind);
+    assert.ok(kinds.filter((k) => k === ROOM_KIND.COMBAT || k === ROOM_KIND.ELITE).length >= WORLD.rules.minCombatRooms);
   }
+  assert.ok(counts.size >= 4, `방 수가 ${[...counts].sort()} 로 다양하다`);
 });
 
-test('보스층: 전용 레이아웃, 그 구역의 보스 한 마리, 일반 적·이벤트방 없음', () => {
-  for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-    const plan = floorPlan(floor);
-    if (plan.kind === FLOOR_KIND.NORMAL) continue;
-    const map = generateFloor({ seed: 'bosses', floor });
-    const bosses = map.spawns.filter((s) => s.kind === 'boss');
-
-    assert.equal(map.algorithm, plan.kind === FLOOR_KIND.FINAL_BOSS ? 'bossFinal' : 'bossMid');
-    assert.deepEqual(bosses.map((b) => b.id), [plan.zone.boss.id]);
-    assert.equal(map.spawns.filter((s) => s.kind === 'enemy').length, 0);
-    assert.deepEqual(map.eventRooms, []);
-    if (plan.kind === FLOOR_KIND.FINAL_BOSS) assert.equal(map.stairs, null);
-    else assert.ok(map.stairs.y < bosses[0].y && bosses[0].y < map.start.y, '시작점 → 보스 → 계단 순으로 놓인다');
-  }
+test('방의 종류가 고루 나온다: 상점·보상·정예·숨은 방이 표본의 상당수에 있다', () => {
+  const has = (kind) => SAMPLE.filter((map) => map.rooms.some((r) => r.kind === kind)).length;
+  assert.ok(has(ROOM_KIND.SHOP) >= SAMPLE.length * 0.9, `상점 ${has(ROOM_KIND.SHOP)}`);
+  assert.ok(has(ROOM_KIND.ELITE) >= SAMPLE.length * 0.8, `정예 ${has(ROOM_KIND.ELITE)}`);
+  assert.ok(has(ROOM_KIND.REWARD) >= SAMPLE.length * 0.5, `보상 ${has(ROOM_KIND.REWARD)}`);
+  assert.ok(has(ROOM_KIND.BONUS) >= SAMPLE.length * 0.4, `숨은 방 ${has(ROOM_KIND.BONUS)}`);
 });
 
-test('두 알고리즘이 모두 쓰이고, 구역별 비율이 설정을 따른다', () => {
-  const counts = ZONES.map(() => ({ rooms: 0, cave: 0 }));
-  for (let n = 0; n < 150; n++) {
-    for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-      const plan = floorPlan(floor);
-      if (plan.kind !== FLOOR_KIND.NORMAL) continue;
-      counts[plan.zoneIndex][generateFloor({ seed: `ratio-${n}`, floor }).algorithm]++;
-    }
-  }
-  ZONES.forEach((zone, i) => {
-    const total = counts[i].rooms + counts[i].cave;
-    const expected = zone.algorithms.rooms / (zone.algorithms.rooms + zone.algorithms.cave);
-    const actual = counts[i].rooms / total;
-    assert.ok(counts[i].rooms > 0 && counts[i].cave > 0, `${zone.id}: 한 알고리즘만 나옴`);
-    assert.ok(Math.abs(actual - expected) < 0.08, `${zone.id}: 방+복도 비율 ${actual.toFixed(3)} (설정 ${expected.toFixed(3)})`);
-  });
-});
-
-test('적은 그 구역의 적 풀에서만 나오고, 풀의 모든 적이 등장한다', () => {
-  const seen = ZONES.map(() => new Set());
-  for (let n = 0; n < 30; n++) {
-    for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-      const plan = floorPlan(floor);
-      for (const s of generateFloor({ seed: `pool-${n}`, floor }).spawns) {
-        if (s.kind === 'enemy') seen[plan.zoneIndex].add(s.id);
+test('전투방은 11×9 이상이고, 보스 방은 그보다 크며, 숨은 방만 동굴 모양이다', () => {
+  for (const map of SAMPLE) {
+    const boss = map.rooms.find((r) => r.kind === ROOM_KIND.BOSS);
+    for (const room of map.rooms) {
+      if (room.kind === ROOM_KIND.COMBAT || room.kind === ROOM_KIND.ELITE) {
+        assert.ok(room.w >= 11 && room.h >= 9, `${room.kind} ${room.w}x${room.h}`);
       }
+      assert.equal(room.shape, room.kind === ROOM_KIND.BONUS ? 'cave' : 'rect');
+    }
+    assert.ok(boss.w >= WORLD.boss.arenaW[0] && boss.h >= WORLD.boss.arenaH[0]);
+  }
+});
+
+test('시작 방에서 보스 방까지는 방을 셋 이상 건너야 하고, 보스 방은 가장 깊은 축에 든다', () => {
+  for (const map of SAMPLE) {
+    const start = map.rooms.find((r) => r.kind === ROOM_KIND.START);
+    const boss = map.rooms.find((r) => r.kind === ROOM_KIND.BOSS);
+    assert.equal(start.depth, 0);
+    assert.ok(boss.depth >= WORLD.rules.startBossMinHops, `보스 깊이 ${boss.depth}`);
+    assert.deepEqual(map.start, start.feature);
+  }
+});
+
+test('문: 방과 방 사이는 문 두 개(복도의 양 끝)로 이어지고, 문은 벽 줄에 놓여 방 안쪽 두 칸이 비어 있다', () => {
+  for (const map of SAMPLE.slice(0, 60)) {
+    assert.equal(map.doors.length, map.links.length * 2);
+    for (const link of map.links) {
+      const [a, b] = link.doors.map((id) => map.doors[id]);
+      assert.deepEqual([a.room, a.to, b.room, b.to], [link.rooms[0], link.rooms[1], link.rooms[1], link.rooms[0]]);
+    }
+    for (const door of map.doors) {
+      const room = map.rooms[door.room];
+      assert.ok(door.cells.length >= 1 && door.cells.length <= 3);
+      for (const c of door.cells) {
+        const x = c % map.width;
+        const y = Math.floor(c / map.width);
+        const outside = x < room.x || x >= room.x + room.w || y < room.y || y >= room.y + room.h;
+        if (room.shape === 'rect') assert.ok(outside, '문은 방의 사각형 바로 바깥(벽 줄)에 있다');
+      }
+      assert.ok(Number.isFinite(door.x) && Number.isFinite(door.y));
+    }
+    // 방마다 문이 하나 이상 있다.
+    for (const room of map.rooms) assert.ok(room.doors.length >= 1, `방 ${room.id}(${room.kind})`);
+  }
+});
+
+test('길이 여러 갈래다: 문이 셋 이상인 방이 있고, 대부분의 층에 순환로가 있다', () => {
+  let loops = 0;
+  for (const map of SAMPLE) {
+    const main = map.links.filter((l) => !l.secret).length;
+    const rooms = map.rooms.filter((r) => r.kind !== ROOM_KIND.BONUS).length;
+    if (main > rooms - 1) loops++;
+    assert.ok(map.rooms.some((r) => r.doors.length >= 3), '갈림길');
+  }
+  assert.ok(loops >= SAMPLE.length * 0.8, `순환로가 있는 층 ${loops}/${SAMPLE.length}`);
+});
+
+test('웨이브: 전투방은 2~3회, 깊을수록 적이 많고, 적은 그 구역의 풀에서만 나온다', () => {
+  const pool = new Set(ZONES[0].enemies.map((e) => e.id));
+  const seen = new Set();
+  const perDepth = {};
+  for (const map of SAMPLE) {
+    for (const room of map.rooms) {
+      if (!isFightRoom(room.kind)) {
+        assert.deepEqual([room.waves, room.spawnCells], [[], []]);
+        continue;
+      }
+      if (room.kind === ROOM_KIND.BOSS) {
+        assert.deepEqual(room.waves, [[{ type: ZONES[0].boss.id, elite: false }]]);
+        continue;
+      }
+      assert.ok(room.waves.length >= 2 && room.waves.length <= 3, `웨이브 ${room.waves.length}회`);
+      for (const wave of room.waves) {
+        assert.ok(wave.length >= 1 && wave.length <= ENCOUNTERS.maxPerWave + ENCOUNTERS.elite.perWave);
+        for (const spawn of wave) {
+          assert.ok(pool.has(spawn.type), spawn.type);
+          seen.add(spawn.type);
+        }
+      }
+      if (room.kind === ROOM_KIND.COMBAT) {
+        const total = room.waves.reduce((n, wave) => n + wave.length, 0);
+        (perDepth[Math.min(room.depth, 4)] ??= []).push(total);
+      }
+      assert.ok(room.spawnCells.length >= Math.max(...room.waves.map((w) => w.length)) + WORLD.rules.spawnSpare);
     }
   }
-  ZONES.forEach((zone, i) => {
-    assert.deepEqual([...seen[i]].sort(), zone.enemies.map((e) => e.id).sort(), zone.id);
-  });
+  assert.deepEqual([...seen].sort(), [...pool].sort(), '풀의 모든 적이 등장한다');
+  const avg = (list) => list.reduce((a, b) => a + b, 0) / list.length;
+  assert.ok(avg(perDepth[4]) > avg(perDepth[1]) * 1.3, `깊이 1: ${avg(perDepth[1]).toFixed(1)}마리, 깊이 4+: ${avg(perDepth[4]).toFixed(1)}마리`);
+});
+
+test('보상: 전투방마다 보상이 있고, 한 층에 축복 방 둘·무기 방 하나 이상. 네 가지 보상이 모두 나온다', () => {
+  const seen = new Set();
+  for (const map of SAMPLE) {
+    const combat = map.rooms.filter((r) => r.kind === ROOM_KIND.COMBAT);
+    for (const room of combat) seen.add(room.reward);
+    assert.ok(combat.filter((r) => r.reward === REWARD.BOON).length >= ENCOUNTERS.rewards.minBoon);
+    assert.ok(combat.filter((r) => r.reward === REWARD.WEAPON).length >= ENCOUNTERS.rewards.minWeapon);
+    for (const room of map.rooms) {
+      if (room.kind === ROOM_KIND.START || room.kind === ROOM_KIND.SHOP || room.kind === ROOM_KIND.EXIT) assert.equal(room.reward, null);
+    }
+  }
+  assert.deepEqual([...seen].sort(), Object.values(REWARD).sort());
+});
+
+test('숨은 방: 닫힌 숨은 문 하나로만 이어지고, 그 문을 빼면 나머지 맵은 그대로 이어져 있다', () => {
+  let checked = 0;
+  for (const map of SAMPLE) {
+    const bonus = map.rooms.find((r) => r.kind === ROOM_KIND.BONUS);
+    const secrets = map.doors.filter((d) => d.secret);
+    if (!bonus) {
+      assert.equal(secrets.length, 0);
+      assert.equal(map.tiles.includes(TILE.DOOR), false);
+      continue;
+    }
+    checked++;
+    assert.equal(secrets.length, 1);
+    assert.equal(secrets[0].open, false);
+    assert.equal(secrets[0].to, bonus.id);
+    assert.equal(secrets[0].cells.length, 1, '좁은 굴');
+    const dist = bfsDistances(map.tiles, map.width, map.height, map.start.y * map.width + map.start.x);
+    assert.equal(dist[bonus.feature.y * map.width + bonus.feature.x], -1, '문이 닫혀 있으면 닿지 못한다');
+  }
+  assert.ok(checked > 30);
 });
 
 // ── 재시도 상한과 비상 레이아웃 ──────────────────────────────────────────────
 
 test('시도가 계속 실패하면 상한(maxAttempts)에서 멈추고 비상 레이아웃을 쓴다', () => {
-  for (const floor of [3, 13, 5, 30]) {
-    let calls = 0;
-    const rejected = [];
-    const map = generateFloorFromRng(worldRng('cap'), floor, {
-      build: () => {
-        calls++;
-        return { rejected: 'forced' };
-      },
-      onReject: (attempt, reasons) => rejected.push([attempt, reasons]),
-    });
-
-    assert.equal(calls, WORLD.maxAttempts, `${floor}층: 시도 횟수`);
-    assert.deepEqual(rejected, Array.from({ length: WORLD.maxAttempts }, (_, i) => [i + 1, ['forced']]));
-    assert.deepEqual(map.gen, { attempts: WORLD.maxAttempts, fallback: true, tunnels: 0, filled: 0 });
-    assert.deepEqual(validateFloor(map), [], toAscii(map));
-    assert.equal(labelRegions(map.tiles, map.width, map.height).sizes.length, 1);
-    if (floorPlan(floor).kind === FLOOR_KIND.NORMAL) assert.equal(map.algorithm, 'fallback');
-  }
+  let calls = 0;
+  const rejected = [];
+  const map = generateFloorFromRng(worldRng('cap'), 1, {
+    build: () => {
+      calls++;
+      return { rejected: 'forced' };
+    },
+    onReject: (attempt, reasons) => rejected.push([attempt, reasons]),
+  });
+  assert.equal(calls, WORLD.maxAttempts);
+  assert.deepEqual(rejected, Array.from({ length: WORLD.maxAttempts }, (_, i) => [i + 1, ['forced']]));
+  assert.deepEqual(map.gen, { attempts: WORLD.maxAttempts, fallback: true });
+  assert.equal(map.algorithm, 'fallback');
+  assert.deepEqual(validateFloor(map), [], toAscii(map));
+  assert.equal(map.rooms.some((r) => r.kind === ROOM_KIND.BONUS), false, '비상 레이아웃에는 숨은 방이 없다');
 });
 
-test('비상 레이아웃도 결정적이다', () => {
+test('비상 레이아웃은 시드와 무관하게 항상 검증을 통과하고, 같은 시드면 같다', () => {
   const build = () => ({ rejected: 'forced' });
-  assert.deepEqual(
-    generateFloorFromRng(worldRng('cap'), 8, { build }),
-    generateFloorFromRng(worldRng('cap'), 8, { build }),
-  );
+  for (const seed of ['fb-a', 'fb-b', 'fb-c', 'fb-d', 'fb-e', 'fb-f']) {
+    const map = generateFloorFromRng(worldRng(seed), 1, { build });
+    assert.deepEqual(validateFloor(map), [], `${seed}\n${toAscii(map)}`);
+    assert.deepEqual(generateFloorFromRng(worldRng(seed), 1, { build }), map);
+  }
+  const plain = buildStage(Rng.fromSeed('direct'), { floor: 1, zoneIndex: 0, zone: ZONES[0], kind: FLOOR_KIND.STAGE }, { plain: true });
+  assert.equal(plain.rejected, undefined);
 });
 
 test('검증에 실패한 시도는 버리고 다음 시도로 넘어간다', () => {
-  const real = generateFloor({ seed: 'retry', floor: 2 });
+  const real = generateFloor({ seed: 'retry', floor: 1 });
   let calls = 0;
   const reasons = [];
-  const map = generateFloorFromRng(worldRng('retry'), 2, {
+  const map = generateFloorFromRng(worldRng('retry'), 1, {
     build: () => {
       calls++;
-      if (calls <= 2) {
-        // 계단을 시작점 위에 놓은 잘못된 층.
-        const broken = structuredClone(real);
-        broken.stairs = { ...broken.start };
-        return broken;
-      }
-      return structuredClone(real);
+      const copy = structuredClone(real);
+      // 처음 두 번은 시작점을 엉뚱한 곳에 둔 잘못된 층.
+      if (calls <= 2) copy.start = { x: copy.start.x + 1, y: copy.start.y };
+      return copy;
     },
     onReject: (attempt, r) => reasons.push(r.join(';')),
   });
-
   assert.equal(calls, 3);
   assert.equal(map.gen.attempts, 3);
   assert.equal(map.gen.fallback, false);
-  assert.deepEqual(reasons, ['stairs-on-start', 'stairs-on-start']);
+  assert.deepEqual(reasons, ['start-misplaced', 'start-misplaced']);
   assert.deepEqual(map.tiles, real.tiles);
 });
 
 test('시도마다 서로 다른 난수 스트림을 받는다', () => {
   const firsts = [];
-  generateFloorFromRng(worldRng('streams'), 2, {
+  generateFloorFromRng(worldRng('streams'), 1, {
     build: (rng) => {
       firsts.push(rng.nextUint32());
       return { rejected: 'forced' };
@@ -227,43 +300,26 @@ test('generateFloor 는 잘못된 층·시드를 거부한다', () => {
 test('enterFloor: 상태에 층 맵을 넣고 FLOOR_ENTERED 를 발행한다', () => {
   const game = createGame({ seed: 'enter' });
   const events = [];
-  game.bus.on(EVENTS.FLOOR_ENTERED, (payload) => events.push(payload));
-  const rngBefore = structuredClone(game.state.rng);
-
-  enterFloor(game, 6);
-
-  assert.deepEqual(game.state.world, generateFloor({ seed: 'enter', floor: 6 }));
-  assert.equal(game.state.run.floor, 6);
-  assert.deepEqual(events, [{ floor: 6, zoneId: 'sewer', kind: 'normal' }]);
-  assert.deepEqual(game.state.rng, rngBefore, '맵 생성은 상태의 난수 스트림을 소비하지 않는다');
-  assert.deepEqual(JSON.parse(JSON.stringify(game.state)), game.state);
+  game.bus.on(EVENTS.FLOOR_ENTERED, (e) => events.push(e));
+  enterFloor(game, 1);
+  assert.equal(game.state.run.floor, 1);
+  assert.deepEqual(events, [{ floor: 1, zoneId: ZONES[0].id, kind: FLOOR_KIND.STAGE }]);
+  // 시작 방이 드러난 것 말고는 갓 만든 층과 같다.
+  const fresh = generateFloor({ seed: 'enter', floor: 1 });
+  assert.deepEqual(game.state.world.tiles, fresh.tiles);
+  assert.deepEqual(game.state.world.doors, fresh.doors);
+  assert.deepEqual(game.state.world.rooms.map((r) => r.waves), fresh.rooms.map((r) => r.waves));
 });
 
-test('enterFloor: 다른 스트림을 소비했거나 층을 되돌아와도 같은 맵이다', () => {
-  const game = createGame({ seed: 'enter' });
-  enterFloor(game, 2);
-  const second = structuredClone(game.state.world);
-  for (let i = 0; i < 20; i++) rngOf(game.state, 'combat').nextUint32();
-  enterFloor(game, 3);
-  enterFloor(game, 2);
-
-  assert.deepEqual(game.state.world, second);
-  assert.throws(() => enterFloor(game, 99), RangeError);
-});
-
-// ── 표본 전수 검사(전체 검증은 scripts/verify-maps.mjs) ──────────────────────
-
-test('표본: 시드 40개 × 전 층이 모두 검증을 통과하고 고립 구역이 없다', () => {
-  let maps = 0;
-  for (let n = 0; n < 40; n++) {
-    for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-      const map = generateFloor({ seed: `sample-${n}`, floor });
-      const where = `시드 "sample-${n}" ${floor}층`;
-      assert.deepEqual(validateFloor(map), [], `${where}\n${toAscii(map)}`);
-      assert.equal(labelRegions(map.tiles, map.width, map.height).sizes.length, 1, where);
-      assert.equal(map.gen.fallback, false, where);
-      maps++;
-    }
+test('enterFloor: 다른 스트림을 소비했어도 같은 맵이다', () => {
+  const a = createGame({ seed: 'enter-same' });
+  const b = createGame({ seed: 'enter-same' });
+  for (let i = 0; i < 100; i++) {
+    rngOf(b.state, 'world').nextUint32();
+    rngOf(b.state, 'combat').nextUint32();
+    rngOf(b.state, 'items').nextUint32();
   }
-  assert.equal(maps, 40 * TOTAL_FLOORS);
+  enterFloor(a, 1);
+  enterFloor(b, 1);
+  assert.deepEqual(a.state.world, b.state.world);
 });

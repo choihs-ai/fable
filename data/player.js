@@ -36,6 +36,11 @@ export const PLAYER = deepFreeze({
   dash: { speed: 14, duration: 0.17, invuln: 0.25, charges: 2, recharge: 1.2, attackWindow: 0.3 },
   /** 입력 버퍼: 지금 할 수 없는 대시·스킬 입력을 이 시간(초) 동안 기억했다가 가능해지면 실행한다. */
   inputBuffer: 0.15,
+  /**
+   * 개머리판 치기: 에너지가 모자라 원거리 무기를 쏠 수 없을 때 대신 나가는 약한 근접 공격(에너지를 쓰지 않는다).
+   * 원거리 무기만 둘 들고 에너지가 떨어져도 잠긴 방에서 아무것도 못 하게 되지는 않는다.
+   */
+  bash: { cooldown: 0.45, effects: [{ type: 'arc', range: 1.4, cosHalf: 0.3, damage: 5, knockback: 7 }] },
   /** 에너지가 모자라 쏘지 못했다는 알림을 다시 내기까지(초). */
   emptyNoticeSec: 1,
   /** 맞은 뒤 잠깐의 무적(초). 여러 탄을 한꺼번에 맞아 즉사하는 일을 막는다. */

@@ -5,7 +5,11 @@ import { test } from 'node:test';
 
 import { BOSSES } from '../../../data/bosses.js';
 import { ENEMIES } from '../../../data/enemies.js';
+import { BOONS, BOON_RULES, FAMILIES } from '../../../data/boons.js';
+import { CHARACTERS, CHARACTER_ORDER } from '../../../data/characters.js';
 import { PLAYER } from '../../../data/player.js';
+import { WEAPONS, WEAPON_ORDER } from '../../../data/weapons.js';
+import { PLAYER_DEF, weaponAbilityId } from '../../../src/logic/entities/defs.js';
 import { STATUSES } from '../../../data/statuses.js';
 import { ZONES } from '../../../data/zones.js';
 import { BEHAVIORS } from '../../../src/logic/combat/ai/behaviors.js';
@@ -170,10 +174,83 @@ test('보스마다 고유한 패턴 구성을 가진다', () => {
   }
 });
 
-test('플레이어 데이터', () => {
-  checkActor('player', { ...PLAYER, name: '플레이어' });
+test('플레이어 데이터: 대시는 충전식이고 무적 시간이 돌진보다 길다', () => {
   assert.ok(PLAYER.radius < 0.5);
-  assert.ok(PLAYER.dodge.speed > PLAYER.speed && PLAYER.dodge.invuln >= PLAYER.dodge.duration && PLAYER.dodge.cooldown > PLAYER.dodge.invuln);
-  assert.ok(PLAYER.abilities[PLAYER.attack]);
-  for (const id of PLAYER.skills) assert.ok(PLAYER.abilities[id], id);
+  const { dash } = PLAYER;
+  assert.ok(dash.speed > 8 && dash.charges >= 2 && dash.recharge > 0 && dash.attackWindow > 0);
+  assert.ok(dash.invuln >= dash.duration, '돌진하는 동안은 내내 무적');
+  assert.ok(Math.abs(dash.invuln - 0.25) < 1e-9, '무적 0.25초');
+  assert.ok(Math.abs(PLAYER.inputBuffer - 0.15) < 1e-9, '입력 버퍼 150ms');
+  assert.ok(PLAYER.bash.effects[0].damage > 0, '에너지가 없을 때의 근접 공격');
+});
+
+test('캐릭터 데이터: 2종 이상, 시작 무기 둘과 고유 스킬 하나', () => {
+  assert.ok(CHARACTER_ORDER.length >= 2);
+  assert.deepEqual([...CHARACTER_ORDER].sort(), Object.keys(CHARACTERS).sort());
+  const skills = new Set();
+  for (const [id, c] of Object.entries(CHARACTERS)) {
+    assert.ok(c.hp > 0 && c.speed > 0 && c.energy > 0 && c.name && c.desc, id);
+    assert.equal(c.weapons.length, 2, id);
+    for (const w of c.weapons) assert.ok(WEAPONS[w], `${id}: 무기 ${w}`);
+    assert.ok(c.skill.cooldown > 0 && c.skill.name && c.skill.desc, id);
+    skills.add(c.skill.type);
+    assert.ok(Number.isInteger(c.cost) && c.cost >= 0, id);
+  }
+  assert.equal(skills.size, CHARACTER_ORDER.length, '스킬이 서로 다르다');
+  assert.ok(Object.values(CHARACTERS).some((c) => c.cost === 0), '처음부터 쓸 수 있는 캐릭터가 있다');
+  assert.ok(Object.values(CHARACTERS).some((c) => c.cost > 0), '해금하는 캐릭터가 있다');
+});
+
+test('무기 데이터: 12종 이상, 원거리는 에너지를 쓰고 근접은 쓰지 않는다', () => {
+  assert.ok(WEAPON_ORDER.length >= 12, `무기 ${WEAPON_ORDER.length}종`);
+  assert.deepEqual([...WEAPON_ORDER].sort(), Object.keys(WEAPONS).sort());
+  for (const id of ['pistol', 'shotgun', 'smg', 'sniper', 'laser', 'rocket', 'bow', 'spear', 'greatsword', 'dual_blades']) assert.ok(WEAPONS[id], id);
+  const types = new Set();
+  for (const [id, w] of Object.entries(WEAPONS)) {
+    assert.ok(w.name && w.desc && w.look, id);
+    assert.ok([1, 2, 3].includes(w.tier), id);
+    assert.ok(w.kind === 'melee' || w.kind === 'ranged', id);
+    if (w.kind === 'melee') assert.equal(w.energy, 0, `${id}: 근접은 무료`);
+    else assert.ok(Number.isInteger(w.energy) && w.energy > 0, `${id}: 원거리는 에너지 소모`);
+    for (const ability of [w.attack, w.dash].filter(Boolean)) {
+      assert.ok(ability.cooldown > 0 && ability.effects.length > 0, id);
+      for (const e of ability.effects) {
+        types.add(e.type);
+        if (e.type !== 'dash') assert.ok(e.damage > 0, `${id}: 피해`);
+        if (w.kind === 'melee') assert.ok(['arc', 'circle', 'dash'].includes(e.type), `${id}: 근접 효과 ${e.type}`);
+        else assert.ok(['projectile', 'beam'].includes(e.type), `${id}: 원거리 효과 ${e.type}`);
+      }
+    }
+    // 대시 공격은 무기마다 있다(따로 정하지 않으면 기본 공격을 키운 것).
+    const dash = PLAYER_DEF.abilities[weaponAbilityId(id, true)];
+    const base = PLAYER_DEF.abilities[weaponAbilityId(id)];
+    assert.ok(dash && base, id);
+    const total = (ability) => ability.effects.reduce((sum, e) => sum + (e.damage ?? 0) * (e.spread ? e.spread.length : 1) + (e.explode ? e.explode.damage : 0), 0);
+    assert.ok(total(dash) > total(base), `${id}: 대시 공격이 기본 공격보다 강하다`);
+    assert.ok((dash.windup ?? 0) <= (base.windup ?? 0), `${id}: 대시 공격은 준비 시간이 더 길지 않다`);
+  }
+  for (const type of ['arc', 'circle', 'projectile', 'beam', 'dash']) assert.ok(types.has(type), `효과 ${type} 를 쓰는 무기가 있다`);
+});
+
+test('축복 데이터: 20종 이상, 세 계열과 합성 축복', () => {
+  const ids = Object.keys(BOONS);
+  assert.ok(ids.length >= 20, `축복 ${ids.length}종`);
+  assert.deepEqual(Object.keys(FAMILIES).sort(), ['bolt', 'fire', 'ice']);
+  const perFamily = { fire: 0, bolt: 0, ice: 0 };
+  const duoPairs = new Set();
+  for (const [id, b] of Object.entries(BOONS)) {
+    assert.ok(b.name && b.desc && b.weight > 0, id);
+    if (b.family !== null) {
+      assert.ok(FAMILIES[b.family], `${id}: 계열 ${b.family}`);
+      perFamily[b.family]++;
+    }
+    if (b.duo) {
+      assert.equal(b.family, null, `${id}: 합성 축복은 계열에 속하지 않는다`);
+      assert.ok(b.duo.length === 2 && b.duo[0] !== b.duo[1] && FAMILIES[b.duo[0]] && FAMILIES[b.duo[1]], id);
+      duoPairs.add([...b.duo].sort().join('+'));
+    }
+  }
+  for (const family of Object.keys(perFamily)) assert.ok(perFamily[family] >= 3, `${family} 계열 ${perFamily[family]}종`);
+  assert.equal(duoPairs.size, 3, '계열 두 개의 조합 셋 모두에 합성 축복이 있다');
+  assert.equal(BOON_RULES.choices, 3);
 });

@@ -69,10 +69,10 @@ export const WEAPONS = deepFreeze({
     attack: { cooldown: 0.3, effects: [{ type: 'projectile', speed: 18, radius: 0.14, range: 11, damage: 9, knockback: 5 }] },
   },
   staff: {
-    name: '지팡이', kind: 'ranged', energy: 3, tier: 1, look: 'staff', desc: '터지는 마력 구슬.',
+    name: '지팡이', kind: 'ranged', energy: 2, tier: 1, look: 'staff', desc: '터지는 마력 구슬.',
     attack: {
-      cooldown: 0.45,
-      effects: [{ type: 'projectile', speed: 11, radius: 0.24, range: 10, damage: 10, knockback: 4, explode: { radius: 1.2, damage: 7 } }],
+      cooldown: 0.42,
+      effects: [{ type: 'projectile', speed: 12, radius: 0.24, range: 10, damage: 11, knockback: 4, explode: { radius: 1.3, damage: 9 } }],
     },
   },
   bow: {

@@ -154,8 +154,9 @@ function assignRoles(rng, layout, bspRooms, wing, bonus) {
   };
   const shop = pickEventRoom(rng, pool, { minDepth: rules.eventMinDepth, preferLeaf: true }, depthOf, degree);
   if (shop) take(shop, ROOM_KIND.SHOP);
-  const leaves = pool.filter((room) => degree(room) === 1);
-  const reward = pickEventRoom(rng, leaves, { minDepth: rules.eventMinDepth, preferLeaf: true }, depthOf, degree);
+  // 보상 방: 막다른 방을 먼저 고르되, 전투방이 모자라게 되면 두지 않는다.
+  const spare = bspRooms.filter((room) => !room.kind).length - 1 - rules.minCombatRooms;
+  const reward = spare >= 1 ? pickEventRoom(rng, pool, { minDepth: rules.eventMinDepth, preferLeaf: true }, depthOf, degree) : null;
   if (reward) take(reward, ROOM_KIND.REWARD);
   const eliteCandidates = rng.shuffle(pool.filter((room) => room.depth >= 2));
   // 정예방을 두더라도 보통 전투방이 셋은 남아야 한다(축복 방·무기 방을 채울 수 있도록).

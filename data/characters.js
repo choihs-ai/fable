@@ -18,7 +18,7 @@ export const CHARACTERS = deepFreeze({
   },
   mage: {
     name: '마법사', desc: '약하지만 에너지가 많다. 지팡이와 단검으로 시작한다.',
-    hp: 85, speed: 4.7, energy: 230, weapons: ['staff', 'dagger'],
+    hp: 95, speed: 4.7, energy: 230, weapons: ['staff', 'dagger'],
     skill: { name: '시간 왜곡', desc: '겨눈 자리에 5초 동안 장판을 깐다. 안의 적과 탄이 크게 느려진다.', type: 'warp', radius: 4.5, duration: 5, slow: 0.3, reach: 7, cooldown: 18 },
     /** 거점에서 영혼석으로 해금한다. */
     cost: 60,

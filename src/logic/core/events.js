@@ -20,7 +20,7 @@ export const EVENTS = Object.freeze({
   PLAYER_DASHED: 'player:dashed',
   /** payload: { id, x, y } — 대시가 끝남 */
   PLAYER_DASH_ENDED: 'player:dashEnded',
-  /** payload: { weapon, slot, dash:boolean, offhand:boolean, kind:'melee'|'ranged', x, y, dirX, dirY } — 플레이어가 무기를 씀 */
+  /** payload: { weapon, slot, dash:boolean, offhand:boolean, bash?:true, kind:'melee'|'ranged', x, y, dirX, dirY } — 플레이어가 무기를 씀(bash 는 에너지가 없어 개머리판으로 친 것) */
   WEAPON_USED: 'weapon:used',
   /** payload: { slot, weapon } — 든 무기를 바꿈 */
   WEAPON_SWAPPED: 'weapon:swapped',

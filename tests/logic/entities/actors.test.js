@@ -2,110 +2,101 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { COMBAT } from '../../../data/combat.js';
-import { PLAYER } from '../../../data/player.js';
 import { EVENTS } from '../../../src/logic/core/events.js';
 import { PHASE, STATE_VERSION } from '../../../src/logic/core/state.js';
 import { setInput } from '../../../src/logic/combat/player.js';
 import { allActors, findFreeSpot, getPlayer, opponentsOf, spawnEnemy, spawnPlayer } from '../../../src/logic/entities/actors.js';
-import { defOf, enemyDef, isBossType, statusResistOf } from '../../../src/logic/entities/defs.js';
-import { floorScaling } from '../../../src/logic/entities/scaling.js';
-import { isVisible } from '../../../src/logic/entities/vision.js';
+import { PLAYER_DEF, defOf, enemyDef, statusResistOf } from '../../../src/logic/entities/defs.js';
+import { depthScaling } from '../../../src/logic/entities/scaling.js';
 import { createGame, enterFloor, setPhase, tick } from '../../../src/logic/game.js';
 import { circleFree } from '../../../src/logic/world/collide.js';
-import { TOTAL_FLOORS } from '../../../src/logic/world/floors.js';
 import { navOf } from '../../../src/logic/world/nav.js';
+import { botStep, createBot } from '../../../scripts/lib/bot.js';
 import { DT, createArena, openRoom, sec } from '../../helpers/arena.js';
 
 // ── 생성 ──
 
-test('층에 들어가면 플레이어가 시작점에, 맵의 배치대로 적·보스가 생긴다', () => {
-  for (const floor of [1, 5, 13, 22, TOTAL_FLOORS]) {
-    const game = createGame({ seed: 'spawn' });
-    const spawned = [];
-    game.bus.on(EVENTS.ENTITY_SPAWNED, (e) => spawned.push(e));
-    enterFloor(game, floor);
-    const { state } = game;
-    const map = state.world;
-    const nav = navOf(map);
-    const player = getPlayer(state);
-    const expected = map.spawns.filter((s) => s.kind !== 'item');
+test('층에 들어가면 플레이어만 시작점에 생긴다 — 적은 방에 들어설 때 나타난다', () => {
+  const game = createGame({ seed: 'spawn' });
+  const spawned = [];
+  game.bus.on(EVENTS.ENTITY_SPAWNED, (e) => spawned.push(e));
+  enterFloor(game, 1);
+  const { state } = game;
+  const map = state.world;
+  const player = getPlayer(state);
+  assert.deepEqual([player.x, player.y], [map.start.x + 0.5, map.start.y + 0.5]);
+  assert.equal(player.kind, 'player');
+  assert.equal(allActors(state).length, 1);
+  assert.equal(spawned.length, 1);
+  assert.ok(circleFree(navOf(map), player.x, player.y, player.radius));
+  assert.equal(state.encounter, null);
+});
 
-    assert.deepEqual([player.x, player.y], [map.start.x + 0.5, map.start.y + 0.5]);
-    assert.equal(player.kind, 'player');
-    assert.equal(allActors(state).length, expected.length + 1, `${floor}층 행동체 수`);
-    assert.equal(spawned.length, expected.length + 1);
-    const enemies = opponentsOf(state, 'player');
-    assert.deepEqual(enemies.map((e) => e.type).sort(), expected.map((s) => s.id).sort());
-    for (const e of enemies) {
-      assert.equal(e.kind, isBossType(e.type) ? 'boss' : 'enemy');
-      assert.equal(e.ai.mode, 'idle');
-      assert.deepEqual([e.ai.homeX, e.ai.homeY], [e.x, e.y]);
-      const scale = floorScaling(floor, isBossType(e.type));
-      assert.equal(e.maxHp, Math.round(enemyDef(e.type).hp * scale.hp), `${floor}층 ${e.type} 체력`);
-      assert.equal(e.hp, e.maxHp);
-      assert.equal(e.power, scale.damage);
-      assert.ok(circleFree(nav, e.x, e.y, e.radius), `${floor}층 ${e.type} 가 벽과 겹침 @${e.x},${e.y} r=${e.radius}`);
-    }
-    assert.equal(new Set(allActors(state).map((a) => a.id)).size, allActors(state).length, 'id 중복 없음');
+test('적의 체력·공격은 방의 깊이에 맞춰지고, 정예는 크고 단단하고, 보스는 깊이와 무관하다', () => {
+  const a = createArena(openRoom(20, 12), { player: { x: 3.5, y: 5.5 } });
+  const def = enemyDef('skeleton');
+  a.state.run.depth = 0;
+  const shallow = spawnEnemy(a.state, a.bus, 'skeleton', 8.5, 5.5);
+  a.state.run.depth = 5;
+  const deep = spawnEnemy(a.state, a.bus, 'skeleton', 10.5, 5.5);
+  const elite = spawnEnemy(a.state, a.bus, 'skeleton', 12.5, 5.5, { elite: true });
+  const boss = spawnEnemy(a.state, a.bus, 'bone_warden', 15.5, 5.5);
+  assert.equal(shallow.maxHp, Math.round(def.hp * depthScaling(0).hp));
+  assert.equal(deep.maxHp, Math.round(def.hp * depthScaling(5).hp));
+  assert.ok(deep.maxHp > shallow.maxHp && deep.power > shallow.power);
+  assert.equal(elite.elite, true);
+  assert.ok(elite.maxHp > deep.maxHp * 2 && elite.radius > deep.radius && elite.power > deep.power);
+  assert.equal(boss.kind, 'boss');
+  assert.equal(boss.maxHp, Math.round(enemyDef('bone_warden').hp * depthScaling(0, { boss: true }).hp));
+  assert.deepEqual(depthScaling(0, { boss: true }), depthScaling(9, { boss: true }));
+  // 깊이가 아무리 깊어도 배율에는 상한이 있다.
+  assert.deepEqual(depthScaling(1000), depthScaling(100000));
+  for (const e of [shallow, deep, elite, boss]) {
+    assert.equal(e.hp, e.maxHp);
+    assert.equal(e.ai.mode, 'idle');
   }
 });
 
-test('모든 층에서 적·보스의 몸이 배치 칸에 들어간다(벽과 겹치지 않는다)', () => {
-  for (const seed of ['fit-a', 'fit-b', 'fit-c']) {
-    for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
-      const game = createGame({ seed });
-      enterFloor(game, floor);
-      const nav = navOf(game.state.world);
-      for (const a of allActors(game.state)) {
-        assert.ok(circleFree(nav, a.x, a.y, a.radius), `${seed} ${floor}층 ${a.type} @${a.x},${a.y} r=${a.radius}`);
-      }
-    }
-  }
-});
-
-test('플레이어는 층을 넘어가도 유지되고, 적·투사체·장판은 새로 만들어진다', () => {
+test('플레이어는 층에 다시 들어가도 유지되고, 적·투사체·장판·전리품은 비워진다', () => {
   const game = createGame({ seed: 'carry' });
   enterFloor(game, 1);
   const { state } = game;
   const player = getPlayer(state);
   player.hp = 37;
-  player.cooldowns.whirlwind = 999;
-  state.projectiles.push({ id: 9999 });
-  state.hazards.push({ id: 9998 });
-  const firstFloorIds = allActors(state).map((a) => a.id);
-
-  enterFloor(game, 2);
-  const again = getPlayer(state);
-  assert.equal(again, player);
-  assert.equal(again.hp, 37);
-  assert.equal(again.cooldowns.whirlwind, 999);
-  assert.deepEqual([again.x, again.y], [state.world.start.x + 0.5, state.world.start.y + 0.5]);
-  assert.deepEqual(state.projectiles, []);
-  assert.deepEqual(state.hazards, []);
-  const newIds = allActors(state).filter((a) => a.id !== player.id).map((a) => a.id);
-  assert.ok(newIds.every((id) => !firstFloorIds.includes(id)), '이전 층의 적은 남지 않는다');
+  player.kit.weapons = ['hammer', 'laser'];
+  spawnEnemy(state, game.bus, 'skeleton', player.x + 2, player.y);
+  state.projectiles.push({ id: 999 });
+  state.hazards.push({ id: 998 });
+  state.drops.push({ id: 997 });
+  enterFloor(game, 1);
+  assert.equal(getPlayer(state), player);
+  assert.equal(player.hp, 37);
+  assert.deepEqual(player.kit.weapons, ['hammer', 'laser']);
+  assert.equal(allActors(state).length, 1);
+  assert.deepEqual([state.projectiles, state.hazards, state.drops], [[], [], []]);
 });
 
 test('상태 버전과 새 항목', () => {
   const game = createGame({ seed: 'shape' });
   assert.equal(game.state.version, STATE_VERSION);
-  assert.ok(STATE_VERSION >= 4);
+  assert.ok(STATE_VERSION >= 5);
   assert.deepEqual(game.state.projectiles, []);
   assert.deepEqual(game.state.hazards, []);
-  assert.equal(game.state.vision, null);
-  assert.deepEqual(game.state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, skill: -1, dodge: false });
+  assert.equal(game.state.encounter, null);
+  assert.deepEqual(game.state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false });
 });
 
 test('전투 중인 상태도 JSON 으로 왕복하면 그대로다', () => {
   const game = createGame({ seed: 'json-combat' });
-  enterFloor(game, 13);
+  enterFloor(game, 1);
   setPhase(game, PHASE.PLAYING);
-  for (const e of opponentsOf(game.state, 'player')) e.ai.provoked = true;
-  for (let i = 0; i < sec(5); i++) {
-    setInput(game.state, { moveX: 1, moveY: 0.3, attack: true, skill: i % 90 === 0 ? 1 : -1 });
+  const bot = createBot();
+  for (let i = 0; i < sec(40); i++) {
+    botStep(game, bot);
     tick(game, DT);
+    if (i % 600 === 0) assert.deepEqual(JSON.parse(JSON.stringify(game.state)), game.state);
   }
-  assert.deepEqual(JSON.parse(JSON.stringify(game.state)), game.state);
+  assert.ok(game.state.run.kills > 0, '실제로 싸웠다');
 });
 
 test('spawnPlayer 는 두 번 부를 수 없고, spawnEnemy 는 모르는 종류를 거부한다', () => {
@@ -117,14 +108,14 @@ test('spawnPlayer 는 두 번 부를 수 없고, spawnEnemy 는 모르는 종류
 test('정의 찾기: defOf, enemyDef, statusResistOf', () => {
   const a = createArena(openRoom(14, 10), { player: { x: 5.5, y: 5.5 } });
   const golem = a.enemy('stone_golem', { x: 10.5, y: 5.5 });
-  assert.equal(defOf(a.player), PLAYER);
+  assert.equal(defOf(a.player), PLAYER_DEF);
   assert.equal(defOf(golem).name, '돌 골렘');
   assert.equal(enemyDef('nope'), null);
   assert.equal(enemyDef('toString'), null, '객체의 기본 속성 이름은 적이 아니다');
   assert.equal(statusResistOf(defOf(golem), 'poison'), 0);
   assert.equal(statusResistOf(defOf(golem), 'stun'), 0.5);
   assert.equal(statusResistOf(defOf(golem), 'burn'), 1);
-  assert.equal(statusResistOf(PLAYER, 'stun'), 1);
+  assert.equal(statusResistOf(PLAYER_DEF, 'stun'), 1);
 });
 
 test('findFreeSpot: 벽 너머·다른 몸 위·벽에 겹치는 자리는 고르지 않는다', () => {
@@ -189,59 +180,3 @@ test('완전히 겹친 두 몸도 떨어진다', () => {
 });
 
 // ── 시야 ──
-
-test('시야: 층에 들어가면 시작점 둘레가 보이고, 움직이면 본 곳이 쌓인다', () => {
-  const game = createGame({ seed: 'vision' });
-  enterFloor(game, 3);
-  setPhase(game, PHASE.PLAYING);
-  const { state } = game;
-  const { vision, world } = state;
-  const startTile = world.start.y * world.width + world.start.x;
-
-  assert.equal(vision.radius, COMBAT.visionRadius);
-  assert.equal(vision.visible.length, world.width * world.height);
-  assert.equal(vision.visible[startTile], 1);
-  assert.equal(vision.tile, startTile);
-  assert.ok(Array.isArray(vision.visible) && Array.isArray(vision.explored), 'JSON 으로 저장되는 일반 배열');
-  const seenAtStart = vision.explored.reduce((a, b) => a + b, 0);
-  assert.equal(seenAtStart, vision.visible.reduce((a, b) => a + b, 0));
-  assert.ok(seenAtStart > 20 && seenAtStart < world.width * world.height);
-
-  // 계단까지 걸어가면 본 곳이 늘어난다(줄어들지는 않는다).
-  const player = getPlayer(state);
-  const before = vision.explored.slice();
-  player.x = world.stairs.x + 0.5;
-  player.y = world.stairs.y + 0.5;
-  tick(game, DT);
-  assert.equal(vision.visible[world.stairs.y * world.width + world.stairs.x], 1);
-  assert.equal(vision.visible[startTile], 0, '멀어진 시작점은 지금은 보이지 않는다');
-  assert.equal(vision.explored[startTile], 1, '하지만 본 적은 있다');
-  for (let i = 0; i < before.length; i++) assert.ok(vision.explored[i] >= before[i]);
-  assert.ok(vision.explored.reduce((a, b) => a + b, 0) > seenAtStart);
-  assert.equal(isVisible(state, player.x, player.y), true);
-  assert.equal(isVisible(state, world.start.x + 0.5, world.start.y + 0.5), false);
-  assert.equal(isVisible(state, -5, -5), false);
-});
-
-test('시야: 같은 칸 안에서 움직이는 동안에는 다시 계산하지 않는다', () => {
-  const a = createArena(openRoom(20, 12), { player: { x: 10.2, y: 6.2 } });
-  const vision = a.state.vision;
-  const marker = vision.visible;
-  vision.visible[0] = 7; // 다시 계산하면 0/1 로 덮어쓰인다.
-  a.step(3, { moveX: 1, moveY: 0 });
-  assert.ok(Math.floor(a.player.x) === 10);
-  assert.equal(vision.visible[0], 7, '칸이 바뀌지 않았으므로 그대로');
-  a.step(sec(0.3), { moveX: 1, moveY: 0 });
-  assert.ok(Math.floor(a.player.x) > 10);
-  assert.equal(vision.visible, marker, '배열은 다시 만들지 않고 제자리에서 고친다');
-  assert.ok(vision.visible[0] === 0 || vision.visible[0] === 1);
-});
-
-test('시야: 새 층에 들어가면 본 곳 기록이 초기화된다', () => {
-  const game = createGame({ seed: 'vision-reset' });
-  enterFloor(game, 1);
-  const first = game.state.vision;
-  enterFloor(game, 2);
-  assert.notEqual(game.state.vision, first);
-  assert.equal(game.state.vision.explored.length, game.state.world.width * game.state.world.height);
-});

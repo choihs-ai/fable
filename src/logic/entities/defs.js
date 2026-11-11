@@ -29,7 +29,7 @@ function derivedDashAttack(attack) {
   return { ...attack, windup: 0, effects: attack.effects.map(grow) };
 }
 
-const playerAbilities = {};
+const playerAbilities = { bash: PLAYER.bash };
 for (const id of Object.keys(WEAPONS)) {
   playerAbilities[weaponAbilityId(id)] = WEAPONS[id].attack;
   playerAbilities[weaponAbilityId(id, true)] = Object.freeze(WEAPONS[id].dash ?? derivedDashAttack(WEAPONS[id].attack));

@@ -1,16 +1,12 @@
 // 세이브 검증용 도구: 실제 로직으로 "플레이 중인 상태"를 만들어 내는 자동 조작, 가짜 저장소, 무작위 손상기.
 // tests/logic/save, tests/save 와 scripts/verify-save.mjs 가 함께 쓴다.
 
-import { CONSUMABLES } from '../../data/consumables.js';
-import { SLOTS } from '../../data/items.js';
-import { acceptAltar, buyItem, chooseUpgrade, discardItem, equipItem, sellItem, unequipItem, useConsumable } from '../../src/logic/commands.js';
 import { setInput } from '../../src/logic/combat/player.js';
 import { EventBus } from '../../src/logic/core/event-bus.js';
 import { Rng } from '../../src/logic/core/prng.js';
 import { PHASE } from '../../src/logic/core/state.js';
 import { allActors, getPlayer } from '../../src/logic/entities/actors.js';
 import { setPhase, tick } from '../../src/logic/game.js';
-import { simulateRun } from './progress-sim.js';
 
 export const DT = 1 / 60;
 

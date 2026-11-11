@@ -22,6 +22,7 @@ export const ZONES = deepFreeze([
       { id: 'bat', weight: 3, cost: 1, minDepth: 0 },
       { id: 'bone_archer', weight: 3, cost: 3, minDepth: 1 },
       { id: 'zombie', weight: 2, cost: 3, minDepth: 2 },
+      { id: 'rat', weight: 2, cost: 1, minDepth: 2 },
     ],
     enemyCount: [5, 8],
     itemCount: [2, 3],

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { COMBAT } from '../../../data/combat.js';
 import { ENEMIES } from '../../../data/enemies.js';
 import { EVENTS } from '../../../src/logic/core/events.js';
 import { startAbility } from '../../../src/logic/combat/abilities.js';
@@ -18,6 +17,8 @@ const modes = (a, id) => a.events(EVENTS.AGGRO_CHANGED).filter((e) => e.id === i
 function duel(type, enemyAt, { player = { x: 8.5, y: 10.5 }, rows = openRoom(34, 21), alerted = true } = {}) {
   const a = createArena(rows, { player });
   a.player.maxHp = a.player.hp = 1_000_000;
+  // 맞아도 밀려나지 않게 한다(적의 움직임만 보려는 테스트다).
+  a.player.mass = 1e9;
   const enemy = a.enemy(type, enemyAt, { alerted });
   return { ...a, enemy };
 }
@@ -63,116 +64,26 @@ test('어그로: 종류마다 반경이 다르다 — 매복하는 거미는 아
 
 // ── 리쉬와 복귀 ──────────────────────────────────────────────────────────────
 
-test('리쉬: 플레이어가 적의 자리에서 leashRadius 넘게 멀어지면 돌아가서 체력을 채운다', () => {
-  const a = duel('zombie', { x: 6.5, y: 10.5 }, { player: { x: 9.5, y: 10.5 } });
-  a.step(sec(0.5));
-  assert.equal(a.enemy.ai.mode, 'combat');
-  dealDamage(a.state, a.bus, a.enemy, 30, { sourceId: a.player.id });
-  applyStatus(a.state, a.bus, a.enemy, 'poison');
-
-  // 플레이어가 오른쪽 끝으로 달아난다(자리에서 26칸).
-  a.step(sec(8), { moveX: 1, moveY: 0 });
-  assert.ok(a.player.x - 6.5 > COMBAT.leashRadius);
-  assert.ok(modes(a, a.enemy.id).includes('return'));
-  a.step(sec(10), { moveX: 0, moveY: 0 });
-
-  assert.equal(a.enemy.ai.mode, 'idle');
-  assert.ok(dist(a.enemy, { x: 6.5, y: 10.5 }) <= COMBAT.homeSlack, `자리에서 ${dist(a.enemy, { x: 6.5, y: 10.5 }).toFixed(2)}칸`);
-  assert.equal(a.enemy.hp, a.enemy.maxHp, '복귀하면 체력이 가득 찬다');
-  assert.deepEqual(a.enemy.statuses, {}, '상태이상도 풀린다');
-  assert.deepEqual(modes(a, a.enemy.id), ['combat', 'return', 'idle']);
-});
-
-test('리쉬: 돌아갈 때는 평소보다 빠르고, 가는 동안 체력이 회복된다', () => {
-  const a = duel('zombie', { x: 4.5, y: 10.5 }, { player: { x: 7.5, y: 10.5 } });
-  a.step(sec(0.2));
-  dealDamage(a.state, a.bus, a.enemy, 50, { sourceId: a.player.id });
-  a.player.x = 30.5; // 순식간에 리쉬 밖으로
-  a.enemy.x = 16.5;
-  a.step(2);
-  assert.equal(a.enemy.ai.mode, 'return');
-  const x0 = a.enemy.x;
-  const hp0 = a.enemy.hp;
-  a.step(sec(1));
-  const speed = x0 - a.enemy.x;
-  assert.ok(Math.abs(speed - ENEMIES.zombie.speed * COMBAT.returnSpeedMul) < 0.1, `복귀 속도 ${speed.toFixed(2)}칸/초`);
-  assert.ok(a.enemy.hp > hp0, '회복 중');
-});
-
-test('리쉬: 플레이어를 오래 보지 못하면 돌아간다', () => {
-  const rows = [
-    '####################',
-    '#........#.........#',
-    '#........#.........#',
-    '#........#.........#',
-    '#........#.........#',
-    '#..................#',
-    '####################',
-  ];
-  const a = duel('zombie', { x: 3.5, y: 2.5 }, { rows, player: { x: 6.5, y: 2.5 } });
+test('리쉬가 없다: 한번 싸우기 시작한 적은 플레이어가 멀리 달아나도, 시야를 잃어도 끝까지 쫓는다', () => {
+  const a = duel('skeleton', { x: 6.5, y: 10.5 }, { player: { x: 9.5, y: 10.5 } });
   a.step(sec(0.3));
   assert.equal(a.enemy.ai.mode, 'combat');
-  // 벽 뒤로 넘어가 숨는다. 좀비는 느려서 4초 안에 다시 보지 못한다.
-  a.player.x = 12.5;
-  a.player.y = 1.5;
-  a.enemy.speed = 0;
-  a.step(sec(COMBAT.loseSight) + 5);
-  assert.equal(a.enemy.ai.mode, 'return');
-});
-
-test('리쉬: 돌아가는 중에는 플레이어가 "자리 근처"에 있을 때만 다시 싸운다', () => {
-  const setup = () => {
-    const a = duel('zombie', { x: 4.5, y: 10.5 }, { player: { x: 7.5, y: 10.5 } });
-    a.step(sec(0.2));
-    a.player.x = 30.5;
-    a.enemy.x = 17.5;
-    a.step(2);
-    assert.equal(a.enemy.ai.mode, 'return');
-    return a;
-  };
-  const zone = COMBAT.leashRadius * COMBAT.reaggroLeashRatio;
-
-  // 플레이어가 돌아가는 적 바로 옆에 있어도, 자리에서 멀면(재전투 구역 밖) 무시한다.
-  const outside = setup();
-  outside.player.x = 4.5 + zone + 1.5;
-  outside.enemy.x = outside.player.x + 1.5;
-  outside.step(sec(0.5));
-  assert.equal(outside.enemy.ai.mode, 'return');
-  dealDamage(outside.state, outside.bus, outside.enemy, 1, { sourceId: outside.player.id });
-  outside.step(2);
-  assert.equal(outside.enemy.ai.mode, 'return', '맞아도 돌아간다');
-
-  // 재전투 구역 안이면 다시 싸운다.
-  const inside = setup();
-  inside.player.x = 4.5 + zone - 1;
-  inside.enemy.x = inside.player.x + 2;
-  inside.step(sec(0.3));
-  assert.equal(inside.enemy.ai.mode, 'combat');
-});
-
-test('리쉬: 순간이동하는 적이 멀리 나가 있어도 전투와 복귀를 오락가락하지 않는다', () => {
-  // 그림자의 자리는 왼쪽, 그림자 자신은 자리에서 16칸(leashRadius 밖), 플레이어는 자리에서 10칸.
-  const a = duel('shade', { x: 4.5, y: 10.5 }, { player: { x: 14.5, y: 10.5 } });
-  a.step(2);
-  a.enemy.x = 20.5;
-  a.step(sec(3));
-  const changes = modes(a, a.enemy.id);
-  assert.ok(changes.length <= 2, `어그로 상태 변화 ${changes.length}번: ${changes}`);
+  a.player.x = 31.5;
+  a.step(sec(6));
   assert.equal(a.enemy.ai.mode, 'combat');
+  assert.ok(a.enemy.x > 15, `적 x=${a.enemy.x.toFixed(1)}`);
+  assert.deepEqual(modes(a, a.enemy.id), ['combat'], '전투에 들어간 뒤로는 상태가 바뀌지 않는다');
 });
 
-test('대기 중에 밀려난 적은 걸어서 제자리로 돌아온다', () => {
-  const a = createArena(openRoom(20, 10));
-  const enemy = a.enemy('skeleton', { x: 5.5, y: 5.5 });
-  enemy.x = 9.5;
-  enemy.y = 6.5;
-  a.step(sec(3));
-  assert.ok(dist(enemy, { x: 5.5, y: 5.5 }) <= COMBAT.homeSlack + 0.05);
-  assert.equal(enemy.ai.mode, 'idle');
-  assert.equal(a.events(EVENTS.AGGRO_CHANGED).length, 0);
+test('깨워진 채로 만들어진 적(방 전투의 적)은 멀리 있어도 곧바로 싸운다', () => {
+  const a = duel('skeleton', { x: 30.5, y: 10.5 }, { player: { x: 3.5, y: 10.5 }, alerted: true });
+  a.step(2);
+  assert.equal(a.enemy.ai.mode, 'combat');
+  a.step(sec(2));
+  assert.ok(a.enemy.x < 27, '다가온다');
 });
 
-test('보스는 리쉬가 없다: 멀리 달아나도, 시야를 잃어도 계속 쫓는다', () => {
+test('보스도 멀리 달아난 플레이어를 계속 쫓는다', () => {
   const a = duel('bone_warden', { x: 5.5, y: 10.5 }, { player: { x: 9.5, y: 10.5 } });
   a.step(sec(0.3));
   a.player.x = 31.5;
@@ -181,12 +92,14 @@ test('보스는 리쉬가 없다: 멀리 달아나도, 시야를 잃어도 계�
   assert.ok(a.enemy.x > 15, `보스 x=${a.enemy.x.toFixed(1)}`);
 });
 
-test('플레이어가 죽으면 적은 자리로 돌아간다', () => {
+test('플레이어가 죽으면 적은 그 자리에 멈춰 선다', () => {
   const a = duel('skeleton', { x: 12.5, y: 10.5 });
   a.step(sec(1));
   a.player.dead = true;
   a.step(sec(0.1));
-  assert.equal(a.enemy.ai.mode, 'return');
+  const at = [a.enemy.x, a.enemy.y];
+  a.step(sec(1));
+  assert.deepEqual([a.enemy.x, a.enemy.y], at);
 });
 
 // ── 행동 방식별 특징 ─────────────────────────────────────────────────────────
@@ -361,25 +274,20 @@ test('분열: 슬라임이 죽으면 작은 슬라임 둘이 나오고, 그것�
   assert.equal(allActors(a.state).filter((x) => x.faction === 'enemy').length, 0);
 });
 
-test('같은 편끼리는 좁은 복도에서 마주쳐도 서로를 지나간다', () => {
+test('같은 편끼리는 좁은 복도에서 길을 막고 서 있어도 서로를 지나간다', () => {
   const rows = ['####################', '#..................#', '####################'];
   const a = createArena(rows, { player: { x: 18.5, y: 1.5 } });
   a.player.maxHp = a.player.hp = 1_000_000;
-  // 해골은 오른쪽의 플레이어에게 가고, 좀비는 왼쪽 끝의 자기 자리로 돌아간다 → 한 칸 폭 복도에서 마주친다.
+  // 해골은 오른쪽의 플레이어에게 가는데, 한 칸 폭 복도 한가운데에 좀비가 서 있다(플레이어가 멀어 깨어나지 않는다).
   const chaser = a.enemy('skeleton', { x: 6.5, y: 1.5 }, { alerted: true });
-  const returner = a.enemy('zombie', { x: 2.5, y: 1.5 });
-  returner.x = 10.5;
-  returner.ai.mode = 'return';
-  a.player.x = 18.5;
-  // 좀비의 자리(2.5)에서 플레이어(18.5)까지는 16칸 — 재전투 구역 밖이라 좀비는 계속 돌아간다.
+  const sleeper = a.enemy('zombie', { x: 10.5, y: 1.5 });
   let closest = Infinity;
   for (let i = 0; i < sec(8); i++) {
     a.step(1);
-    closest = Math.min(closest, Math.abs(chaser.x - returner.x));
+    closest = Math.min(closest, Math.abs(chaser.x - sleeper.x));
   }
-  assert.ok(closest < 0.3, `두 몸이 겹쳐 지나갔어야 함(가장 가까웠을 때 ${closest.toFixed(2)}칸)`);
-  assert.ok(Math.abs(returner.x - 2.5) <= COMBAT.homeSlack + 0.05, `좀비 x=${returner.x.toFixed(2)}`);
-  assert.equal(returner.ai.mode, 'idle');
+  assert.ok(closest < 0.5, `두 몸이 겹쳐 지나갔어야 함(가장 가까웠을 때 ${closest.toFixed(2)}칸)`);
+  assert.equal(sleeper.ai.mode, 'idle');
   assert.ok(chaser.x > 16.5, `해골 x=${chaser.x.toFixed(2)}`);
 });
 

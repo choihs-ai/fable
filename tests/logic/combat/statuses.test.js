@@ -14,12 +14,14 @@ const ROOM = openRoom(20, 12);
 /** 플레이어 혼자 있는 방. 상태이상을 플레이어에게 걸어 본다. */
 function solo() {
   const a = createArena(ROOM, { player: { x: 10.5, y: 6.5 } });
+  // 체력을 100 으로 맞춘다(캐릭터의 기본 체력에 테스트가 흔들리지 않도록).
+  a.player.maxHp = a.player.hp = 100;
   return { ...a, p: a.player, apply: (id, opts) => applyStatus(a.state, a.bus, a.player, id, opts) };
 }
 
-test('상태이상 데이터: 여섯 가지가 모두 정의되어 있고 처리 순서에 빠짐이 없다', () => {
+test('상태이상 데이터: 모두 정의되어 있고 처리 순서에 빠짐이 없다', () => {
   assert.deepEqual([...STATUS_ORDER].sort(), Object.keys(STATUSES).sort());
-  for (const id of ['poison', 'burn', 'bleed', 'slow', 'freeze', 'stun']) assert.ok(STATUSES[id], id);
+  for (const id of ['poison', 'burn', 'bleed', 'slow', 'freeze', 'stun', 'warp']) assert.ok(STATUSES[id], id);
   for (const [id, def] of Object.entries(STATUSES)) {
     assert.ok(['intensity', 'refresh', 'none'].includes(def.stacking), `${id}.stacking`);
     assert.ok(def.duration > 0 && Number.isInteger(def.maxStacks) && def.maxStacks >= 1, id);

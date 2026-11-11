@@ -4,11 +4,11 @@ import { test } from 'node:test';
 import { COMBAT } from '../../../data/combat.js';
 import { Rng } from '../../../src/logic/core/prng.js';
 import { circleFree, moveCircle, resolveCircle } from '../../../src/logic/world/collide.js';
-import { computeFov } from '../../../src/logic/world/fov.js';
 import { generateFloor } from '../../../src/logic/world/generate.js';
 import { clearPath, lineOfSight } from '../../../src/logic/world/los.js';
-import { buildNav, isWall, navOf } from '../../../src/logic/world/nav.js';
+import { buildNav, isWall, navOf, regionAt, setTiles } from '../../../src/logic/world/nav.js';
 import { findPath } from '../../../src/logic/world/pathfind.js';
+import { TILE } from '../../../src/logic/world/tiles.js';
 import { openRoom, parseRows } from '../../helpers/arena.js';
 
 function navFrom(rows) {
@@ -62,7 +62,7 @@ test('resolveCircle: 벽 칸 안에 들어간 중심을 가까운 열린 쪽으�
 });
 
 test('충돌: 실제 맵에서 아무렇게나 움직여도 벽에 박히지 않는다', () => {
-  for (const [seed, floor] of [['walk-a', 2], ['walk-b', 13], ['walk-c', 22], ['walk-d', 27]]) {
+  for (const [seed, floor] of [['walk-a', 1], ['walk-b', 1], ['walk-c', 1], ['walk-d', 1]]) {
     const map = generateFloor({ seed, floor });
     const nav = navOf(map);
     const rng = Rng.fromSeed(`walk:${seed}`);
@@ -121,72 +121,6 @@ test('clearPath: 몸이 지나갈 폭이 없으면 false', () => {
   assert.equal(clearPath(nav, 3.2, 1.5, 3.8, 3.5, 0.3), true, '조금만 비스듬하면 몸이 들어간다');
   assert.equal(clearPath(nav, 3.5, 1.5, 3.5, 3.5, 0.3), true, '문 한가운데로 똑바로 지나면 된다');
   assert.equal(clearPath(nav, 1.5, 1.5, 5.5, 1.5, 0.3), true);
-});
-
-// ── 시야 계산 ────────────────────────────────────────────────────────────────
-
-test('computeFov: 빈 방에서는 반경 안의 모든 칸이 보이고 반경 밖은 보이지 않는다', () => {
-  const nav = navFrom(openRoom(25, 25));
-  const out = new Array(25 * 25).fill(0);
-  computeFov(nav, 12, 12, 6, out);
-  for (let y = 1; y < 24; y++) {
-    for (let x = 1; x < 24; x++) {
-      const d2 = (x - 12) ** 2 + (y - 12) ** 2;
-      if (d2 <= 36) assert.equal(out[y * 25 + x], 1, `${x},${y} 는 보여야 함`);
-      if (d2 > 64) assert.equal(out[y * 25 + x], 0, `${x},${y} 는 보이면 안 됨`);
-    }
-  }
-});
-
-test('computeFov: 벽 뒤는 보이지 않고, 벽 자체는 보인다', () => {
-  const rows = [
-    '###########',
-    '#....#....#',
-    '#....#....#',
-    '#....#....#',
-    '#....#....#',
-    '###########',
-  ];
-  const nav = navFrom(rows);
-  const out = new Array(nav.w * nav.h).fill(0);
-  const count = computeFov(nav, 2, 2, 8, out);
-  const seen = (x, y) => out[y * nav.w + x];
-
-  assert.equal(count, out.reduce((a, b) => a + b, 0));
-  for (let y = 1; y <= 4; y++) {
-    for (let x = 1; x <= 4; x++) assert.equal(seen(x, y), 1, `방 안 ${x},${y}`);
-    assert.equal(seen(5, y), 1, `가로막은 벽 5,${y}`);
-    for (let x = 6; x <= 9; x++) assert.equal(seen(x, y), 0, `벽 뒤 ${x},${y}`);
-  }
-  assert.equal(seen(0, 0), 1, '방 모서리 벽');
-});
-
-test('computeFov: 보이는 바닥 칸은 관찰자와 시야선이 통한다(벽 너머가 새지 않는다)', () => {
-  for (const [seed, floor] of [['fov-a', 3], ['fov-b', 12], ['fov-c', 28]]) {
-    const map = generateFloor({ seed, floor });
-    const nav = navOf(map);
-    const out = new Array(nav.w * nav.h).fill(0);
-    computeFov(nav, map.start.x, map.start.y, COMBAT.visionRadius, out);
-    let visibleFloor = 0;
-    for (let i = 0; i < out.length; i++) {
-      if (out[i] !== 1 || nav.tiles[i] !== 1) continue;
-      visibleFloor++;
-      const x = i % nav.w;
-      const y = Math.floor(i / nav.w);
-      // 칸의 네 귀퉁이 안쪽과 중심 가운데 하나라도 관찰자 칸 중심과 통하면 된다.
-      const points = [[0.5, 0.5], [0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]];
-      const ok = points.some(([px, py]) => lineOfSight(nav, map.start.x + 0.5, map.start.y + 0.5, x + px, y + py));
-      assert.ok(ok, `${seed} ${floor}층: ${x},${y} 가 보인다고 나왔지만 시야선이 막혀 있음`);
-    }
-    assert.ok(visibleFloor > 10, `${seed}: 보이는 바닥 ${visibleFloor}칸`);
-  }
-});
-
-test('computeFov: 맵 밖 좌표는 아무것도 보이지 않는다', () => {
-  const nav = navFrom(openRoom(6, 6));
-  const out = new Array(36).fill(1);
-  assert.equal(computeFov(nav, -1, 2, 5, out), 0);
-  assert.ok(out.every((v) => v === 0));
 });
 
 // ── A* ───────────────────────────────────────────────────────────────────────
@@ -269,7 +203,7 @@ test('findPath: 길이 없거나 끝점이 벽이면 null, 노드 상한을 넘�
 
 test('findPath: 실제 맵에서 경로가 유효하고 비용이 기준 구현(다익스트라)과 같다', () => {
   let checked = 0;
-  for (const [seed, floor] of [['astar-a', 1], ['astar-b', 8], ['astar-c', 14], ['astar-d', 23], ['astar-e', 5], ['astar-f', 30]]) {
+  for (const [seed, floor] of [['astar-a', 1], ['astar-b', 1], ['astar-c', 1], ['astar-d', 1], ['astar-e', 1], ['astar-f', 1]]) {
     const map = generateFloor({ seed, floor });
     const nav = navOf(map);
     const rng = Rng.fromSeed(`astar:${seed}`);
@@ -304,15 +238,16 @@ test('findPath: 실제 맵에서 경로가 유효하고 비용이 기준 구현(
       }
     }
   }
-  assert.ok(checked > 80, `검사한 경로 ${checked}개`);
+  assert.ok(checked > 50, `검사한 경로 ${checked}개`);
 });
 
 test('findPath: 같은 입력이면 항상 같은 경로', () => {
-  const map = generateFloor({ seed: 'astar-same', floor: 17 });
+  const map = generateFloor({ seed: 'astar-same', floor: 1 });
   const nav = navOf(map);
-  const a = findPath(nav, map.start.x, map.start.y, map.stairs.x, map.stairs.y, 1, 100000);
-  findPath(nav, map.stairs.x, map.stairs.y, map.start.x, map.start.y, 1, 100000);
-  const b = findPath(nav, map.start.x, map.start.y, map.stairs.x, map.stairs.y, 1, 100000);
+  const goal = map.rooms.find((room) => room.kind === 'boss').feature;
+  const a = findPath(nav, map.start.x, map.start.y, goal.x, goal.y, 1, 100000);
+  findPath(nav, goal.x, goal.y, map.start.x, map.start.y, 1, 100000);
+  const b = findPath(nav, map.start.x, map.start.y, goal.x, goal.y, 1, 100000);
   assert.ok(a.length > 10);
   assert.deepEqual(a, b);
 });
@@ -322,4 +257,41 @@ test('buildNav: 둘레 8칸이 모두 바닥인 칸만 여유 2', () => {
   assert.equal(nav.clear[2 * 5 + 2], 2);
   assert.equal(nav.clear[1 * 5 + 1], 1);
   assert.equal(nav.clear[0], 0);
+});
+
+test('문을 닫으면 벽처럼 막히고, 열면 다시 지나갈 수 있다(setTiles)', () => {
+  const map = generateFloor({ seed: 'door-nav', floor: 1 });
+  const nav = navOf(map);
+  const door = map.doors.find((d) => d.open);
+  const [cx, cy] = [door.cells[0] % map.width, Math.floor(door.cells[0] / map.width)];
+  const link = map.links[door.link];
+  const [a, b] = link.rooms.map((id) => map.rooms[id].feature);
+  assert.equal(isWall(nav, cx, cy), false);
+  assert.ok(findPath(nav, a.x, a.y, b.x, b.y, 1, 100000), '열려 있으면 길이 있다');
+
+  // 그 복도의 문을 닫으면 그 길로는 지나갈 수 없다(돌아가는 길이 없는 맵이면 길이 사라진다).
+  setTiles(map, door.cells, TILE.DOOR);
+  assert.equal(isWall(nav, cx, cy), true);
+  assert.equal(map.tiles[door.cells[0]], TILE.DOOR);
+  assert.equal(navOf(map), nav, '같은 nav 를 고쳐 쓴다');
+  for (const c of door.cells) assert.equal(nav.clear[c], 0);
+  assert.equal(lineOfSight(nav, cx + 0.5, cy - 2 + 0.5, cx + 0.5, cy + 2 + 0.5) && lineOfSight(nav, cx - 2 + 0.5, cy + 0.5, cx + 2 + 0.5, cy + 0.5), false);
+  const blocked = findPath(nav, a.x, a.y, b.x, b.y, 1, 100000);
+  if (blocked) assert.ok(!blocked.some((cell) => door.cells.includes(cell)), '닫힌 문을 지나는 길은 없다');
+
+  setTiles(map, door.cells, TILE.FLOOR);
+  assert.equal(isWall(nav, cx, cy), false);
+  assert.deepEqual(Array.from(nav.clear), Array.from(buildNav(map.tiles, map.width, map.height).clear), '둘레의 여유도 처음과 같다');
+});
+
+test('regionAt: 플레이어가 선 칸이 어느 방·복도인지 알려 준다', () => {
+  const map = generateFloor({ seed: 'region', floor: 1 });
+  const nav = navOf(map);
+  for (const room of map.rooms) assert.equal(regionAt(nav, room.feature.x + 0.5, room.feature.y + 0.5), room.id);
+  for (const door of map.doors) {
+    const region = regionAt(nav, door.x, door.y);
+    assert.equal(region, map.rooms.length + door.link, '문은 복도에 속한다');
+  }
+  assert.equal(regionAt(nav, 0.5, 0.5), -1);
+  assert.equal(regionAt(nav, -3, 999), -1);
 });
