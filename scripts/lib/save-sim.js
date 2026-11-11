@@ -248,6 +248,7 @@ export function mutateRandom(data, rng) {
 
 /** 글의 한 군데를 무작위로 망가뜨린다(자르기, 글자 바꾸기·지우기·넣기, 구간 뒤집기). */
 export function corruptText(text, rng) {
+  if (text.length === 0) return rng.pick(['{', '"', 'x', '\u0000']);
   const at = rng.int(0, text.length - 1);
   const how = rng.int(0, 5);
   if (how === 0) return text.slice(0, at);

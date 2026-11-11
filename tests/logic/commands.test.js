@@ -640,3 +640,25 @@ test('아이템이 얽힌 상태도 JSON 으로 왕복하면 그대로다', () =
   for (let t = 0; t < sec(3); t++) tick(game, DT);
   assert.deepEqual(JSON.parse(JSON.stringify(state)), state);
 });
+
+test('물려받은 이름("constructor"·"toString")을 아이템·해금 이름으로 받지 않는다(세이브에서 온 값 방어)', async () => {
+  const { addConsumable, addRelic, createInventory } = await import('../../src/logic/items/inventory.js');
+  const { canUnlock, normalizeMeta } = await import('../../src/logic/items/meta.js');
+  // 3단계에서는 메타에 constructor 해금이 있으면 createGame 이 TypeError 로 죽었다.
+  const meta = normalizeMeta({ souls: 5, unlocked: { constructor: true, toString: true, __proto__: true } });
+  assert.deepEqual(meta.unlocked, {});
+  assert.doesNotThrow(() => createGame({ seed: 'proto', meta: { unlocked: { constructor: true } } }));
+  assert.equal(normalizeMeta({ unlocked: [true] }).unlocked[0], undefined);
+  assert.deepEqual(normalizeMeta([1, 2]), normalizeMeta(null));
+  assert.equal(canUnlock(meta, 'constructor').reason, 'unknown');
+
+  const inv = createInventory();
+  assert.throws(() => addRelic(inv, 'toString'), RangeError);
+  assert.throws(() => addConsumable(inv, 'constructor', 1), RangeError);
+
+  const game = createGame({ seed: 'proto-cmd' });
+  enterFloor(game, 1);
+  setPhase(game, PHASE.PLAYING);
+  assert.deepEqual(useConsumable(game, 'constructor'), { ok: false, reason: 'no-such-item' });
+  assert.deepEqual(buyUnlock(game, 'hasOwnProperty'), { ok: false, reason: 'unknown' });
+});

@@ -10,7 +10,9 @@
 // "체크섬이 맞는 손상"(본문을 고친 뒤 다시 봉함)이 대부분이다 — 체크섬이 걸러 주지 않아도 검증기가 잡아내는지를 본다.
 
 import { SAVE } from '../../data/save.js';
+import { Rng } from '../../src/logic/core/prng.js';
 import { STATE_VERSION } from '../../src/logic/core/state.js';
+import { rollEquipment } from '../../src/logic/items/equipment.js';
 import { encodeEnvelope } from '../../src/logic/save/envelope.js';
 
 const seal = (data, version = STATE_VERSION) => encodeEnvelope({ kind: 'run', version, data, savedAt: 1 });
@@ -30,7 +32,15 @@ const envelope = (fn) => ({ text }) => {
 
 const playerOf = (d) => d.entities.byId[d.playerId];
 const enemyOf = (d) => Object.values(d.entities.byId).find((a) => a.kind !== 'player');
-const anyItem = (d) => d.inventory.bag[0] ?? Object.values(d.inventory.equipped).find((item) => item !== null);
+/** 가진 장비 하나. 하나도 없으면(1층 초반) 올바른 장비 하나를 가방에 넣고 그것을 돌려준다. */
+function anyItem(d) {
+  const found = d.inventory.bag[0] ?? Object.values(d.inventory.equipped).find((item) => item !== null);
+  if (found) return found;
+  const item = rollEquipment(Rng.fromSeed('save-case-item'), { ilvl: 1, rarity: 'rare', slot: 'weapon' });
+  item.uid = d.entities.nextId++;
+  d.inventory.bag.push(item);
+  return item;
+}
 const freshId = (d) => d.entities.nextId++;
 /** 네 이웃이 모두 벽인 벽 칸(테두리 제외). */
 function sealedCell(world) {
