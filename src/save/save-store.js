@@ -41,6 +41,14 @@ export function createSaveStore({ storage, now = () => 0 }) {
 
   const bodyOf = (text) => text.slice(text.indexOf('"data":'));
 
+  /** 저장된 글이 손대지 않고 그대로 쓸 수 있는 것인가. */
+  function intact(kind, text) {
+    if (kind === 'run') return readRun(text).status === 'exact';
+    if (kind === 'meta') return metaRank(readMeta(text)) === 0;
+    const envelope = decodeEnvelope(text, kind);
+    return envelope.ok && envelope.checksumOk;
+  }
+
   /** 자리를 비운다. 지운 것이 있으면 true. */
   function freeSpace(step) {
     const targets = step === 0 ? [bad(keys.run), bad(keys.meta), bad(keys.settings)] : [bak(keys.run)];
@@ -72,10 +80,13 @@ export function createSaveStore({ storage, now = () => 0 }) {
     let backedUp = false;
     if (backup) {
       const old = storage.get(key);
-      if (old !== null && bodyOf(old) !== body) {
-        const envelope = decodeEnvelope(old, kind);
+      if (old === null) {
+        // 최신본이 없다 = 새 런의 첫 저장이다. 앞선 런의 백업이 남아 있으면 지운다(끝난 런이 백업에서 되살아나지 않도록).
+        if (kind === 'run') storage.remove(bak(key));
+      } else if (bodyOf(old) !== body && intact(kind, old)) {
+        // 그대로 쓸 수 있는 최신본만 백업으로 옮긴다(망가진 최신본이 멀쩡한 백업을 덮지 않도록).
         // 백업은 실패해도 된다(그 경우 앞선 백업이 그대로 남는다).
-        if (envelope.ok && envelope.checksumOk) backedUp = setWithRetry(bak(key), old, false).ok;
+        backedUp = setWithRetry(bak(key), old, false).ok;
       }
     }
     const result = setWithRetry(key, text, true);
@@ -94,7 +105,8 @@ export function createSaveStore({ storage, now = () => 0 }) {
     const backupText = storage.get(bak(keys.run));
     const primary = readRun(primaryText);
     const backup = readRun(backupText);
-    const useBackup = runRank(backup) < runRank(primary) && runRank(backup) <= 2;
+    // 최신본이 끝난 런이면 백업(그 런의 앞선 저장본)으로 되살리지 않는다.
+    const useBackup = primary.status !== 'finished' && runRank(backup) < runRank(primary) && runRank(backup) <= 2;
     const result = useBackup ? backup : primary;
     // 최신본이 있는데 그대로 못 썼다면 덮어쓰기 전에 한 벌 남긴다.
     if (primaryText !== null && runRank(primary) !== 0 && primary.status !== 'finished') quarantine('run', primaryText);

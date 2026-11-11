@@ -507,6 +507,19 @@ function checkFloor(r, state) {
  * @returns {string[]} 문제 목록("경로: 설명"). 비어 있으면 그대로 이어서 돌릴 수 있다
  */
 export function validateRunState(state) {
+  return validate(state, true);
+}
+
+/**
+ * 런의 핵심부(버전·시드·틱·페이즈·난수·진행도·인벤토리와 최상위 필드)만 검사한다. 층의 진행 중 상태는 보지 않는다.
+ * 옛 버전에서 올라온 세이브처럼 "층은 다시 만들어야 하지만 핵심은 온전한" 경우를 가려낼 때 쓴다.
+ * @returns {string[]} 문제 목록
+ */
+export function validateRunCore(state) {
+  return validate(state, false);
+}
+
+function validate(state, withFloor) {
   const r = createReport();
   if (!isObject(state)) {
     r.fail('state', `객체가 아님 (${show(state)})`);
@@ -521,6 +534,6 @@ export function validateRunState(state) {
   r.timerMax = (isInt(state.tick, 0, L.tick) ? state.tick : 0) + L.timerAhead;
   r.map = null;
   checkCore(r, state);
-  checkFloor(r, state);
+  if (withFloor) checkFloor(r, state);
   return r.problems;
 }

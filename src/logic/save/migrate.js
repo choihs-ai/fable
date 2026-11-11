@@ -27,7 +27,10 @@ const RUN_MIGRATIONS = {
     return state;
   },
   // v2 → v3(2단계: 엔티티와 전투). 투사체·장판·시야·입력이 생겼다.
+  // v2 에는 플레이어·적이 없었다(맵만 있었다). 그 맵에 몸을 채울 방법이 없으므로 맵을 비워, 불러올 때 층을 다시 만들게 한다
+  // (맵은 시드와 층만으로 정해지므로 같은 층이 다시 만들어진다. 다만 3단계에서 적 배치 수가 바뀌어 적 배치는 다르다).
   2(state) {
+    if (isObject(state.entities) && isObject(state.entities.byId) && Object.keys(state.entities.byId).length === 0) state.world = null;
     fill(state, {
       projectiles: [],
       hazards: [],

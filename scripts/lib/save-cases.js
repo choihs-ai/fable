@@ -70,7 +70,8 @@ export const CASES = [
   { id: 'text-trailing', title: '끝에 쓰레기가 붙음', expect: 'none', corrupt: ({ text }) => `${text}}}garbage` },
   { id: 'text-huge', title: '터무니없이 긴 글', expect: 'none', corrupt: ({ text }) => text + ' '.repeat(SAVE.maxTextLength) },
   { id: 'text-digit', title: '본문의 숫자 한 자리가 바뀜(체크섬 불일치)', expect: 'salvage', corrupt: ({ text }) => text.replace(/"tick":(\d+)/, (m, n) => `"tick":${Number(n) + 1}`) },
-  { id: 'text-swap', title: '본문의 두 글자가 뒤바뀜(체크섬 불일치)', expect: 'salvage', corrupt: ({ text }) => text.replace(/"gold":(\d)(\d)/, '"gold":$2$1').replace(/"kills":(\d+)/, (m, n) => `"kills":${Number(n) + 7}`) },
+  // 올바른 JSON 으로 남는 손상: 난수 상태 배열의 앞 두 값을 맞바꾼다(체크섬만이 알아챌 수 있다).
+  { id: 'text-swap', title: '본문의 두 값이 뒤바뀜(체크섬 불일치)', expect: 'salvage', corrupt: ({ text }) => text.replace(/"s":\[(\d+),(\d+),/, '"s":[$2,$1,') },
 
   // ── 봉투 ──
   { id: 'env-format', title: '형식 이름이 다름', expect: 'none', corrupt: envelope((e) => { e.format = 'other-game'; }) },

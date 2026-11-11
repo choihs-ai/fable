@@ -11,7 +11,7 @@ import { migrate } from './migrate.js';
 import { extractCore } from './salvage.js';
 import { isObject } from './schema.js';
 import { normalizeSettings } from './settings.js';
-import { RESUMABLE_PHASES, validateRunState } from './validate.js';
+import { RESUMABLE_PHASES, validateRunCore, validateRunState } from './validate.js';
 
 const FINISHED_PHASES = [PHASE.GAME_OVER, PHASE.VICTORY];
 
@@ -41,7 +41,8 @@ export function serializeRun(state, savedAt = 0) {
  * @param {*} text 저장소에서 읽은 값
  * @returns {object} status 에 따라:
  *   'exact'    { state, version, savedAt, migrated }          — 저장한 그대로 이어할 수 있다(state.meta 는 비어 있다)
- *   'salvage'  { core, repaired, problems, checksumOk, version, savedAt, migrated } — 핵심만 건졌다. 층은 다시 만들어야 한다
+ *   'salvage'  { core, damaged, repaired, problems, checksumOk, version, savedAt, migrated } — 핵심만 건졌다. 층은 다시 만들어야 한다.
+ *              damaged 가 false 면 손상이 아니라 옛 버전에서 올라와 층이 없는 정상 세이브다(problems 는 비어 있다)
  *   'finished' { version, savedAt }                            — 끝난 런이다. 이어할 것이 없다
  *   'none'     { reason, detail?, problems? }                  — 쓸 수 없다. reason 은 decodeEnvelope 의 것 또는
  *              'newer-version' | 'no-migration' | 'migration-failed' | 'unrecoverable'
@@ -63,10 +64,15 @@ export function readRun(text) {
     delete data.meta; // 메타는 메타 세이브에서 온다.
     return { status: 'exact', state: data, version, savedAt, migrated };
   }
+  // 옛 버전에서 올라온 세이브: 그 시절에는 층이 없었거나(v1) 플레이어가 없었다(v2). 핵심만 온전하면 손상이 아니다.
+  const needsFloorOnly = checksumOk && migrated.length > 0 && data.world === null && validateRunCore(data).length === 0;
+  if (needsFloorOnly) problems = [];
   if (!checksumOk) problems = ['checksum: 본문이 저장한 것과 다름', ...problems];
   const extracted = extractCore(data);
   if (!extracted.ok) return { status: 'none', reason: 'unrecoverable', detail: extracted.reason, problems };
-  return { status: 'salvage', core: extracted.core, repaired: extracted.repaired, problems, checksumOk, version, savedAt, migrated };
+  return {
+    status: 'salvage', core: extracted.core, damaged: !needsFloorOnly, repaired: extracted.repaired, problems, checksumOk, version, savedAt, migrated,
+  };
 }
 
 /** 메타 진행을 글로 쓴다. */
