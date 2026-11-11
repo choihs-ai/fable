@@ -33,6 +33,9 @@ node scripts/sim-combat.mjs         # 전투 시뮬레이션: 적·보스마다 
 node scripts/sim-combat.mjs --one <종류> <방식> <번호>   # 대결 하나를 다시 돌려 문제를 출력
 node scripts/verify-items.mjs       # 아이템·성장 검증: 드롭 분포, 옵션 범위, 세트, 3택1, 전투력 곡선 (약 35초)
 node scripts/verify-items.mjs --only curve       # 한 부분만: drops | ranges | sets | choices | curve
+node scripts/verify-save.mjs        # 세이브 검증: 왕복, 구버전, 손상 케이스, 무작위 손상, 저장소 세션 흉내 (약 40초)
+node scripts/verify-save.mjs --only fuzz         # 한 부분만: roundtrip | old | cases | fuzz | sessions
+node scripts/make-old-saves.mjs     # tests/fixtures 의 구버전 세이브 표본을 옛 커밋의 코드로 다시 만든다(git 필요)
 ```
 
 `src/logic/world/**` 나 `data/world.js`·`data/zones.js` 를 바꾸면 `verify-maps.mjs` 를 다시 돌리고, 실패 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 실패한 시드는 시드 값·층과 함께 기록한다.
@@ -40,6 +43,8 @@ node scripts/verify-items.mjs --only curve       # 한 부분만: drops | ranges
 `src/logic/entities/**`·`src/logic/combat/**`·`src/logic/world/{collide,los,fov,pathfind,nav}.js` 나 `data/{combat,player,enemies,bosses,statuses}.js` 를 바꾸면 `sim-combat.mjs` 를 다시 돌리고, 문제 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 문제가 나온 대결은 시드(`<종류>-<방식>-<번호>`)와 함께 기록한다.
 
 `src/logic/items/**`·`src/logic/commands.js`·`src/logic/combat/loot.js`·`src/logic/entities/{stats,scaling}.js` 나 `data/{items,consumables,relics,upgrades,difficulty,shop,meta}.js` 를 바꾸면 `verify-items.mjs` 를 다시 돌리고, 문제 0건(급변 구간 없음 포함)을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 전투 수치(`data/player.js`·`enemies.js`·`bosses.js`·`combat.js`)를 바꿔도 곡선이 달라지므로 함께 돌린다.
+
+`src/logic/save/**`·`src/save/**`·`data/{save,settings}.js` 를 바꾸거나 **상태 구조를 바꾸면**(`core/state.js`, 행동체·투사체·장판·인벤토리 등의 필드 추가·삭제) `verify-save.mjs` 를 다시 돌리고, 문제 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 상태에 필드를 넣는 로직(`src/logic/**` 어디든)을 고쳤을 때도 돌린다 — 검증기가 새 상태를 손상으로 보면 그 순간부터 실제 게임의 저장이 실패한다.
 
 ES 모듈은 `file://` 로 열 수 없으므로 브라우저 확인은 항상 로컬 서버를 거친다.
 
@@ -68,11 +73,13 @@ data/                      설정·밸런스 수치 (순수 값, data 끼리만 
   difficulty.js            층별 난이도 곡선(구역별 적 체력·공격 배율, 보스 배율, 밀도)
   shop.js                  상점 품목·가격, 제단의 대가와 보상
   meta.js                  영혼석 획득량, 영구 해금 13종
+  save.js                  저장소 키, 세이브 형식 이름, 검증에 쓰는 안전선(상한값)
+  settings.js              사용자 설정의 목록·기본값·허용 범위
   freeze.js                설정 객체 동결 도우미
 src/
   main.js                  조립 지점: 로직·렌더·UI 를 만들어 연결하는 유일한 곳
   logic/                   ── 순수 로직 (DOM·Three.js 금지, Node 테스트 대상)
-    game.js                로직 최상단: 런 시작·종료, 층 진입, 틱마다 시스템 실행 순서
+    game.js                로직 최상단: 런 시작·종료, 층 진입, 틱마다 시스템 실행 순서, 세이브에서 이어하기(resumeGame)·복구(rescueGame)
     commands.js            로직 최상단: 플레이어 명령(착용·소비·사고팔기·제단·강화 선택·메타 해금)
     core/
       prng.js              시드 PRNG(sfc32) + fork 서브스트림
@@ -125,7 +132,15 @@ src/
       ai/brain.js          어그로·리쉬 상태 관리
       ai/behaviors.js      행동 방식 10가지 + 보스
       ai/steer.js          조향(직선/A* 경로 따라가기, 물러나기)
-    save/       (예정)     상태 직렬화·버전 마이그레이션
+    save/                  세이브 (아래 "세이브" 참고) — 글을 만들고 읽을 뿐, 저장소는 모른다
+      codec.js             진입점: serializeRun/readRun, 메타·설정 쓰기·읽기
+      envelope.js          봉투(형식·종류·버전·체크섬 + 본문)
+      checksum.js          FNV-1a 32비트
+      migrate.js           순차 마이그레이션 표(버전 n → n+1)
+      validate.js          런 상태 검증기(그대로 이어서 돌려도 안전한가)
+      schema.js            검증용 작은 도구(int·shape·record…)
+      salvage.js           건져 내기: 망가진 세이브에서 핵심(시드·층·진행도·인벤토리)만 골라냄
+      settings.js          설정 기본값·정리
   render/                  ── Three.js. 로직 상태를 읽기만 함
     renderer.js            렌더러·씬·카메라
     world/      (예정)     맵 메시
@@ -133,7 +148,10 @@ src/
   ui/                      ── DOM: HUD, 메뉴, 터치 입력
     debug-overlay.js       개발용 상태 표시
   audio/        (예정)     ── WebAudio
-  save/         (예정)     ── 저장소 어댑터(localStorage 등). 직렬화 자체는 logic/save
+  save/                    ── 저장소 어댑터. 직렬화 자체는 logic/save
+    storage.js             저장소 열기(없음·차단·가득 참 처리, 메모리 대체), 예외를 결과로 바꿈
+    save-store.js          런·메타·설정의 키, 백업·격리, 용량 초과 때 자리 비우기
+    autosave.js            저장 시점(층 이동·일시정지·런 종료·백그라운드 전환)
 scripts/
   run-tests.mjs            테스트 러너
   serve.mjs                로컬 정적 서버
@@ -143,16 +161,24 @@ scripts/
   verify-items.mjs         아이템·성장 검증(드롭 분포·옵션 범위·세트·3택1·전투력 곡선)
   lib/item-checks.js       로직과 따로 구현한 계산기와 불변식 검사
   lib/progress-sim.js      진행 시뮬레이터(전투 없이 30층을 실제 로직으로 진행), 전투력 지표
+  verify-save.mjs          세이브 검증(왕복·구버전·손상 케이스·무작위 손상·세션 흉내)
+  lib/save-sim.js          자동 조작, 가짜 저장소, 무작위 손상기, 공유 객체·NaN 찾기
+  lib/save-cases.js        손상된 세이브 목록(138가지)과 기대 결과
+  make-old-saves.mjs       옛 커밋의 코드로 구버전 세이브 표본 만들기
 tests/                     src 와 같은 경로 구조. *.test.js
   architecture.test.js     아래 의존 규칙을 자동 검사
   helpers/architecture.js  규칙 정의(LAYERS, LOGIC_RANK)와 검사기
   helpers/arena.js         글자 그림으로 만드는 테스트용 전장
+  helpers/save.js          세이브 테스트용 표본 게임, 구버전 세이브, 앱 시작 흐름
+  fixtures/state-v*.json   구버전(v1~v3) 상태 — 그 버전의 실제 코드가 만든 것
   logic/core/*.test.js
   logic/world/*.test.js
   logic/entities/*.test.js
   logic/combat/*.test.js
   logic/items/*.test.js
+  logic/save/*.test.js
   logic/commands.test.js
+  save/*.test.js           저장소·백업·자동 저장(가짜 저장소로 Node 에서 실행)
 ```
 
 모듈과 디렉터리의 대응: core·entities·combat·items 는 `src/logic/<모듈>`, world 는 `src/logic/world`(생성) + `src/render/world`(그리기), save 는 `src/logic/save`(직렬화) + `src/save`(저장소), ui·audio 는 `src/ui`·`src/audio`.
@@ -193,6 +219,7 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 ## 데이터 흐름
 
 - **로직 → 바깥**: 로직이 `EventBus` 로 "일어난 일"을 알리고, render/ui/audio 가 구독한다. 이벤트 이름은 `logic/core/events.js` 상수를 쓴다.
+- **저장**: `main.js` 가 시작할 때 `store.load()` → `resumeGame()` 으로 이어하거나 새 런을 만든다. 이후 `autosave` 가 이벤트(층 이동·일시정지·런 종료)를 듣고 예약해 두었다가 프레임 끝의 `autosave.flush()` 에서 쓰고, 화면이 가려지면(`visibilitychange`·`pagehide`) 곧바로 쓴다.
 - **바깥 → 로직**: ui 는 상태를 직접 고치지 않는다. 매 틱의 조작은 `setInput(state, …)`, 그 밖의 행동(착용·구매·강화 선택 등)은 `logic/commands.js` 의 명령으로 넘긴다. 명령은 `{ ok:true, … }` 또는 `{ ok:false, reason }` 을 돌려준다.
 - **프레임**: `main.js` 가 `requestAnimationFrame` 마다 경과 시간을 `FixedStepLoop.advance()` 에 넘김 → 고정 dt 로 `tick()` 0회 이상 → `render(state, alpha)`.
 
@@ -233,12 +260,27 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 - **난수**: 적 처치 보상·레벨업 후보·제단의 유물은 `rngOf(state, 'items')` 를 차례로 쓴다. 층의 상자·상점·제단은 `rngOf(state, 'items').fork(`floor:${n}`)` 에서 갈라 쓰므로 (런 시드, 층)으로 정해진다. 확률 굴림은 결과와 무관하게 같은 횟수만큼 굴린다(수치를 조정해도 뒤의 수열이 밀리지 않도록).
 - **강화 3택1 규칙**은 `data/upgrades.js` 머리말이 기준이다(중복·선행 조건·배타·시너지·채움 보상).
 - **난이도 곡선**은 `data/difficulty.js` 에 있고, `verify-items.mjs` 의 곡선 표로 맞춘다. 일반 층은 계산 지표(위협 = 적 하나를 잡는 시간 ÷ 버티는 시간)가, 보스는 실제 1:1 대결 승률이 층을 따라 고르게 변해야 한다. 급변 기준은 스크립트에 있다.
-- **메타 진행**은 `state.meta` 에 있다. `createGame({ seed, meta })` 로 넘기면 복사해서 쓰고, 런이 끝나면(`endRun`) 영혼석과 기록이 여기에 더해진다. 저장 단계에서는 런과 따로 보관해야 한다.
+- **메타 진행**은 `state.meta` 에 있다. `createGame({ seed, meta })` 로 넘기면 복사해서 쓰고, 런이 끝나면(`endRun`) 영혼석과 기록이 여기에 더해진다. 런과 따로 저장된다("세이브" 참고).
 - 소환·분열로 생긴 적과 플레이어가 잡지 않은 적은 경험치·전리품을 주지 않는다.
+
+## 세이브
+
+- **세 가지를 따로 저장한다**(localStorage 키는 `data/save.js`): 런(`fable:run`, 상태 전체에서 `meta` 를 뺀 것), 메타(`fable:meta`), 설정(`fable:settings`). 런이 망가져도 메타는 남는다. 키마다 `:bak`(바로 앞의 저장본)과 `:bad`(읽지 못한 원본)가 딸린다.
+- **런 세이브는 상태를 통째로 담는다**(시드·층·플레이어·적·투사체·맵·시야·인벤토리·진행도·난수 위치). 불러오면 저장한 틱 그대로 이어지고, 같은 입력을 주면 저장하지 않은 게임과 틱마다 같다.
+- **형식**: `{"format":"fable-save","kind","version","savedAt","checksum","data"}`. 체크섬은 본문 JSON 글의 FNV-1a 32비트다(잘림·변조 감지용이지 보안이 아니다). 시각은 바깥에서 넣는다.
+- **버전**: 런은 `STATE_VERSION`, 메타는 `META_VERSION`, 설정은 `SETTINGS_VERSION`. 구조를 바꾸면 버전을 올리고 `migrate.js` 에 `n → n+1` 단계를 **하나** 추가하고, `validate.js` 를 고치고, `scripts/make-old-saves.mjs` 로 직전 버전의 표본을 만들어 테스트를 추가한다. 마이그레이션은 검증보다 먼저 돌므로 손상된 값을 받아도 예외를 던지면 안 된다.
+- **읽기 결과는 넷**(`readRun`): `exact`(그대로 이어함) / `salvage`(핵심만 건짐 — 그 층을 시드로 다시 만들어 층의 처음부터, `damaged:false` 면 옛 버전이라 층이 없을 뿐) / `finished`(끝난 런) / `none`(쓸 수 없음 → 새 런). 최신본과 백업을 모두 읽어 더 온전한 쪽을 쓴다.
+- **검증기(`validate.js`)를 통과한 상태만 쓰고, 통과한 상태만 그대로 이어한다.** 기준은 "로직이 이 값을 읽다가 죽거나 NaN 을 퍼뜨리지 않는가"다. 범위는 넉넉하다(`SAVE.limits`) — 밸런스 수치를 조정해도 기존 세이브가 거부되면 안 된다. 그래서 수치를 고친 세이브(치트)는 걸러내지 않는다.
+- **검증기의 오탐은 곧 저장 실패다.** 상태에 새 필드·새 값의 범위가 생기면 검증기를 함께 고친다. `tests/logic/save/validate.test.js` 와 `verify-save.mjs` 가 실제 교전 상태로 오탐을 찾는다.
+- **세이브에서 온 이름은 `Object.hasOwn(표, 이름)` 으로 확인한다.** `표[이름]` 은 `"constructor"`·`"toString"` 을 통과시킨다.
+- **상태 안의 객체는 한 곳에서만 가리킨다.** 같은 객체를 두 곳에 넣거나 `data/` 의 (동결된) 설정 객체를 그대로 넣지 않는다 — 저장했다 불러오면 갈라지거나 동결이 풀려, 불러온 게임만 다르게 동작할 수 있다. 사본을 넣는다(`copyItem`, `{ ...effect.status }`).
+- **저장 실패는 게임을 멈추지 않는다.** localStorage 가 없거나 막혀 있으면 메모리 저장소로 대체하고(`store.persistent === false`), 용량이 모자라면 격리본 → 런 백업 순으로 지우고 다시 쓰고, 그래도 안 되면 결과로 알릴 뿐이다. 다른 프로그램의 키는 지우지 않는다(GitHub Pages 는 같은 계정의 프로젝트끼리 저장소를 함께 쓴다).
+- **틱이 예외를 던지면**(`main.js`) `rescueGame` 으로 핵심만 건져 그 층을 다시 차리고, 안 되면 새 런을 시작한다.
+- 메타가 바뀌는 곳(해금 구매 등)은 다음 자동 저장 때 함께 저장된다. 런 밖에서 메타를 바꾸는 화면이 생기면 `store.saveMeta` 를 직접 부른다.
 
 ## 코드 규약
 
-- **상태는 JSON 으로 그대로 직렬화되는 평범한 객체다.** 클래스 인스턴스·함수·Map/Set·순환 참조를 상태에 넣지 않는다. 구조를 바꾸면 `STATE_VERSION` 을 올린다.
+- **상태는 JSON 으로 그대로 직렬화되는 평범한 객체다.** 클래스 인스턴스·함수·Map/Set·순환 참조·`undefined`·NaN 을 상태에 넣지 않고, 한 객체를 두 곳에서 가리키지 않는다. 구조를 바꾸면 `STATE_VERSION` 을 올리고 마이그레이션을 추가한다("세이브" 참고).
 - **난수 쓰는 법**: 모듈은 `rngOf(state, '<스트림>')` 로 자기 스트림을 꺼내 쓴다. 스트림은 `RNG_STREAMS`(world, entities, combat, items)에 있다. 층·방처럼 "언제 뽑든 결과가 같아야 하는 것"은 `rngOf(state, 'world').fork(`floor:${n}`)` 처럼 fork 한다 — fork 는 부모를 소비하지 않고 라벨만으로 결정된다.
 - `tests/logic/core/prng.test.js` 와 `tests/logic/world/generate.test.js` 의 고정값 테스트가 깨지면 기존 시드·세이브의 결과가 바뀐다는 뜻이다. 의도한 변경이 아니면 구현을 되돌린다. 의도한 변경이면 값을 갱신하고 `BUGS.md` 에 적는다.
 - **순수 로직에서는 `Math.sin/cos/atan2/pow/hypot/exp/log` 와 `**` 를 쓰지 않는다.** 엔진마다 마지막 자리가 다를 수 있어 같은 시드가 기기마다 다른 결과를 낼 수 있다. 사칙연산과 `Math.sqrt/floor/ceil/round/abs/min/max/imul` 만 쓴다. 각도가 필요하면 [cos, sin] 값을 `data/` 에 미리 적어 둔다(`data/bosses.js` 참고). `tests/architecture.test.js` 가 검사한다.
