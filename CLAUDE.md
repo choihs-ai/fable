@@ -36,6 +36,11 @@ node scripts/verify-items.mjs --only curve       # 한 부분만: drops | ranges
 node scripts/verify-save.mjs        # 세이브 검증: 왕복, 구버전, 손상 케이스, 무작위 손상, 저장소 세션 흉내 (약 40초)
 node scripts/verify-save.mjs --only fuzz         # 한 부분만: roundtrip | old | cases | fuzz | sessions
 node scripts/make-old-saves.mjs     # tests/fixtures 의 구버전 세이브 표본을 옛 커밋의 코드로 다시 만든다(git 필요)
+
+# 브라우저 검증 — Playwright 가 설치된 환경에서만 돈다(프로젝트 의존성이 아니다). CDN 에 닿지 않으면 --three 로 three@0.186.1 패키지 폴더를 준다
+node scripts/browser/verify-leaks.mjs --three <폴더>    # 층 이동 100회: GPU 자원·풀·DOM·힙 추이 (약 4분, --moves N --quality low|medium|high)
+node scripts/browser/verify-touch.mjs --three <폴더>    # 터치: 멀티터치, 화면 밖 이탈, touchcancel, 회전, 백그라운드 (약 40초)
+node scripts/browser/verify-ui.mjs --three <폴더>       # 화면 흐름 전체 + 카메라·안개·벽 가림·품질 (약 1분, --out <갈무리 폴더>)
 ```
 
 `src/logic/world/**` 나 `data/world.js`·`data/zones.js` 를 바꾸면 `verify-maps.mjs` 를 다시 돌리고, 실패 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 실패한 시드는 시드 값·층과 함께 기록한다.
@@ -46,6 +51,8 @@ node scripts/make-old-saves.mjs     # tests/fixtures 의 구버전 세이브 표
 
 `src/logic/save/**`·`src/save/**`·`data/{save,settings}.js` 를 바꾸거나 **상태 구조를 바꾸면**(`core/state.js`, 행동체·투사체·장판·인벤토리 등의 필드 추가·삭제) `verify-save.mjs` 를 다시 돌리고, 문제 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 상태에 필드를 넣는 로직(`src/logic/**` 어디든)을 고쳤을 때도 돌린다 — 검증기가 새 상태를 손상으로 보면 그 순간부터 실제 게임의 저장이 실패한다.
 
+`src/render/**` 를 바꾸면 `verify-leaks.mjs` 를, `src/ui/**`·`styles.css`·`index.html` 을 바꾸면 `verify-touch.mjs` 와 `verify-ui.mjs` 를, `src/main.js` 를 바꾸면 셋 다 다시 돌린다. 돌릴 수 없는 환경이면 "확인 못 함"으로 적는다. 이 스크립트들이 보는 것은 헤드리스 크로미움이다 — 실제 기기에서 본 것과 구분해 적는다.
+
 ES 모듈은 `file://` 로 열 수 없으므로 브라우저 확인은 항상 로컬 서버를 거친다.
 
 ## 파일 구조
@@ -53,12 +60,15 @@ ES 모듈은 `file://` 로 열 수 없으므로 브라우저 확인은 항상 �
 `(예정)` 은 아직 없는 디렉터리다. 해당 단계에서 만든다.
 
 ```
-index.html                 진입 HTML. importmap(Three.js 버전 고정) + 캔버스
+index.html                 진입 HTML. importmap(Three.js 버전 고정) + 캔버스 + ui 가 붙는 자리
+styles.css                 화면 배치(HUD, 조작부, 메뉴). 세로·가로, 노치(safe-area)
 package.json               "type": "module" 선언과 스크립트 별칭만. 의존성 없음
 .nojekyll                  GitHub Pages 가 Jekyll 처리 없이 그대로 배포하도록
 CLAUDE.md  BUGS.md  TODO.md  README.md
 data/                      설정·밸런스 수치 (순수 값, data 끼리만 import)
-  config.js                루프 주파수, 렌더 설정
+  config.js                루프 주파수, 렌더 설정(카메라, 벽 가림, 안개 밝기, 품질 3단계, 풀 크기, 색)
+  ui.js                    조작(조이스틱 반지름·불감대, 진동 길이, 키보드), 알림 시간
+  audio.js                 효과음 정의, 구역별 배경음(음계·빠르기·수열)
   world.js                 맵 생성 수치: 재시도 상한, 배치 거리, 생성기·보스층 설정
   zones.js                 구역 6개: 맵 크기, 알고리즘 비율, 타일셋, 색감, 적 풀, 보스
   combat.js                전투 공통 수치: 시야, 어그로·리쉬, 길찾기
@@ -80,7 +90,7 @@ src/
   main.js                  조립 지점: 로직·렌더·UI 를 만들어 연결하는 유일한 곳
   logic/                   ── 순수 로직 (DOM·Three.js 금지, Node 테스트 대상)
     game.js                로직 최상단: 런 시작·종료, 층 진입, 틱마다 시스템 실행 순서, 세이브에서 이어하기(resumeGame)·복구(rescueGame)
-    commands.js            로직 최상단: 플레이어 명령(착용·소비·사고팔기·제단·강화 선택·메타 해금)
+    commands.js            로직 최상단: 플레이어 명령(계단 내려가기·착용·소비·사고팔기·제단·강화 선택·메타 해금)
     core/
       prng.js              시드 PRNG(sfc32) + fork 서브스트림
       event-bus.js         동기식 이벤트버스
@@ -141,13 +151,26 @@ src/
       schema.js            검증용 작은 도구(int·shape·record…)
       salvage.js           건져 내기: 망가진 세이브에서 핵심(시드·층·진행도·인벤토리)만 골라냄
       settings.js          설정 기본값·정리
-  render/                  ── Three.js. 로직 상태를 읽기만 함
-    renderer.js            렌더러·씬·카메라
-    world/      (예정)     맵 메시
-    entities/   (예정)     엔티티 메시·애니메이션
-  ui/                      ── DOM: HUD, 메뉴, 터치 입력
-    debug-overlay.js       개발용 상태 표시
-  audio/        (예정)     ── WebAudio
+  render/                  ── Three.js. 로직 상태를 읽기만 함 (아래 "렌더" 참고)
+    renderer.js            렌더러·씬·카메라·조명·품질. 층이 바뀌면 앞 층의 자원을 버린다
+    assets.js              공유 지오메트리·머티리얼(한 번 만들어 계속 쓴다)
+    pool.js                오브젝트 풀 두 가지(꺼내고 돌려놓기 / 프레임마다 채우기) — Three.js 를 모름
+    camera-rig.js          카메라 추적·벽 가림·화면 비율 계산 — Three.js 를 모름
+    world/floor-view.js    한 층의 바닥·벽 InstancedMesh, 안개(인스턴스 색), 벽 가림(인스턴스 높이), 표식
+    world/fog.js           안개 단계 계산 — Three.js 를 모름
+    entities/actor-views.js  행동체 그리기(풀, 위치 보간, 체력 막대, 상태이상 표시)
+    effects/effects.js     투사체·장판·예고·전리품·입자·피해 숫자(모두 풀)
+  ui/                      ── DOM: HUD, 메뉴, 터치 입력 (아래 "조작과 UI" 참고)
+    app.js                 ui 의 조립: HUD·조작부·화면을 잇는다. main.js 는 이 파일만 상대한다
+    hud.js                 체력·경험치·층·금화, 보스 체력, 물약·상황 버튼, 알림
+    screens.js             타이틀, 일시정지, 설정, 가방, 상점, 제단, 강화 3택1, 결과, 영구 해금
+    text.js                화면에 보일 문구를 데이터에서 만든다
+    dom.js  haptics.js     DOM 도우미, 진동
+    input/controls.js      조작 상태 기계(포인터·키 → 이번 프레임의 입력) — DOM 을 모름
+    input/touch-pad.js     가상 조이스틱·버튼을 화면에 만들고 포인터 이벤트를 넘긴다
+    debug-overlay.js       개발용 상태 표시(?debug=1)
+  audio/                   ── WebAudio
+    engine.js              합성 효과음·배경음. 첫 입력 뒤에 장치를 만든다
   save/                    ── 저장소 어댑터. 직렬화 자체는 logic/save
     storage.js             저장소 열기(없음·차단·가득 참 처리, 메모리 대체), 예외를 결과로 바꿈
     save-store.js          런·메타·설정의 키, 백업·격리, 용량 초과 때 자리 비우기
@@ -165,6 +188,7 @@ scripts/
   lib/save-sim.js          자동 조작, 가짜 저장소, 무작위 손상기, 공유 객체·NaN 찾기
   lib/save-cases.js        손상된 세이브 목록(138가지)과 기대 결과
   make-old-saves.mjs       옛 커밋의 코드로 구버전 세이브 표본 만들기
+  browser/                 브라우저 검증(Playwright 필요): lib.mjs, verify-leaks.mjs, verify-touch.mjs, verify-ui.mjs
 tests/                     src 와 같은 경로 구조. *.test.js
   architecture.test.js     아래 의존 규칙을 자동 검사
   helpers/architecture.js  규칙 정의(LAYERS, LOGIC_RANK)와 검사기
@@ -179,6 +203,9 @@ tests/                     src 와 같은 경로 구조. *.test.js
   logic/save/*.test.js
   logic/commands.test.js
   save/*.test.js           저장소·백업·자동 저장(가짜 저장소로 Node 에서 실행)
+  render/pure.test.js      렌더에서 Three.js 를 쓰지 않는 부분(풀, 카메라 계산, 안개 단계)
+  ui/controls.test.js      조작 상태 기계(멀티터치, 취소, 화면 밖 이탈, 전부 놓기)
+  audio/engine.test.js     소리 엔진(가짜 AudioContext)
 ```
 
 모듈과 디렉터리의 대응: core·entities·combat·items 는 `src/logic/<모듈>`, world 는 `src/logic/world`(생성) + `src/render/world`(그리기), save 는 `src/logic/save`(직렬화) + `src/save`(저장소), ui·audio 는 `src/ui`·`src/audio`.
@@ -219,9 +246,10 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 ## 데이터 흐름
 
 - **로직 → 바깥**: 로직이 `EventBus` 로 "일어난 일"을 알리고, render/ui/audio 가 구독한다. 이벤트 이름은 `logic/core/events.js` 상수를 쓴다.
-- **저장**: `main.js` 가 시작할 때 `store.load()` → `resumeGame()` 으로 이어하거나 새 런을 만든다. 이후 `autosave` 가 이벤트(층 이동·일시정지·런 종료)를 듣고 예약해 두었다가 프레임 끝의 `autosave.flush()` 에서 쓰고, 화면이 가려지면(`visibilitychange`·`pagehide`) 곧바로 쓴다.
+- **저장**: `main.js` 가 시작할 때 `store.load()` 로 읽어 두고, 타이틀의 "이어하기"에서 `resumeGame()` 으로 잇는다. 이후 `autosave` 가 이벤트(층 이동·일시정지·런 종료)를 듣고 예약해 두었다가 프레임 끝의 `autosave.flush()` 에서 쓰고, 화면이 가려지면(`visibilitychange`·`pagehide`) 곧바로 쓴다.
 - **바깥 → 로직**: ui 는 상태를 직접 고치지 않는다. 매 틱의 조작은 `setInput(state, …)`, 그 밖의 행동(착용·구매·강화 선택 등)은 `logic/commands.js` 의 명령으로 넘긴다. 명령은 `{ ok:true, … }` 또는 `{ ok:false, reason }` 을 돌려준다.
-- **프레임**: `main.js` 가 `requestAnimationFrame` 마다 경과 시간을 `FixedStepLoop.advance()` 에 넘김 → 고정 dt 로 `tick()` 0회 이상 → `render(state, alpha)`.
+- **프레임**: `main.js` 가 `requestAnimationFrame` 마다 `ui.takeInput()` → `setInput()` → 경과 시간을 `FixedStepLoop.advance()` 에 넘김 → 고정 dt 로 `tick()` 0회 이상 → `autosave.flush()` → `render(state, alpha, dt)` → `ui.update()`.
+- **앱의 흐름**(`main.js`): 타이틀(층에 들어가지 않은 빈 게임, 메타만 의미가 있다) → 새 게임 또는 이어하기 → 런 → 결과 → 타이틀. 화면이 열려 있거나 탭이 가려지면 `PAUSED` 다.
 
 ## 맵 생성
 
@@ -263,6 +291,37 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 - **메타 진행**은 `state.meta` 에 있다. `createGame({ seed, meta })` 로 넘기면 복사해서 쓰고, 런이 끝나면(`endRun`) 영혼석과 기록이 여기에 더해진다. 런과 따로 저장된다("세이브" 참고).
 - 소환·분열로 생긴 적과 플레이어가 잡지 않은 적은 경험치·전리품을 주지 않는다.
 
+## 렌더
+
+- **좌표**: 로직의 (x, y) 는 화면의 (x, 0, z=y) 다. 카메라는 플레이어의 남쪽(+y) 위에서 내려다보는 고정 쿼터뷰다 — 화면 위쪽이 맵의 −y.
+- **자원의 수명은 둘로 나눈다.** 공유 자원(`assets.js` 의 지오메트리·머티리얼)과 풀(행동체 뷰, 투사체, 원, 전리품, 입자, 피해 숫자)은 렌더러와 함께 살고 층이 바뀌어도 다시 쓴다. 층 자원(바닥·벽 InstancedMesh, 바닥 텍스처, 표식)은 `state.world.tiles` 가 바뀌면 앞 층의 것을 `dispose()` 하고 새로 만든다. 새 메시를 추가할 때는 어느 쪽인지 정하고, 층 자원이면 `floor-view.js` 의 `dispose()` 에 넣는다.
+- **지오메트리·머티리얼을 그 자리에서 `new` 하지 않는다.** `assets.geometries`, `assets.lit(색)`, `assets.flat(색, 투명도)` 를 쓴다. 자주 생겼다 사라지는 것은 `pool.js` 의 풀을 쓴다.
+- **맵은 InstancedMesh 둘**(바닥, 벽)이다. 시야 안개는 인스턴스 색의 밝기(보임 1 / 탐험함 0.32 / 가 보지 않음 0)로, 벽 가림은 플레이어 남쪽 벽의 인스턴스 높이를 낮추는 것으로 한다. 둘 다 플레이어가 다른 칸으로 넘어갈 때만 바뀐 인스턴스를 고친다.
+- **적·투사체·장판은 지금 보이는 칸에 있을 때만 그린다**(`isVisible`). 전리품과 표식은 탐험한 칸이면 그린다.
+- **위치 보간**: 행동체는 직전 틱과 이번 틱의 위치 사이를 `alpha` 로 그린다. 처음 본 행동체·순간이동·틱을 건너뛴 경우는 보간하지 않는다.
+- **이벤트로만 알 수 있는 연출**(피해 숫자, 입자)은 `renderer.attach(bus, getState)` 가 받는다. 그 밖은 매 프레임 상태를 그대로 비춘다.
+- **꾸밈용 난수**(입자 방향, 바닥 무늬)는 `Rng.fromSeed('render:cosmetic')` 을 쓴다. 게임 상태의 난수와 무관하다. `Math.random` 은 여기서도 쓰지 않는다.
+- **품질**(`RENDER.quality`): 해상도 배율, 그림자(높음에서만), 입자·피해 숫자 수. `renderer.setQuality()` 로 실행 중에 바꾼다.
+- Three.js 를 쓰는 파일은 Node 에서 불러올 수 없다(CDN importmap). 계산은 Three.js 를 모르는 파일(`pool.js`, `camera-rig.js`, `world/fog.js`)로 빼서 Node 테스트를 붙이고, 나머지는 `scripts/browser/` 로 확인한다. `renderer.info()` 가 GPU 자원·풀 현황을 돌려준다.
+
+## 조작과 UI
+
+- **입력은 포인터 이벤트**로 받는다(손가락마다 `pointerId` 가 달라 멀티터치를 구분한다). 판단은 `input/controls.js` 에 있고 DOM 을 모른다 — 터치 엣지케이스는 여기에 테스트를 붙인다.
+- 규칙: 스틱은 포인터 하나가 잡고(떼거나 취소되기 전에는 다른 손가락이 스틱이 될 수 없다), 버튼은 포인터마다 하나, 공격은 누르는 동안 계속, 기술·회피는 누른 순간 한 번. 손가락이 화면 밖으로 나가도 포인터 캡처로 스틱이 유지된다.
+- **전부 놓기**(`ui.resetInput()`): 탭이 가려질 때, 돌아올 때, 화면 크기·방향이 바뀔 때, 창이 초점을 잃을 때, 화면(메뉴)이 열릴 때.
+- **기술·회피는 누른 프레임에만 `setInput` 에 넘긴다.** 매 프레임 "없음"을 넘기면 아직 틱이 처리하지 않은 입력을 지운다(화면 주사율이 틱보다 빠를 때).
+- **화면(메뉴)이 열리면 게임을 멈춘다**(`PAUSED`). 닫으면 이어진다. 화면은 상태를 읽어 그리고, 바꾸는 일은 `logic/commands.js` 의 명령과 `main.js` 가 준 actions 로만 한다.
+- 강화 후보가 제시돼 있으면(`state.run.choice`) 3택1 화면이 뜬다 — 이벤트가 아니라 상태를 보므로 세이브에서 이어한 경우에도 뜬다.
+- 문구는 `ui/text.js` 가 데이터의 이름·수치로 만든다. 새 효과 종류를 데이터에 추가하면 여기에 설명을 추가한다.
+- `?debug=1` 이면 디버그 표시가 나오고 `window.__fable` 로 게임·렌더러·ui 를 내놓는다(브라우저 검증용).
+
+## 소리
+
+- 녹음된 파일 없이 합성한다(`data/audio.js` 의 정의 → 오실레이터·잡음 + 음량 곡선). 잡음은 시드 난수로 한 번 만든다.
+- **AudioContext 는 첫 터치·클릭·키 입력에서 만든다**(`audio.unlock()`). 그 전의 요청은 버린다. 만들 수 없는 환경에서는 모든 함수가 아무 일도 하지 않는다.
+- 탭이 가려지면 `suspend()`, 돌아오면 `resume()`. 끝난 음원은 연결을 끊는다. 같은 효과음은 `SFX_MIN_GAP` 안에 다시 내지 않는다.
+- 배경음은 짧은 간격으로 조금 앞까지만 예약한다(`MUSIC.lookahead`). 구역이 바뀌면 `FLOOR_ENTERED` 로 바뀐다.
+
 ## 세이브
 
 - **세 가지를 따로 저장한다**(localStorage 키는 `data/save.js`): 런(`fable:run`, 상태 전체에서 `meta` 를 뺀 것), 메타(`fable:meta`), 설정(`fable:settings`). 런이 망가져도 메타는 남는다. 키마다 `:bak`(바로 앞의 저장본)과 `:bad`(읽지 못한 원본)가 딸린다.
@@ -275,8 +334,8 @@ entities 는 "몸"(생성, 이동, 충돌, 시야)만 다루고 combat 을 모�
 - **세이브에서 온 이름은 `Object.hasOwn(표, 이름)` 으로 확인한다.** `표[이름]` 은 `"constructor"`·`"toString"` 을 통과시킨다.
 - **상태 안의 객체는 한 곳에서만 가리킨다.** 같은 객체를 두 곳에 넣거나 `data/` 의 (동결된) 설정 객체를 그대로 넣지 않는다 — 저장했다 불러오면 갈라지거나 동결이 풀려, 불러온 게임만 다르게 동작할 수 있다. 사본을 넣는다(`copyItem`, `{ ...effect.status }`).
 - **저장 실패는 게임을 멈추지 않는다.** localStorage 가 없거나 막혀 있으면 메모리 저장소로 대체하고(`store.persistent === false`), 용량이 모자라면 격리본 → 런 백업 순으로 지우고 다시 쓰고, 그래도 안 되면 결과로 알릴 뿐이다. 다른 프로그램의 키는 지우지 않는다(GitHub Pages 는 같은 계정의 프로젝트끼리 저장소를 함께 쓴다).
-- **틱이 예외를 던지면**(`main.js`) `rescueGame` 으로 핵심만 건져 그 층을 다시 차리고, 안 되면 새 런을 시작한다.
-- 메타가 바뀌는 곳(해금 구매 등)은 다음 자동 저장 때 함께 저장된다. 런 밖에서 메타를 바꾸는 화면이 생기면 `store.saveMeta` 를 직접 부른다.
+- **틱이 예외를 던지면**(`main.js`) `rescueGame` 으로 핵심만 건져 그 층을 다시 차리고, 안 되면 타이틀로 돌아간다.
+- 메타는 자동 저장 때 런과 함께 저장되고, 영구 해금을 사면 곧바로 저장된다(`actions.metaChanged`).
 
 ## 코드 규약
 

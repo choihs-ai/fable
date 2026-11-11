@@ -177,7 +177,13 @@ export function createFloorView({ scene, assets, world, rng }) {
       }
     },
     stats() {
-      return { floors: floorCells.length, walls: wallCells.length, lowered: lowered.length, markers: markers.length };
+      const fog = [0, 0, 0];
+      for (const level of floorLevels) fog[level]++;
+      return {
+        floors: floorCells.length, walls: wallCells.length, lowered: lowered.filter((c) => wallIndex[c] >= 0).length, markers: markers.length,
+        /** 바닥 칸의 안개 단계별 수: 가 보지 않음 / 탐험함 / 지금 보임. */
+        fog: { hidden: fog[0], explored: fog[1], visible: fog[2] },
+      };
     },
     /** 이 층에서 만든 것을 모두 버린다: 인스턴스 버퍼, 바닥 텍스처, 표식 메시. */
     dispose() {
