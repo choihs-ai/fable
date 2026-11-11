@@ -74,14 +74,14 @@ const audio = createAudio();
 audio.setVolumes(settings);
 audio.attach(bus, () => game.state);
 // 소리는 첫 터치·클릭·키 입력 뒤에야 낼 수 있다.
+// 어느 이벤트를 "사용자의 조작"으로 쳐 주는지는 브라우저마다 다르다(예전 iOS 는 touchend·click 만). 여러 이벤트에 걸어 둔다.
+const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'];
 const unlockAudio = () => {
-  if (audio.unlock()) {
-    window.removeEventListener('pointerdown', unlockAudio, true);
-    window.removeEventListener('keydown', unlockAudio, true);
+  if (audio.unlock() && audio.status().state === 'running') {
+    for (const type of UNLOCK_EVENTS) window.removeEventListener(type, unlockAudio, true);
   }
 };
-window.addEventListener('pointerdown', unlockAudio, true);
-window.addEventListener('keydown', unlockAudio, true);
+for (const type of UNLOCK_EVENTS) window.addEventListener(type, unlockAudio, true);
 
 function startMusic() {
   const { world } = game.state;

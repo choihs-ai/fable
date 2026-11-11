@@ -50,7 +50,7 @@ export async function startServer() {
 
 /**
  * 브라우저를 띄운다. 헤드리스 크로미움 + 소프트웨어 WebGL.
- * @returns {Promise<{ browser, open:(contextOptions:object, url:string) => Promise<{ context, page, problems:string[], cdp }> }>}
+ * @returns {Promise<{ browser, open:(contextOptions:object, url:string, extra?:{ init?:Function }) => Promise<{ context, page, problems:string[], cdp }> }>}
  */
 export async function launch() {
   const { chromium, devices } = await loadPlaywright();
@@ -58,8 +58,10 @@ export async function launch() {
   const browser = await chromium.launch({
     args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--js-flags=--expose-gc', '--autoplay-policy=user-gesture-required'],
   });
-  async function open(contextOptions, url) {
+  async function open(contextOptions, url, { init = null } = {}) {
     const context = await browser.newContext(contextOptions);
+    // 페이지의 스크립트보다 먼저 돌 코드(WebGL 호출 세기 등).
+    if (init) await context.addInitScript(init);
     const page = await context.newPage();
     const problems = [];
     page.on('console', (m) => {

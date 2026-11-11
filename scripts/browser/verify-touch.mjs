@@ -158,7 +158,7 @@ try {
   await settle();
   s = await read();
   check('화면 회전: 가로 화면에서도 스틱과 버튼이 동작한다', s.input.moveY > 0.95 && s.input.attack === true, { input: s.input, attackLand });
-  await page.screenshot({ path: `${process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1] : '.'}/touch-landscape.png` }).catch(() => {});
+  if (process.argv.includes('--out')) await page.screenshot({ path: `${process.argv[process.argv.indexOf('--out') + 1]}/touch-landscape.png` });
 
   // ── 백그라운드 전환 ──
   const hide = (hidden) => page.evaluate((h) => {
