@@ -20,7 +20,9 @@ import { ZONES } from '../../../data/zones.js';
 import { PHASE, RNG_STREAMS, STATE_VERSION } from '../core/state.js';
 import { ACTOR_KIND } from '../entities/defs.js';
 import { FLOOR_KIND, TOTAL_FLOORS } from '../world/floors.js';
+import { circleFree } from '../world/collide.js';
 import { bfsDistances } from '../world/grid.js';
+import { navOf } from '../world/nav.js';
 import { TILE } from '../world/tiles.js';
 import {
   among, bool, createReport, int, isInt, isKeyOf, isNum, isObject, keyOf, list, nullable, num, passes, record, shape, show, text,
@@ -195,7 +197,7 @@ function checkWorld(r, state) {
     if (f.x >= w || f.y >= h) r.fail(`world.eventRooms[${i}].feature`, '맵 밖');
   }
   if (isObject(state.run) && map.floor !== state.run.floor) r.fail('world.floor', `진행 중인 층(${show(state.run.floor)})과 다름 (${map.floor})`);
-  r.map = { w, h, tiles, cells: w * h };
+  r.map = { w, h, tiles, cells: w * h, nav: navOf(map) };
   return undefined;
 }
 
@@ -209,6 +211,9 @@ function checkPosition(r, x, y, p, needFloor) {
 
 // ── 행동체 ───────────────────────────────────────────────────────────────────
 
+/** 몸이 벽에 이만큼 파고든 것까지는 허용한다(충돌 처리의 계산 오차). */
+const BODY_SLACK = 0.02;
+
 const actionShape = shape({
   ability: text(64),
   phase: among(['windup', 'recover']),
@@ -221,7 +226,7 @@ const actionShape = shape({
 const dashShape = shape({
   dirX: unit,
   dirY: unit,
-  speed: num(0, 1000),
+  speed: num(0, 100),
   endAt: timer,
   damage: num(0, L.hp),
   status: nullable(statusSpec),
@@ -264,14 +269,14 @@ const actorShape = shape({
   faction: among(['player', 'enemy']),
   x: coord,
   y: coord,
-  radius: num(0.05, 8),
-  mass: num(0.001, L.count),
+  radius: num(0.1, 2),
+  mass: num(0.01, 1000),
   facingX: unit,
   facingY: unit,
   hp: int(0, L.hp),
   maxHp: int(1, L.hp),
   armor: num(0, L.statValue),
-  speed: num(0, 100),
+  speed: num(0, 30),
   power: num(0, 10000),
   critChance: num(0, 1),
   critDamage: num(0, 1000),
@@ -281,10 +286,10 @@ const actorShape = shape({
   onHit: nullable(list(shape({ id: keyOf(STATUSES), chance: num(0, 1) }), 16)),
   moveX: unit,
   moveY: unit,
-  moveScale: num(0, 100),
+  moveScale: num(0, 4),
   moved: bool,
   hitWall: bool,
-  speedMul: num(0, 100),
+  speedMul: num(0, 4),
   disabled: bool,
   statuses: record((key) => isKeyOf(STATUSES, key), shape({ stacks: int(1, 99), until: timer, nextTick: timer, sourceId: nullable(id) }), 64),
   immuneUntil: record((key) => isKeyOf(STATUSES, key), timer, 64),
@@ -310,7 +315,10 @@ function checkActor(r, actor, p) {
   const isPlayer = actor.kind === ACTOR_KIND.PLAYER;
   if (actor.faction !== (isPlayer ? 'player' : 'enemy')) r.fail(`${p}.faction`, `종류와 맞지 않음 (${actor.faction})`);
 
-  checkPosition(r, actor.x, actor.y, p, true);
+  if (passes(r, (rr, v, pp) => checkPosition(rr, actor.x, actor.y, pp, true), actor, p)) {
+    // 몸이 벽과 겹쳐 있으면 충돌 처리가 맵 밖으로 밀어낼 수 있다(터무니없이 큰 반지름, 좁은 통로에 놓인 큰 몸).
+    if (!circleFree(r.map.nav, actor.x, actor.y, actor.radius - BODY_SLACK)) r.fail(p, `몸이 벽과 겹침 (${actor.x}, ${actor.y}, 반지름 ${actor.radius})`);
+  }
   const facing = actor.facingX * actor.facingX + actor.facingY * actor.facingY;
   if (!(facing > 0.98 && facing < 1.02)) r.fail(`${p}.facing`, `길이가 1 이 아님 (${facing})`);
   if (actor.moveX * actor.moveX + actor.moveY * actor.moveY > 2.01) r.fail(`${p}.move`, '이동 의도가 너무 큼');
@@ -341,11 +349,11 @@ function checkActor(r, actor, p) {
 
 const faction = among(['player', 'enemy']);
 const projectileShape = shape({
-  id, ownerId: id, faction, x: coord, y: coord, vx: num(-1000, 1000), vy: num(-1000, 1000), radius: num(0.01, 8),
+  id, ownerId: id, faction, x: coord, y: coord, vx: num(-100, 100), vy: num(-100, 100), radius: num(0.01, 2),
   damage: num(0, L.hp), power: num(0, 10000), status: nullable(statusSpec), expiresAt: timer,
 });
 const hazardShape = shape({
-  id, ownerId: id, faction, x: coord, y: coord, radius: num(0.01, 64), damage: num(0, L.hp), power: num(0, 10000),
+  id, ownerId: id, faction, x: coord, y: coord, radius: num(0.01, 16), damage: num(0, L.hp), power: num(0, 10000),
   status: nullable(statusSpec), nextAt: timer, interval: int(0, L.timerAhead), endAt: timer,
 });
 const inputShape = shape({

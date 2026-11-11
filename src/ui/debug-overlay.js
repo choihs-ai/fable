@@ -7,10 +7,14 @@
 export function createDebugOverlay({ element }) {
   let last = '';
   return {
-    update(state) {
+    /**
+     * @param {object} state
+     * @param {string} [note] 덧붙일 한 줄(저장 상태 등)
+     */
+    update(state, note = '') {
       const world = state.world;
       const where = world ? ` · ${world.floor}F ${world.zoneId}/${world.algorithm} ${world.width}x${world.height}` : '';
-      const text = `seed ${state.seed} · ${state.phase} · tick ${state.tick}${where}`;
+      const text = `seed ${state.seed} · ${state.phase} · tick ${state.tick}${where}${note ? ` · ${note}` : ''}`;
       if (text === last) return;
       last = text;
       element.textContent = text;
