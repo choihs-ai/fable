@@ -86,8 +86,9 @@ try {
   await settle();
   s = await read();
   check('멀티터치: 셋째 손가락으로 기술 — 재사용 대기가 시작된다', s.held.pointers === 3 && (s.cooldowns.firebolt ?? 0) > s.tick, { held: s.held, firebolt: s.cooldowns.firebolt, tick: s.tick });
-  await touch(cdp, 'touchEnd', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, ...attack }]);
-  await touch(cdp, 'touchEnd', [{ id: 1, x: stick.x + 90, y: stick.y }]);
+  // 손가락 하나만 뗀다: touchEnd 에는 "떼는 손가락"을 적는다(빈 목록이면 전부 뗀다).
+  await touch(cdp, 'touchEnd', [{ id: 3, ...skill }]);
+  await touch(cdp, 'touchEnd', [{ id: 2, ...attack }]);
   await settle();
   s = await read();
   check('멀티터치: 버튼 손가락을 떼도 스틱은 그대로다', s.input.moveX > 0.95 && s.input.attack === false && s.held.stick !== null && s.held.buttons.length === 0, s.held);
@@ -97,7 +98,10 @@ try {
   await settle();
   s = await read();
   check('멀티터치: 이동 영역의 둘째 손가락은 스틱에 영향을 주지 않는다', s.input.moveX > 0.95, { moveX: s.input.moveX });
-  await touch(cdp, 'touchEnd', [{ id: 1, x: stick.x + 90, y: stick.y }]);
+  await touch(cdp, 'touchEnd', [{ id: 4, x: stick.x - 160, y: stick.y - 200 }]);
+  await settle();
+  s = await read();
+  check('멀티터치: 둘째 손가락을 떼도 첫 손가락의 스틱은 유지된다', s.input.moveX > 0.95 && s.held.stick !== null, s.held);
 
   // ── 손가락이 화면 밖으로 ──
   await touch(cdp, 'touchMove', [{ id: 1, x: -40, y: stick.y }]);

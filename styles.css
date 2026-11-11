@@ -232,7 +232,8 @@ html, body {
 /* 가로로 낮은 화면(가로 모드의 휴대전화): 조작부를 조금 줄인다. */
 @media (max-height: 420px) {
   .pad-buttons { transform: scale(0.82); transform-origin: right bottom; }
-  .pad.left-handed .pad-buttons { transform: scale(-0.82, 0.82); transform-origin: left bottom; }
+  /* 좌우 반전은 묶음의 가운데를 축으로 한다. 왼쪽 끝을 축으로 하면 화면 밖으로 뒤집혀 나간다. */
+  .pad.left-handed .pad-buttons { transform: scale(-0.82, 0.82); transform-origin: center bottom; }
   .hud .potion { bottom: calc(var(--sb) + 196px); }
   .hud .context { bottom: calc(var(--sb) + 20px); }
   .panel { padding: 10px; }
