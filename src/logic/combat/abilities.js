@@ -4,6 +4,7 @@
 // 재사용 대기는 발동 시점부터 센다. 준비 중에 행동 불가가 되면 취소된다(재사용 대기는 그대로 돈다).
 
 import { COMBAT } from '../../../data/combat.js';
+import { JITTER } from '../../../data/weapons.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
 import { TICK_RATE, ticksOf } from '../core/time.js';
@@ -11,10 +12,10 @@ import { allActors, findFreeSpot, getPlayer, opponentsOf, spawnEnemy } from '../
 import { defOf, enemyDef } from '../entities/defs.js';
 import { circleFree } from '../world/collide.js';
 import { lineOfSight } from '../world/los.js';
-import { navOf } from '../world/nav.js';
+import { isWall, navOf } from '../world/nav.js';
 import { spawnHazard } from './hazards.js';
 import { applyHit } from './hit.js';
-import { spawnProjectile } from './projectiles.js';
+import { clearBullets, spawnProjectile } from './projectiles.js';
 import { applyStatus } from './statuses.js';
 
 export function abilityOf(actor, abilityId) {
@@ -108,7 +109,16 @@ export function runEffects(state, bus, actor, effects, action) {
           if (d > 1e-6 && (dx * action.dirX + dy * action.dirY) / d < effect.cosHalf) continue;
           // 벽 너머로는 맞지 않는다.
           if (!lineOfSight(nav, actor.x, actor.y, target.x, target.y)) continue;
-          applyHit(state, bus, target, effect, actor.id, actor.x, actor.y);
+          applyHit(state, bus, target, effect, actor.id, actor.x, actor.y, true);
+        }
+        // 휘두른 범위 안의 상대 탄을 지운다.
+        if (effect.clearsBullets) {
+          clearBullets(state, bus, actor.faction, (p) => {
+            const dx = p.x - actor.x;
+            const dy = p.y - actor.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            return d <= effect.range && (d < 1e-6 || (dx * action.dirX + dy * action.dirY) / d >= effect.cosHalf);
+          }, actor.x, actor.y);
         }
         break;
       }
@@ -119,14 +129,47 @@ export function runEffects(state, bus, actor, effects, action) {
           const reach = effect.radius + target.radius;
           if (dx * dx + dy * dy > reach * reach) continue;
           if (!lineOfSight(nav, actor.x, actor.y, target.x, target.y)) continue;
-          applyHit(state, bus, target, effect, actor.id, actor.x, actor.y);
+          applyHit(state, bus, target, effect, actor.id, actor.x, actor.y, true);
         }
         break;
       }
       case 'projectile': {
         for (const [c, s] of effect.spread ?? [[1, 0]]) {
-          spawnProjectile(state, bus, actor, effect, action.dirX * c - action.dirY * s, action.dirX * s + action.dirY * c);
+          let dx = action.dirX * c - action.dirY * s;
+          let dy = action.dirX * s + action.dirY * c;
+          if (effect.jitter) {
+            // 쏠 때마다 조금 흩어진다. jitter 가 클수록 바깥쪽 방향까지 쓴다.
+            const span = Math.max(1, Math.round(effect.jitter * JITTER.length));
+            const [jc, js] = JITTER[rngOf(state, 'combat').int(0, span - 1)];
+            const rx = dx * jc - dy * js;
+            dy = dx * js + dy * jc;
+            dx = rx;
+          }
+          spawnProjectile(state, bus, actor, effect, dx, dy);
         }
+        break;
+      }
+      case 'beam': {
+        // 벽에 닿을 때까지 곧게 뻗고, 닿는 상대를 모두 맞힌다.
+        let length = 0;
+        while (length < effect.range) {
+          const next = Math.min(effect.range, length + 0.25);
+          if (isWall(nav, Math.floor(actor.x + action.dirX * next), Math.floor(actor.y + action.dirY * next))) break;
+          length = next;
+        }
+        for (const target of opponentsOf(state, actor.faction)) {
+          const dx = target.x - actor.x;
+          const dy = target.y - actor.y;
+          const along = dx * action.dirX + dy * action.dirY;
+          if (along < 0 || along > length + target.radius) continue;
+          const side = dx * action.dirY - dy * action.dirX;
+          const reach = effect.width + target.radius;
+          if (side * side > reach * reach) continue;
+          applyHit(state, bus, target, effect, actor.id, actor.x, actor.y);
+        }
+        bus.emit(EVENTS.BEAM_FIRED, {
+          x0: actor.x, y0: actor.y, x1: actor.x + action.dirX * length, y1: actor.y + action.dirY * length, width: effect.width, faction: actor.faction,
+        });
         break;
       }
       case 'hazard': {
@@ -142,6 +185,7 @@ export function runEffects(state, bus, actor, effects, action) {
           speed: effect.speed,
           endAt: state.tick + Math.max(1, Math.ceil((effect.distance / effect.speed) * TICK_RATE)),
           damage: effect.damage ?? 0,
+          knockback: effect.knockback ?? 0,
           status: effect.status ? { ...effect.status } : null, // 데이터의 정의 객체를 상태에 그대로 넣지 않는다(저장·불러오기 뒤에도 같도록)
           /** 이미 맞힌 대상 id(한 번의 돌진은 대상마다 한 번만 맞는다). */
           hit: [],
@@ -235,7 +279,7 @@ export function resolveDashes(state, bus) {
         const reach = actor.radius + target.radius + COMBAT.contactSlop;
         if (dx * dx + dy * dy > reach * reach) continue;
         dash.hit.push(target.id);
-        applyHit(state, bus, target, dash, actor.id, actor.x, actor.y);
+        applyHit(state, bus, target, dash, actor.id, actor.x, actor.y, true);
       }
     }
     if (dash.done) {

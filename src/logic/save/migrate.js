@@ -4,14 +4,20 @@
 //
 // 마이그레이션은 검증보다 먼저 돈다. 받은 값이 손상돼 있을 수 있으므로 모양이 맞을 때만 고치고, 판단은 검증기에 맡긴다.
 
-import { META_VERSION } from '../../../data/meta.js';
+import { LEGACY_UNLOCK_COSTS, META_VERSION } from '../../../data/meta.js';
 import { SETTINGS_VERSION } from '../../../data/settings.js';
-import { PHASE, STATE_VERSION } from '../core/state.js';
-import { createInventory } from '../items/inventory.js';
+import { STATE_VERSION } from '../core/state.js';
 import { isObject } from './schema.js';
 
 /** 종류별 현재 버전. 런은 상태 구조의 버전(STATE_VERSION)을 그대로 쓴다. */
 export const CURRENT_VERSION = Object.freeze({ run: STATE_VERSION, meta: META_VERSION, settings: SETTINGS_VERSION });
+
+/**
+ * 종류별로 읽을 수 있는 가장 낮은 버전. 이보다 낮은 세이브는 올릴 방법이 없어 버린다('retired-version').
+ * 런: 버전 4 이하는 방 단위 구조로 바꾸기 전의 런이다(계단을 내려가는 30층, 장비와 레벨). 지금의 런으로 옮길 수 없다.
+ *     그 런의 메타(영혼석)는 메타 세이브에 따로 있어 남는다.
+ */
+export const MIN_VERSION = Object.freeze({ run: 5, meta: 1, settings: 1 });
 
 /** 없는 필드만 채운다. */
 function fill(target, defaults) {
@@ -20,48 +26,23 @@ function fill(target, defaults) {
   }
 }
 
-const RUN_MIGRATIONS = {
-  // v1(0단계: 뼈대) → v2(1단계: 맵 생성). 구조는 같고 world 에 맵이 들어가기 시작했다.
-  1(state) {
-    fill(state, { world: null });
-    return state;
-  },
-  // v2 → v3(2단계: 엔티티와 전투). 투사체·장판·시야·입력이 생겼다.
-  // v2 에는 플레이어·적이 없었다(맵만 있었다). 그 맵에 몸을 채울 방법이 없으므로 맵을 비워, 불러올 때 층을 다시 만들게 한다
-  // (맵은 시드와 층만으로 정해지므로 같은 층이 다시 만들어진다. 다만 3단계에서 적 배치 수가 바뀌어 적 배치는 다르다).
-  2(state) {
-    if (isObject(state.entities) && isObject(state.entities.byId) && Object.keys(state.entities.byId).length === 0) state.world = null;
-    fill(state, {
-      projectiles: [],
-      hazards: [],
-      vision: null,
-      input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, skill: -1, dodge: false },
-    });
-    return state;
-  },
-  // v3 → v4(3단계: 아이템과 성장). 런 진행도·인벤토리·전리품·상점·제단이 생기고,
-  // 행동체·투사체·장판에 공격 배율 등이 붙었다. v3 의 적은 층별 난이도 배율 없이 만들어졌으므로 배율 1 로 둔다.
-  3(state) {
-    if (isObject(state.run)) {
-      fill(state.run, {
-        level: 1, xp: 0, pendingChoices: 0, choice: null, upgrades: {}, boons: [], buffs: [], kills: 0, bossKills: 0,
-        reviveUsed: false, regenPool: 0, sheet: null, ended: state.phase === PHASE.GAME_OVER,
-      });
-    }
-    fill(state, { inventory: createInventory(), drops: [], shop: null, altar: null });
-    if (isObject(state.entities) && isObject(state.entities.byId)) {
-      for (const key of Object.keys(state.entities.byId)) {
-        const actor = state.entities.byId[key];
-        if (isObject(actor)) fill(actor, { power: 1, critChance: 0, critDamage: 1.5, lifesteal: 0, haste: 0, regen: 0, onHit: null });
+const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+
+const RUN_MIGRATIONS = {};
+
+const META_MIGRATIONS = {
+  // v1 → v2(방 단위 구조): 영구 해금(장비 세트·유물 등)이 사라지고 영구 강화와 캐릭터 해금이 생겼다.
+  // 영혼석과 기록은 그대로 가져오고, 사 두었던 옛 해금은 그 값만큼 영혼석으로 돌려준다.
+  1(meta) {
+    let souls = count(meta.souls);
+    if (isObject(meta.unlocked)) {
+      for (const id of Object.keys(meta.unlocked)) {
+        if (Object.hasOwn(LEGACY_UNLOCK_COSTS, id) && meta.unlocked[id] === true) souls += LEGACY_UNLOCK_COSTS[id];
       }
     }
-    for (const listName of ['projectiles', 'hazards']) {
-      if (!Array.isArray(state[listName])) continue;
-      for (const entry of state[listName]) {
-        if (isObject(entry)) fill(entry, { power: 1 });
-      }
-    }
-    return state;
+    return {
+      version: 2, souls, upgrades: {}, characters: {}, runs: count(meta.runs), victories: count(meta.victories), bestRooms: 0, totalKills: count(meta.totalKills),
+    };
   },
 };
 
@@ -73,16 +54,17 @@ const SETTINGS_MIGRATIONS = {
   },
 };
 
-export const MIGRATIONS = Object.freeze({ run: RUN_MIGRATIONS, meta: {}, settings: SETTINGS_MIGRATIONS });
+export const MIGRATIONS = Object.freeze({ run: RUN_MIGRATIONS, meta: META_MIGRATIONS, settings: SETTINGS_MIGRATIONS });
 
 /**
  * 본문을 version 에서 target 버전까지 한 단계씩 올린다. 받은 본문을 직접 고친다(세이브에서 막 읽은 값이므로).
  * @param {string} kind 'run' | 'meta' | 'settings'
  * @param {object} data 본문
  * @param {number} version 본문의 버전
- * @param {{ table?:object, target?:number }} [options] 테스트에서 표와 목표 버전을 바꿔 끼울 수 있다
+ * @param {{ table?:object, target?:number, min?:number }} [options] 테스트에서 표와 목표·최저 버전을 바꿔 끼울 수 있다
  * @returns {{ ok:true, data:object, steps:number[] } | { ok:false, reason:string, detail?:string }}
- *   reason: 'newer-version'(이 프로그램보다 새 버전) | 'no-migration'(단계가 빠짐) | 'migration-failed'(단계가 예외를 던짐)
+ *   reason: 'newer-version'(이 프로그램보다 새 버전) | 'retired-version'(올릴 방법이 없는 옛 버전) | 'no-migration'(단계가 빠짐)
+ *           | 'migration-failed'(단계가 예외를 던짐)
  */
 export function migrate(kind, data, version, options = {}) {
   const table = options.table ?? MIGRATIONS[kind];
@@ -90,6 +72,8 @@ export function migrate(kind, data, version, options = {}) {
   if (!table || !Number.isInteger(target)) throw new RangeError(`migrate: 알 수 없는 종류 "${kind}"`);
   if (!Number.isInteger(version) || version < 1) throw new RangeError(`migrate: 버전이 올바르지 않습니다 (${version})`);
   if (version > target) return { ok: false, reason: 'newer-version' };
+  const min = options.min ?? (options.table ? 1 : MIN_VERSION[kind]);
+  if (version < min) return { ok: false, reason: 'retired-version', detail: `v${version} (읽을 수 있는 가장 낮은 버전: v${min})` };
   let current = data;
   const steps = [];
   for (let v = version; v < target; v++) {

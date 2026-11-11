@@ -1,21 +1,23 @@
-// 층별 난이도: 적의 체력·공격 배율. 곡선은 data/difficulty.js 에 있다.
+// 난이도 배율: 방의 깊이(시작 방에서 건너온 방의 수)에 따른 적의 체력·공격, 정예·보스 배율. 수치는 data/encounters.js.
 
-import { DIFFICULTY } from '../../../data/difficulty.js';
-import { WORLD } from '../../../data/world.js';
+import { ENCOUNTERS } from '../../../data/encounters.js';
 
 /**
- * @param {number} floor 1 이상
- * @param {boolean} [boss] 보스면 그 구역의 보스 배율을 더 곱한다
+ * @param {number} depth 0 이상
+ * @param {{ elite?:boolean, boss?:boolean }} [options]
  * @returns {{ hp:number, damage:number }}
  */
-export function floorScaling(floor, boss = false) {
-  const per = WORLD.floorsPerZone;
-  const zoneIndex = Math.min(DIFFICULTY.zones.length - 1, Math.floor((floor - 1) / per));
-  const zone = DIFFICULTY.zones[zoneIndex];
-  // 구역의 첫 층에서 0, 마지막 층에서 1.
-  const t = per > 1 ? ((floor - 1) % per) / (per - 1) : 0;
-  const hp = zone.hp[0] + (zone.hp[1] - zone.hp[0]) * t;
-  const damage = zone.damage[0] + (zone.damage[1] - zone.damage[0]) * t;
-  if (boss && zone.boss) return { hp: hp * zone.boss.hp, damage: damage * zone.boss.damage };
+export function depthScaling(depth, { elite = false, boss = false } = {}) {
+  const s = ENCOUNTERS.scaling;
+  let hp = Math.min(s.hpMax, 1 + s.hpPerDepth * depth);
+  let damage = Math.min(s.damageMax, 1 + s.damagePerDepth * depth);
+  if (boss) {
+    // 보스는 깊이와 무관하게 정해진 배율만 쓴다(어느 길로 왔든 같은 보스).
+    hp = ENCOUNTERS.boss.hp;
+    damage = ENCOUNTERS.boss.damage;
+  } else if (elite) {
+    hp *= ENCOUNTERS.elite.hp;
+    damage *= ENCOUNTERS.elite.damage;
+  }
   return { hp, damage };
 }

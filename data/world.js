@@ -1,100 +1,102 @@
-// 맵 생성 수치. 구역별 값은 data/zones.js.
+// 맵 생성 수치. 한 층(스테이지)은 방 여러 개가 짧은 복도로 이어진 구조다.
+//
+//   ┌──────────── 보스 구역(band) ────────────┐   출구 방 ─ 결투장, 그 옆 빈자리에 숨은 동굴방
+//   ├──────────── 방 구역(BSP) ──────────────┤   시작·전투·정예·보상·상점 방
+//
+// 구역별 값(적 풀, 색)은 data/zones.js, 방 안의 전투(웨이브·보상)는 data/encounters.js.
 
 import { deepFreeze } from './freeze.js';
 
 export const WORLD = deepFreeze({
-  /** 구역 하나의 층 수. 전체 층 수 = 구역 수 × floorsPerZone. */
-  floorsPerZone: 5,
+  /** 한 판의 층 수. 층마다 data/zones.js 의 구역을 순서대로 쓴다. 맛보기 판은 1구역 1층이다. */
+  stages: 1,
 
-  /** 계단: 계단 칸의 중심에서 이 거리 안이면 내려갈 수 있다. 보스가 살아 있으면 잠긴다. */
-  stairs: { useRange: 0.9, lockedByBoss: true },
+  /** 한 층의 생성 재시도 상한. 넘으면 격자 모양의 비상 레이아웃으로 대체한다(무한 재시도 방지). */
+  maxAttempts: 12,
 
-  /** 한 층의 생성 재시도 상한. 넘으면 단순한 비상 레이아웃으로 대체한다(무한 재시도 방지). */
-  maxAttempts: 8,
+  /** 한 층의 방 수: 시작·전투·정예·보상·상점·보스를 센다(출구 방과 숨은 방은 세지 않는다). */
+  roomCount: [8, 12],
 
-  /** 배치 거리. 모두 시작점에서의 걸음 수(상하좌우 이동) 기준이다. */
-  placement: {
-    /** 계단은 시작점에서 최소 이만큼 떨어진다. */
-    stairsMinStartDist: 12,
-    /** 계단 후보: 가장 먼 곳까지 거리의 이 비율 이상인 곳 중에서 고른다. */
-    stairsFarRatio: 0.75,
-    enemyMinStartDist: 8,
-    itemMinStartDist: 4,
-    /** 이벤트방의 모든 칸이 시작점에서 최소 이만큼 떨어진다. */
-    eventMinStartDist: 6,
-  },
-
-  /** 일반 층에 이벤트방이 생길 확률(종류별로 따로 굴린다). */
-  events: {
-    shop: 0.35,
-    altar: 0.3,
-  },
-
-  /** 이벤트방 내부 크기(정사각형, 홀수). 가운데 칸에 상인/제단이 놓인다. */
-  eventRoomSize: 5,
-
-  /** 방+복도(BSP) 생성기. */
-  rooms: {
-    /** 분할 조각의 최소 변 길이. */
-    minLeaf: 9,
+  /** 방 구역: 공간을 이진 분할(BSP)해 조각마다 방을 하나씩 둔다. */
+  layout: {
+    w: 62,
+    h: 40,
+    /** 분할 조각의 최소 가로·세로. 방은 조각 안쪽으로 1칸 들어가므로 방의 최소 크기 + 2 이상이어야 한다. */
+    minLeafW: 14,
+    minLeafH: 12,
     /** 이보다 긴 변이 있으면 반드시 더 나눈다. */
-    maxLeaf: 18,
+    maxLeaf: 22,
     /** 더 나눌 수 있어도 여기서 멈출 확률. */
-    stopChance: 0.3,
-    /** 방 내부의 최소 변 길이. */
-    roomMin: 4,
-    /** 방 크기 하한: 조각에 들어갈 수 있는 최대 크기의 이 비율. */
-    roomFillMin: 0.5,
-    /** 순환로를 만드는 추가 복도 수 상한 = 방 개수 × 이 비율. */
-    extraCorridorRatio: 0.25,
+    stopChance: 0.1,
+    /** 방 내부의 최소 크기. 방의 가로·세로는 항상 홀수다(가운데 칸이 있도록). */
+    roomMinW: 11,
+    roomMinH: 9,
+    /** 방 크기 하한: 조각에 들어갈 수 있는 최대 크기의 이 비율. 클수록 복도가 짧아진다. */
+    roomFillMin: 0.8,
+    /** 방 모서리를 깎는 칸 수 [최소, 최대]. */
+    chamfer: [0, 2],
+    /** 복도(= 문)의 폭과, 복도 길이의 상한. */
+    corridorWidth: 2,
+    maxGap: 9,
+    /** 순환로를 만드는 추가 복도 수 [최소, 최대]. */
+    extraLinks: [1, 2],
   },
 
-  /** 동굴형(셀룰러 오토마타) 생성기. */
+  /** 보스 구역: 결투장과 그 위의 출구 방. 크기는 홀수만 쓴다. */
+  boss: {
+    /** 구역의 높이(칸). 결투장 최대 높이 + 출구 방 + 사이 복도 + 여유. */
+    bandH: 25,
+    arenaW: [17, 21],
+    arenaH: [13, 15],
+    /** 결투장 모서리를 깎는 칸 수. */
+    chamfer: [2, 3],
+    pillars: ['corners', 'ring', 'columns'],
+    exit: { w: 7, h: 5 },
+    /** 결투장과 출구 방 사이 복도의 길이와 폭. */
+    exitGap: 2,
+    exitWidth: 3,
+    /** 결투장이 맵 옆 테두리에서 떨어지는 칸 수. */
+    margin: 3,
+  },
+
+  /** 숨은 보너스 방: 동굴 생성기로 모양을 만들어 보스 구역의 빈자리에 찍고, 가까운 방까지 좁은 굴로 잇는다. */
+  bonus: {
+    chance: 1,
+    w: [13, 17],
+    h: [9, 11],
+    /** 동굴의 바닥이 이보다 적으면 그 시도는 숨은 방 없이 간다. */
+    minCells: 40,
+    /** 굴 길이의 상한. */
+    maxTunnel: 16,
+  },
+
+  /** 동굴형(셀룰러 오토마타) 생성기. 숨은 방의 모양에 쓴다. */
   cave: {
     /** 처음에 칸이 벽일 확률. */
-    fillChance: 0.45,
-    smoothSteps: 5,
+    fillChance: 0.4,
+    smoothSteps: 4,
     /** 주변 8칸 중 벽이 이 수 이상이면 벽이 된다(자신이 벽이면 하나 적어도 유지). */
     wallThreshold: 5,
-    /** 본 동굴과 떨어진 공간이 이보다 작으면 메우고, 크면 굴을 파서 잇는다. */
-    minRegionSize: 16,
-    /** 바닥 비율이 이보다 낮으면 그 시도는 버린다. */
-    minOpenRatio: 0.28,
-    /** 이벤트방을 놓을 자리 후보를 몇 군데 살펴볼지. */
-    eventCandidates: 24,
   },
 
-  /** 보스층 전용 레이아웃. 범위는 [최소, 최대]이고 크기는 홀수만 쓴다. */
-  boss: {
-    mid: {
-      arenaW: [15, 19],
-      arenaH: [13, 17],
-      chamfer: [0, 0],
-      hallWidth: 3,
-      hallLength: [4, 7],
-      entry: { w: 7, h: 5 },
-      /** 보스 뒤편의 계단 방과 거기로 가는 통로. */
-      exit: { w: 5, h: 5, hallLength: 3 },
-      throne: null,
-      alcoves: false,
-      margin: 3,
-      pillars: ['none', 'corners', 'ring', 'columns'],
-    },
-    final: {
-      arenaW: [21, 25],
-      arenaH: [19, 23],
-      /** 결투장 모서리를 깎는 칸 수. */
-      chamfer: [4, 6],
-      hallWidth: 5,
-      hallLength: [9, 13],
-      entry: { w: 7, h: 5 },
-      exit: null,
-      /** 결투장 위쪽의 옥좌 공간. */
-      throne: { w: 7, h: 3 },
-      /** 진입 회랑 양옆의 벽감. */
-      alcoves: true,
-      margin: 3,
-      pillars: ['ring', 'columns'],
-    },
+  /** 전투방 안의 엄폐물(벽 칸) 무늬. 벽에서 2칸 안쪽으로만 놓아 문 앞과 벽 둘레는 항상 비운다. */
+  cover: {
+    patterns: ['corners', 'quad', 'columns', 'center', 'bars', 'none'],
+    weights: [3, 3, 2, 2, 2, 1],
+  },
+
+  /** 구조 규칙. world/validate.js 가 검사한다. */
+  rules: {
+    /** 시작 방에서 보스 방까지 최소 이만큼의 방을 건너야 한다(방 그래프의 걸음 수). */
+    startBossMinHops: 3,
+    /** 전투방(전투·정예)은 최소 이만큼 있어야 한다. */
+    minCombatRooms: 4,
+    /** 적이 나타나는 자리는 그 방의 모든 문에서 이 칸 수(체비쇼프) 이상 떨어진다. */
+    spawnDoorDist: 2,
+    /** 전투방마다 적이 나타날 수 있는 자리가 최소 이만큼(그리고 가장 큰 웨이브의 적 수 + spawnSpare 이상) 있어야 한다. */
+    minSpawnCells: 10,
+    spawnSpare: 3,
+    /** 상점·보상 방은 시작 방에서 최소 이 깊이(방 그래프의 걸음 수)에 있다. */
+    eventMinDepth: 1,
   },
 });

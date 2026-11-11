@@ -4,6 +4,7 @@
 // 체력과 피해는 정수다.
 
 import { COMBAT } from '../../../data/combat.js';
+import { FEEL } from '../../../data/feel.js';
 import { EVENTS } from '../core/events.js';
 import { ticksOf } from '../core/time.js';
 import { defOf } from '../entities/defs.js';
@@ -52,9 +53,10 @@ function beginPhaseTransition(state, bus, target, def) {
  * @param {number} [options.fromX] 피해가 온 위치(정면 방어 판정용)
  * @param {number} [options.fromY]
  * @param {boolean} [options.crit] 치명타였는가(이벤트에 실어 보낼 뿐, 피해량은 이미 반영돼 있어야 한다)
+ * @param {string} [options.proc] 축복이 낸 피해면 그 이름('bolt', 'blast' …). 이벤트에 실어 보낸다
  * @returns {number} 실제로 깎인 체력
  */
-export function dealDamage(state, bus, target, amount, { sourceId = null, kind = 'hit', fromX, fromY, crit = false } = {}) {
+export function dealDamage(state, bus, target, amount, { sourceId = null, kind = 'hit', fromX, fromY, crit = false, proc } = {}) {
   if (target.dead || !(amount > 0)) return 0;
   if (target.invulnUntil > state.tick) return 0;
   const def = defOf(target);
@@ -100,10 +102,14 @@ export function dealDamage(state, bus, target, amount, { sourceId = null, kind =
     target.killerId = sourceId;
     target.moveX = 0;
     target.moveY = 0;
+    // 죽는 순간 걸려 있던 상태이상을 적어 둔다(축복 "번지는 불"이 본다).
+    target.diedWith = Object.keys(target.statuses);
     interrupt(state, bus, target);
     cleanse(state, bus, target, 'removed');
   }
-  bus.emit(EVENTS.DAMAGE_DEALT, { targetId: target.id, sourceId, amount: dmg, kind, hp: target.hp, blocked, crit });
+  const event = { targetId: target.id, sourceId, amount: dmg, kind, hp: target.hp, blocked, crit, x: target.x, y: target.y };
+  if (proc) event.proc = proc;
+  bus.emit(EVENTS.DAMAGE_DEALT, event);
   if (transition && !target.dead) beginPhaseTransition(state, bus, target, def);
   return dmg;
 }
@@ -114,4 +120,33 @@ export function heal(actor, amount) {
   const before = actor.hp;
   actor.hp = Math.min(actor.maxHp, actor.hp + Math.round(amount));
   return actor.hp - before;
+}
+
+/**
+ * 넉백: (fromX, fromY) 의 반대쪽으로 밀어낸다. 세기는 처음 속도(칸/초)이고 대상의 무게로 나눈다.
+ * 충분히 세면 준비 중이던 행동이 끊긴다(경직). 죽은 대상도 밀린다 — 쓰러지며 튕겨 나가는 연출에 쓴다.
+ * @returns {number} 실제로 더한 속도
+ */
+export function knockback(state, bus, target, fromX, fromY, strength) {
+  if (!(strength > 0)) return 0;
+  let dx = target.x - fromX;
+  let dy = target.y - fromY;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len > 1e-6) {
+    dx /= len;
+    dy /= len;
+  } else {
+    dx = -target.facingX;
+    dy = -target.facingY;
+  }
+  const speed = strength / target.mass;
+  target.kbX += dx * speed;
+  target.kbY += dy * speed;
+  const total = Math.sqrt(target.kbX * target.kbX + target.kbY * target.kbY);
+  if (total > FEEL.knockback.max) {
+    target.kbX *= FEEL.knockback.max / total;
+    target.kbY *= FEEL.knockback.max / total;
+  }
+  if (!target.dead && speed >= FEEL.knockback.staggerAt && target.action && target.action.phase === 'windup') interrupt(state, bus, target);
+  return speed;
 }

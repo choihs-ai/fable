@@ -3,7 +3,8 @@
 // - size: 일반 층의 맵 크기(칸)
 // - algorithms: 생성 알고리즘별 가중치(합이 1일 필요는 없다)
 // - tileset / palette: 렌더 단계에서 쓸 타일 이름과 색(0xRRGGBB)
-// - enemies: 적 풀(가중치 뽑기). enemyCount / itemCount: 층당 개수 [최소, 최대]
+// - enemies: 적 풀(가중치 뽑기). cost 는 웨이브 예산에서 차지하는 몫, minDepth 는 이 깊이부터 나온다(data/encounters.js)
+// - enemyCount / itemCount / size / algorithms: 방 단위 구조로 바꾸기 전의 값. 지금은 첫 구역만 쓰고, 나머지 구역은 확장할 때 다시 맞춘다
 // - boss: 구역 마지막 층의 보스. kind 는 'mid'(중간보스) 또는 'final'(최종보스), 없으면 null
 
 import { deepFreeze } from './freeze.js';
@@ -17,9 +18,10 @@ export const ZONES = deepFreeze([
     tileset: { floor: 'crypt_floor', wall: 'crypt_wall', stairs: 'crypt_stairs', props: ['coffin', 'urn', 'candle'] },
     palette: { floor: 0x4a4a52, wall: 0x2b2b33, accent: 0x9fb4c8, fog: 0x12131a, ambient: 0x6f7a8c },
     enemies: [
-      { id: 'skeleton', weight: 5 },
-      { id: 'bat', weight: 3 },
-      { id: 'zombie', weight: 2 },
+      { id: 'skeleton', weight: 5, cost: 2, minDepth: 0 },
+      { id: 'bat', weight: 3, cost: 1, minDepth: 0 },
+      { id: 'bone_archer', weight: 3, cost: 3, minDepth: 1 },
+      { id: 'zombie', weight: 2, cost: 3, minDepth: 2 },
     ],
     enemyCount: [5, 8],
     itemCount: [2, 3],

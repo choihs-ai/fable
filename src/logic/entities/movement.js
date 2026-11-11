@@ -1,6 +1,7 @@
-// 이동 단계: 각 행동체의 이동 의도(moveX/moveY)나 돌진을 위치에 반영하고, 벽과 서로에게서 밀어낸다.
+// 이동 단계: 각 행동체의 이동 의도(moveX/moveY)나 돌진, 넉백을 위치에 반영하고, 벽과 서로에게서 밀어낸다.
 
 import { COMBAT } from '../../../data/combat.js';
+import { FEEL } from '../../../data/feel.js';
 import { moveCircle, resolveCircle } from '../world/collide.js';
 import { navOf } from '../world/nav.js';
 import { allActors } from './actors.js';
@@ -21,10 +22,26 @@ export function integrateMovement(state, dtSec) {
     if (a.dash) {
       vx = a.dash.dirX * a.dash.speed;
       vy = a.dash.dirY * a.dash.speed;
-    } else if (!a.disabled) {
-      const speed = a.speed * a.speedMul * a.moveScale;
-      vx = a.moveX * speed;
-      vy = a.moveY * speed;
+      // 돌진 중에는 밀려나지 않는다.
+      a.kbX = 0;
+      a.kbY = 0;
+    } else {
+      if (!a.disabled) {
+        const speed = a.speed * a.speedMul * a.moveScale;
+        vx = a.moveX * speed;
+        vy = a.moveY * speed;
+      }
+      // 넉백: 밀려나는 속도를 더하고 틱마다 줄인다. 행동 불가 상태에서도 밀려난다.
+      if (a.kbX !== 0 || a.kbY !== 0) {
+        vx += a.kbX;
+        vy += a.kbY;
+        a.kbX *= FEEL.knockback.decay;
+        a.kbY *= FEEL.knockback.decay;
+        if (a.kbX * a.kbX + a.kbY * a.kbY < FEEL.knockback.stop * FEEL.knockback.stop) {
+          a.kbX = 0;
+          a.kbY = 0;
+        }
+      }
     }
     if (vx !== 0 || vy !== 0) {
       const ox = a.x;

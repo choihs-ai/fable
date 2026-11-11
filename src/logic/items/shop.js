@@ -1,75 +1,50 @@
-// 상점: 층에 따른 품목과 가격, 사고팔기. 인벤토리와 상점 객체만 고친다.
+// 상점: 진열품을 뽑고 값을 매긴다. 사는 일(금화 차감, 무기·축복 지급)은 commands.js 가 한다.
 
-import { CONSUMABLES } from '../../../data/consumables.js';
-import { RELICS } from '../../../data/relics.js';
 import { SHOP } from '../../../data/shop.js';
-import { consumablePool, rollRelic } from './drops.js';
-import { buyPrice, copyItem, rollEquipmentDrop, sellPrice } from './equipment.js';
-import { addConsumable, addRelic, addToBag, bagHasRoom, removeFromBag, spendGold } from './inventory.js';
+import { WEAPONS, WEAPON_ORDER } from '../../../data/weapons.js';
+import { eligibleBoons } from './boons.js';
+import { BOONS } from '../../../data/boons.js';
 
-/** 층 할증을 적용한 가격. */
-export function shopPrice(base, floor) {
-  return Math.max(1, Math.round(base * (1 + SHOP.pricePerFloor * (floor - 1))));
+/** 무기 하나를 등급 가중치로 뽑는다. exclude 에 든 것은 피한다(전부 겹치면 아무거나). */
+export function rollWeapon(rng, exclude = []) {
+  let pool = WEAPON_ORDER.filter((id) => !exclude.includes(id));
+  if (pool.length === 0) pool = WEAPON_ORDER.slice();
+  return pool[rng.weightedIndex(pool.map((id) => SHOP.tierWeights[WEAPONS[id].tier]))];
+}
+
+export function weaponPrice(id) {
+  return SHOP.price.weapon[WEAPONS[id].tier];
 }
 
 /**
- * 그 층 상점의 품목을 만든다.
- * @param {import('../core/prng.js').Rng} rng (런 시드, 층)으로 정해진 스트림 — 다시 만들어도 같은 품목이 나온다
- * @param {object} ctx { floor, meta, relics(가진 유물) }
- * @returns {{ floor:number, stock:object[] }} stock 항목: { kind, item|id, price, sold }
+ * 진열품을 뽑는다.
+ * @param {import('../core/prng.js').Rng} rng
+ * @param {string[]} ownedBoons 가진 축복(진열하지 않는다)
+ * @param {string[]} heldWeapons 든 무기(진열하지 않는다)
+ * @returns {{ kind:string, weapon?:string, boon?:string, price:number, sold:boolean }[]}
  */
-export function generateShop(rng, { floor, meta, relics }) {
+export function rollShopStock(rng, ownedBoons, heldWeapons) {
   const stock = [];
-  for (let i = 0; i < SHOP.equipment; i++) {
-    const item = rollEquipmentDrop(rng, { floor, meta, rarityFloor: floor + SHOP.rarityShift });
-    stock.push({ kind: 'equipment', item, price: shopPrice(buyPrice(item), floor), sold: false });
+  const weapons = [];
+  for (let i = 0; i < SHOP.weapons; i++) {
+    const id = rollWeapon(rng, heldWeapons.concat(weapons));
+    weapons.push(id);
+    stock.push({ kind: 'weapon', weapon: id, price: weaponPrice(id), sold: false });
   }
-  // 소비 아이템은 서로 다른 종류로.
-  const pool = consumablePool(floor, meta);
-  const count = Math.min(SHOP.consumables, pool.length);
-  for (let i = 0; i < count; i++) {
-    const pick = rng.weightedIndex(pool.map((id) => CONSUMABLES[id].weight));
-    const [id] = pool.splice(pick, 1);
-    stock.push({ kind: 'consumable', id, price: shopPrice(CONSUMABLES[id].price, floor), sold: false });
+  let pool = eligibleBoons(ownedBoons);
+  for (let i = 0; i < SHOP.boons && pool.length > 0; i++) {
+    const index = rng.weightedIndex(pool.map((id) => BOONS[id].weight));
+    stock.push({ kind: 'boon', boon: pool[index], price: SHOP.price.boon, sold: false });
+    pool = pool.filter((_, k) => k !== index);
   }
-  // 유물 진열 여부는 층과 무관하게 항상 굴린다(품목 수열이 층 조건으로 밀리지 않도록).
-  const showRelic = rng.chance(SHOP.relicChance);
-  if (showRelic && floor >= SHOP.relicFromFloor) {
-    const id = rollRelic(rng, meta, relics);
-    if (id) stock.push({ kind: 'relic', id, price: shopPrice(RELICS[id].price, floor), sold: false });
-  }
-  return { floor, stock };
+  stock.push({ kind: 'heal', price: SHOP.price.heal, sold: false });
+  return stock;
 }
 
-/**
- * 품목 하나를 산다.
- * @returns {{ ok:true, entry:object } | { ok:false, reason:string }}
- *   reason: 'no-such-item' | 'sold-out' | 'no-gold' | 'bag-full' | 'stack-full' | 'already-owned'
- */
-export function buyFromShop(shop, inv, index) {
-  const entry = shop.stock[index];
-  if (!entry) return { ok: false, reason: 'no-such-item' };
-  if (entry.sold) return { ok: false, reason: 'sold-out' };
-  if (inv.gold < entry.price) return { ok: false, reason: 'no-gold' };
-  // 받을 자리가 있는지 먼저 확인하고, 그다음에 돈을 낸다(돈만 나가는 일이 없도록).
-  if (entry.kind === 'equipment') {
-    if (!bagHasRoom(inv)) return { ok: false, reason: 'bag-full' };
-    // 가방에는 사본을 넣는다. 품목 목록의 장비는 "팔린 물건"의 기록으로 남는다(같은 번호를 쓰지만 같은 객체는 아니다).
-    addToBag(inv, copyItem(entry.item));
-  } else if (entry.kind === 'consumable') {
-    if (addConsumable(inv, entry.id, 1) !== 1) return { ok: false, reason: 'stack-full' };
-  } else if (!addRelic(inv, entry.id)) {
-    return { ok: false, reason: 'already-owned' };
-  }
-  spendGold(inv, entry.price);
-  entry.sold = true;
-  return { ok: true, entry };
+export function shopRerollCost(rerolls) {
+  return SHOP.reroll.base + SHOP.reroll.step * rerolls;
 }
 
-/** 가방의 장비를 판다. @returns {{ item:object, gold:number }} */
-export function sellFromBag(inv, index) {
-  const item = removeFromBag(inv, index);
-  const gold = sellPrice(item);
-  inv.gold += gold;
-  return { item, gold };
+export function healPrice(heals) {
+  return SHOP.price.heal + SHOP.healStep * heals;
 }

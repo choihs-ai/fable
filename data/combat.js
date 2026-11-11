@@ -3,29 +3,13 @@
 import { deepFreeze } from './freeze.js';
 
 export const COMBAT = deepFreeze({
-  /** 플레이어 시야 반경(칸). */
-  visionRadius: 9,
-
-  // ── 어그로·리쉬 ──
+  // ── 어그로 ──
   /** 대기 중인 적이 플레이어를 살피는 주기(초). */
   aggroCheckSec: 0.1,
   /** 적 기본값: 이 거리 안에서 시야가 닿으면 전투 시작. */
   aggroRadius: 7,
-  /** 적 기본값: 플레이어가 적의 자리에서 이보다 멀어지면 추격을 포기하고 돌아간다. */
-  leashRadius: 14,
-  /** 적 기본값: 이 시간(초) 동안 플레이어를 보지 못하면 돌아간다. */
-  loseSight: 4,
   /** 시야가 끊긴 뒤 이 시간(초) 동안은 다시 보여도 계속 다가간다. */
   chaseCommitSec: 0.6,
-  /** 돌아가는 동안의 이동 속도 배율과 초당 체력 회복(최대 체력 비율). */
-  returnSpeedMul: 1.5,
-  returnRegenPerSec: 0.25,
-  /** 돌아가는 중에 다시 싸우려면 플레이어가 "자리에서 leashRadius × 이 비율" 안에 있어야 한다(경계에서 오락가락 방지). */
-  reaggroLeashRatio: 0.8,
-  /** 자리에서 이 거리(칸) 안이면 "자리에 있다"고 본다. 대기 중에 이보다 밀려나면 걸어서 돌아온다. */
-  homeSlack: 0.5,
-  /** 돌아갈 길을 이 시간(초) 넘게 찾지 못하면 자리로 바로 옮긴다. */
-  returnGiveUpSec: 3,
 
   // ── 길찾기 ──
   /** 경로를 다시 계산하는 주기(초). */

@@ -1,41 +1,49 @@
-// 능력치 반영: 아이템·강화·유물에서 합산한 능력치를 플레이어 행동체의 수치로 옮긴다.
-// 장비·유물·강화·영구 효과·지속 효과가 바뀔 때마다 부른다(항상 처음부터 다시 계산한다).
+// 플레이어 능력치: 캐릭터의 기본값 + 영구 강화(메타) + 능력치를 바꾸는 축복을 처음부터 다시 합산해 플레이어에 반영한다.
+// 축복을 얻거나 영구 강화가 바뀌면 다시 부른다. 더했다 빼는 식으로 고치지 않는다.
 
+import { BOONS } from '../../../data/boons.js';
+import { CHARACTERS } from '../../../data/characters.js';
 import { PLAYER } from '../../../data/player.js';
-import { sheetOf } from '../items/stats.js';
+import { ticksOf } from '../core/time.js';
+import { metaBonuses } from '../items/meta.js';
 import { getPlayer } from './actors.js';
 
-/** 합산 능력치에서 공격 시 상태이상 목록을 만든다. */
-function onHitList(sheet) {
-  const list = [];
-  if (sheet.burnChance > 0) list.push({ id: 'burn', chance: sheet.burnChance / 100 });
-  if (sheet.poisonChance > 0) list.push({ id: 'poison', chance: sheet.poisonChance / 100 });
-  if (sheet.slowChance > 0) list.push({ id: 'slow', chance: sheet.slowChance / 100 });
-  return list;
-}
-
 /**
- * @returns {object|null} 합산 능력치(state.run.sheet 에도 저장된다). 플레이어가 없으면 null
+ * @returns {object|null} 플레이어. 없으면 null
  */
 export function refreshPlayerStats(state) {
   const player = getPlayer(state);
-  if (!player || !state.inventory) return null;
-  const sheet = sheetOf(state);
-  state.run.sheet = sheet;
+  if (!player || !player.kit) return null;
+  const character = CHARACTERS[state.run.character];
+  const bonus = metaBonuses(state.meta);
+  const has = (id) => state.run.boons.includes(id);
+  const kit = player.kit;
 
-  const maxHp = Math.max(10, PLAYER.hp + sheet.maxHp);
+  let maxHp = character.hp + bonus.maxHp;
+  if (has('glass_cannon')) maxHp = Math.round(maxHp * BOONS.glass_cannon.hpMul);
+  maxHp = Math.max(10, maxHp);
   if (maxHp > player.maxHp && !player.dead) player.hp += maxHp - player.maxHp; // 늘어난 만큼 현재 체력도 는다.
   player.maxHp = maxHp;
   if (player.hp > maxHp) player.hp = maxHp;
 
-  player.armor = PLAYER.armor + sheet.armor;
-  player.speed = PLAYER.speed * (1 + sheet.speed / 100);
-  player.power = 1 + sheet.power / 100;
-  player.critChance = sheet.critChance / 100;
-  player.critDamage = 1.5 + sheet.critDamage / 100;
-  player.lifesteal = sheet.lifesteal / 100;
-  player.haste = sheet.haste / 100;
-  player.regen = sheet.regen;
-  player.onHit = onHitList(sheet);
-  return sheet;
+  player.speed = character.speed;
+  player.power = 1 + bonus.power + (has('glass_cannon') ? BOONS.glass_cannon.power : 0);
+  player.critChance = PLAYER.critChance + (has('conduct') ? BOONS.conduct.critChance : 0);
+  player.critDamage = PLAYER.critDamage;
+
+  const maxEnergy = character.energy + bonus.maxEnergy;
+  if (maxEnergy > kit.maxEnergy) kit.energy += maxEnergy - kit.maxEnergy;
+  kit.maxEnergy = maxEnergy;
+  if (kit.energy > maxEnergy) kit.energy = maxEnergy;
+
+  const maxCharges = PLAYER.dash.charges + (has('third_dash') ? BOONS.third_dash.charges : 0);
+  if (maxCharges > kit.maxCharges) kit.charges += maxCharges - kit.maxCharges;
+  kit.maxCharges = maxCharges;
+  if (kit.charges >= maxCharges) {
+    kit.charges = maxCharges;
+    kit.chargeAt = 0;
+  }
+  const recharge = PLAYER.dash.recharge * (1 - bonus.dashRecharge) * (has('momentum') ? BOONS.momentum.rechargeMul : 1);
+  kit.rechargeTicks = Math.max(1, ticksOf(recharge));
+  return player;
 }

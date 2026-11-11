@@ -3,15 +3,18 @@
 
 import { Rng } from './prng.js';
 
-/** 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다. */
-export const STATE_VERSION = 4;
+/**
+ * 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다.
+ * 5: 방 단위 액션 로그라이트로 바꾸면서 런의 구조가 통째로 달라졌다(4 이하의 런은 이어할 수 없다).
+ */
+export const STATE_VERSION = 5;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
   PLAYING: 'playing',
   PAUSED: 'paused',
   GAME_OVER: 'gameOver',
-  /** 최종보스를 잡고 런을 끝냈다. */
+  /** 마지막 층의 출구 포털로 나가 런을 끝냈다. */
   VICTORY: 'victory',
 });
 
@@ -37,34 +40,33 @@ export function createInitialState({ seed }) {
     phase: PHASE.TITLE,
     /** 스트림 이름 → PRNG 상태({ key, s }). rngOf() 로 꺼내 쓴다. */
     rng,
-    /** 이번 런의 진행. 레벨·강화는 logic/items/levelup.js, 능력치 합산은 logic/items/stats.js 참고. */
+    /** 이번 런의 진행. */
     run: {
       floor: 1,
-      level: 1,
-      xp: 0,
-      /** 아직 고르지 않은 레벨업 선택의 수와, 지금 제시된 후보({ options }) 또는 null. */
-      pendingChoices: 0,
-      choice: null,
-      /** 강화 id → 단계. */
-      upgrades: {},
-      /** 영구 효과(제단의 축복·저주, 채움 보상): { source, stats }. */
+      /** 고른 캐릭터(data/characters.js). */
+      character: 'knight',
+      gold: 0,
+      /** 가진 축복의 id(얻은 순서). 효과는 logic/combat/boons.js. */
       boons: [],
-      /** 지속 중인 물약 효과: { id, stats, until }. */
-      buffs: [],
+      /** 축복이 쓰는 값: 과충전의 공격 횟수, 얼음 갑옷·증기 폭발을 다시 쓸 수 있는 틱, 되살아났는가. */
+      boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, revived: false },
+      /** 지금 제시된 3택1({ kind:'boon', options:[id…], rerolls }) 또는 null. 제시돼 있는 동안 ui 가 게임을 멈춘다. */
+      choice: null,
+      /** 이번 런에 남은 무료 다시 뽑기. */
+      freeRerolls: 0,
+      /** 지금 싸우는 방의 깊이(적의 체력·공격 배율에 쓴다). */
+      depth: 0,
       kills: 0,
+      eliteKills: 0,
       bossKills: 0,
-      reviveUsed: false,
-      /** 체력 재생의 나머지(10 이 모이면 체력 1). */
-      regenPool: 0,
-      /** 마지막으로 합산한 능력치(ui 표시용). */
-      sheet: null,
+      roomsCleared: 0,
       /** 런이 끝나 메타 정산을 마쳤는가. */
       ended: false,
     },
-    /** 현재 층 맵(logic/world/generate.js 의 결과). 층에 들어가기 전에는 null. */
+    /** 현재 층 맵(logic/world/generate.js 의 결과). 방·문의 상태(잠김, 깼는가, 드러났는가)도 여기에 있다. 층에 들어가기 전에는 null. */
     world: null,
     entities: {
-      /** 행동체·투사체·장판이 함께 쓰는 일련번호. */
+      /** 행동체·투사체·장판·전리품이 함께 쓰는 일련번호. */
       nextId: 1,
       /** id → 행동체(플레이어·적·보스). 형태는 logic/entities/actors.js 참고. */
       byId: {},
@@ -75,21 +77,20 @@ export function createInitialState({ seed }) {
     projectiles: [],
     /** 예고 중이거나 남아 있는 장판 목록(logic/combat/hazards.js). */
     hazards: [],
-    /** 플레이어 시야(logic/entities/vision.js). 층에 들어가기 전에는 null. */
-    vision: null,
+    /**
+     * 진행 중인 방 전투(logic/combat/encounter.js): { room, pending:[{ type, elite, x, y, at }], nextWaveAt } 또는 null.
+     * pending 은 예고 중인(곧 나타날) 적.
+     */
+    encounter: null,
     /**
      * 이번 틱의 플레이어 입력. ui 가 setInput 으로 채우고 로직이 읽는다.
-     * move/aim 은 방향 벡터(aim 이 0 이면 자동 조준), skill 은 기술 칸 번호(-1 = 없음).
-     * skill 과 dodge 는 한 번 처리되면 로직이 지운다.
+     * move/aim 은 방향 벡터(aim 이 0 이면 자동 조준). dash 와 skill 은 한 번 처리되면 로직이 지운다.
      */
-    input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, skill: -1, dodge: false },
-    /** 인벤토리(logic/items/inventory.js). createGame 이 채운다. */
-    inventory: null,
-    /** 바닥에 놓인 전리품: { id, x, y, loot }. */
+    input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false },
+    /** 바닥에 놓인 것: { id, kind:'gold'|'energy'|'health'|'weapon'|'boon'|'chest', x, y, amount?, weapon? }. */
     drops: [],
-    /** 이 층의 상점({ floor, stock, x, y })과 제단({ floor, used, offers, x, y }). 없으면 null. */
+    /** 이 층의 상점: { stock:[{ kind, weapon?, boon?, price, sold }], rerolls, heals } 또는 null. */
     shop: null,
-    altar: null,
     /** 메타 진행(logic/items/meta.js). createGame 이 채운다. 저장 단계에서 런과 따로 보관한다. */
     meta: null,
   };

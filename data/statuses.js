@@ -16,7 +16,7 @@
 import { deepFreeze } from './freeze.js';
 
 /** 상태이상을 처리하는 순서(결정적 순서를 위해 고정). */
-export const STATUS_ORDER = Object.freeze(['poison', 'burn', 'bleed', 'slow', 'freeze', 'stun']);
+export const STATUS_ORDER = Object.freeze(['poison', 'burn', 'bleed', 'slow', 'freeze', 'stun', 'warp']);
 
 export const STATUSES = deepFreeze({
   poison: { name: '독', stacking: 'intensity', maxStacks: 5, duration: 4, interval: 0.5, damage: 1 },
@@ -26,4 +26,6 @@ export const STATUSES = deepFreeze({
   slow: { name: '둔화', stacking: 'refresh', maxStacks: 1, duration: 2.5, speedMul: 0.5 },
   freeze: { name: '빙결', stacking: 'none', maxStacks: 1, duration: 1.5, disables: true, immunityAfter: 4, removes: ['burn'] },
   stun: { name: '기절', stacking: 'none', maxStacks: 1, duration: 1, disables: true, immunityAfter: 3 },
+  /** 시간 왜곡 장판 안에 있는 동안 걸린다(장판이 매 틱 다시 건다). 보스도 느려지지만 덜 느려진다(statusResist 로 조절하지 않고 그대로 둔다). */
+  warp: { name: '시간 왜곡', stacking: 'refresh', maxStacks: 1, duration: 0.2, speedMul: 0.3 },
 });

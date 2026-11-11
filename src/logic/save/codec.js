@@ -45,7 +45,7 @@ export function serializeRun(state, savedAt = 0) {
  *              damaged 가 false 면 손상이 아니라 옛 버전에서 올라와 층이 없는 정상 세이브다(problems 는 비어 있다)
  *   'finished' { version, savedAt }                            — 끝난 런이다. 이어할 것이 없다
  *   'none'     { reason, detail?, problems? }                  — 쓸 수 없다. reason 은 decodeEnvelope 의 것 또는
- *              'newer-version' | 'no-migration' | 'migration-failed' | 'unrecoverable'
+ *              'newer-version' | 'retired-version'(방 단위 구조 이전의 런) | 'no-migration' | 'migration-failed' | 'unrecoverable'
  */
 export function readRun(text) {
   const envelope = decodeEnvelope(text, 'run');
@@ -64,7 +64,7 @@ export function readRun(text) {
     delete data.meta; // 메타는 메타 세이브에서 온다.
     return { status: 'exact', state: data, version, savedAt, migrated };
   }
-  // 옛 버전에서 올라온 세이브: 그 시절에는 층이 없었거나(v1) 플레이어가 없었다(v2). 핵심만 온전하면 손상이 아니다.
+  // 옛 버전에서 올라온 세이브에 층이 없는 경우: 핵심만 온전하면 손상이 아니다(지금은 그런 버전이 없지만 길은 남겨 둔다).
   const needsFloorOnly = checksumOk && migrated.length > 0 && data.world === null && validateRunCore(data).length === 0;
   if (needsFloorOnly) problems = [];
   if (!checksumOk) problems = ['checksum: 본문이 저장한 것과 다름', ...problems];
@@ -82,12 +82,12 @@ export function serializeMeta(meta, savedAt = 0) {
 
 /** 메타의 수치를 안전선 안으로 자른다. */
 function capMeta(meta) {
-  for (const key of ['souls', 'runs', 'victories', 'totalKills']) meta[key] = Math.min(meta[key], SAVE.limits.gold);
+  for (const key of ['souls', 'runs', 'victories', 'bestRooms', 'totalKills']) meta[key] = Math.min(meta[key], SAVE.limits.gold);
   return meta;
 }
 
 /**
- * 메타 세이브를 읽는다. 항목마다 따로 검사해서 올바른 것만 받는다(틀린 항목은 0, 모르는 해금은 버림).
+ * 메타 세이브를 읽는다. 항목마다 따로 검사해서 올바른 것만 받는다(틀린 항목은 0, 모르는 강화·캐릭터는 버림).
  * @returns {{ ok:true, meta:object, repaired:boolean, checksumOk:boolean, version:number, savedAt:number } | { ok:false, reason:string }}
  */
 export function readMeta(text) {

@@ -1,6 +1,8 @@
 // 행동체(플레이어·적·보스)를 만들고 찾는다. 행동체는 state.entities.byId 에 든 평범한 객체다.
 
+import { CHARACTERS } from '../../../data/characters.js';
 import { COMBAT } from '../../../data/combat.js';
+import { ENCOUNTERS } from '../../../data/encounters.js';
 import { PLAYER } from '../../../data/player.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
@@ -8,7 +10,7 @@ import { circleFree } from '../world/collide.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
 import { ACTOR_KIND, enemyDef, isBossType } from './defs.js';
-import { floorScaling } from './scaling.js';
+import { depthScaling } from './scaling.js';
 
 function createActor(state, kind, type, def, x, y) {
   const id = state.entities.nextId++;
@@ -28,7 +30,7 @@ function createActor(state, kind, type, def, x, y) {
     maxHp: def.hp,
     armor: def.armor ?? 0,
     speed: def.speed,
-    /** 주는 피해의 배율. 플레이어는 능력치에서, 적은 층별 난이도에서 정해진다. */
+    /** 주는 피해의 배율. 플레이어는 능력치에서, 적은 방의 깊이에서 정해진다. */
     power: 1,
     /** 치명타 확률(0~1)과 치명타 피해 배율, 흡혈(준 피해 대비 회복 비율), 재사용 대기 감소(0~0.5). */
     critChance: 0,
@@ -43,6 +45,11 @@ function createActor(state, kind, type, def, x, y) {
     moveX: 0,
     moveY: 0,
     moveScale: 1,
+    /** 밀려나는 속도(넉백, 칸/초). 이동 단계가 더하고 줄여 나간다. */
+    kbX: 0,
+    kbY: 0,
+    /** 정예인가(적만). */
+    elite: false,
     /** 직전 이동 단계에서 실제로 움직였는가, 벽에 닿았는가. */
     moved: false,
     hitWall: false,
@@ -57,11 +64,13 @@ function createActor(state, kind, type, def, x, y) {
     cooldowns: {},
     /** 진행 중인 행동 { ability, phase:'windup'|'recover', until, dirX, dirY, targetX, targetY } 또는 null. */
     action: null,
-    /** 진행 중인 돌진 { dirX, dirY, speed, endAt, damage, status, hit, stopOnWall, stunOnWall, done, wall } 또는 null. */
+    /** 진행 중인 돌진 { dirX, dirY, speed, endAt, damage, knockback, status, hit, stopOnWall, stunOnWall, done, wall } 또는 null. */
     dash: null,
     /** 이 틱 전까지는 피해·상태이상을 받지 않는다. */
     invulnUntil: 0,
     dead: false,
+    /** 죽는 순간 걸려 있던 상태이상 id 목록. */
+    diedWith: [],
     /** 죽음 처리(사망 효과·이벤트)가 끝났는가. */
     reaped: false,
     killerId: null,
@@ -95,43 +104,77 @@ export function opponentsOf(state, faction) {
   return out;
 }
 
-/** 플레이어를 만든다. 이미 있으면 예외. */
+/**
+ * 플레이어를 만든다. 이미 있으면 예외. 캐릭터(state.run.character)에 따라 체력·속도·시작 무기가 다르다.
+ * 영구 강화·축복은 반영하지 않은 기본값이다 — 부른 쪽이 refreshPlayerStats 를 부른다.
+ */
 export function spawnPlayer(state, bus, x, y) {
   if (getPlayer(state)) throw new Error('spawnPlayer: 플레이어가 이미 있습니다');
-  const actor = createActor(state, ACTOR_KIND.PLAYER, 'player', PLAYER, x, y);
-  actor.cooldowns.dodge = 0;
+  if (!Object.hasOwn(CHARACTERS, state.run.character)) throw new RangeError(`spawnPlayer: 알 수 없는 캐릭터 "${state.run.character}"`);
+  const character = CHARACTERS[state.run.character];
+  const actor = createActor(state, ACTOR_KIND.PLAYER, 'player', { ...PLAYER, hp: character.hp, speed: character.speed }, x, y);
+  actor.critChance = PLAYER.critChance;
+  actor.critDamage = PLAYER.critDamage;
+  /** 플레이어만 가지는 것: 에너지, 대시 충전, 무기, 입력 버퍼, 스킬·축복의 진행 상태. */
+  actor.kit = {
+    character: state.run.character,
+    energy: character.energy,
+    maxEnergy: character.energy,
+    /** 남은 대시 충전과 최대치, 다음 충전이 차는 틱(가득 차 있으면 0), 한 번 차는 데 걸리는 틱. */
+    charges: PLAYER.dash.charges,
+    maxCharges: PLAYER.dash.charges,
+    chargeAt: 0,
+    rechargeTicks: 1,
+    /** 무기 두 칸(빈 칸은 null)과 지금 든 칸. */
+    weapons: [character.weapons[0], character.weapons[1] ?? null],
+    slot: 0,
+    /** 기억해 둔 입력: { kind:'dash'|'skill', until } 또는 null. */
+    buffer: null,
+    /** 대시 중인가(대시가 끝난 틱을 알아채기 위한 값), 이 틱까지의 공격은 대시 공격, 이 틱까지의 첫 공격은 치명타. */
+    dashing: false,
+    dashAttackUntil: 0,
+    critUntil: 0,
+    /** 쌍수 사격이 끝나는 틱, 에너지 부족을 마지막으로 알린 틱, 불길 대시가 다음 불을 놓는 틱. */
+    dualUntil: 0,
+    emptyAt: 0,
+    trailAt: 0,
+  };
   state.playerId = actor.id;
   bus.emit(EVENTS.ENTITY_SPAWNED, { id: actor.id, kind: actor.kind, type: actor.type, x, y });
   return actor;
 }
 
 /**
- * 적 또는 보스를 만든다.
+ * 적 또는 보스를 만든다. 체력·공격은 지금 싸우는 방의 깊이(state.run.depth)에 맞춘다.
  * @param {object} [options]
  * @param {number|null} [options.summonerId] 소환한 행동체
  * @param {boolean} [options.alerted] true 면 곧바로 전투에 들어간다
+ * @param {boolean} [options.elite] 정예(크고 단단하고 아프다)
  */
 export function spawnEnemy(state, bus, type, x, y, options = {}) {
   const def = enemyDef(type);
   if (!def) throw new RangeError(`spawnEnemy: 알 수 없는 적 "${type}"`);
   const boss = isBossType(type);
+  const elite = options.elite === true && !boss;
   const actor = createActor(state, boss ? ACTOR_KIND.BOSS : ACTOR_KIND.ENEMY, type, def, x, y);
-  // 층별 난이도: 체력과 공격 배율.
-  const scale = floorScaling(state.run.floor, boss);
+  const scale = depthScaling(state.run.depth, { elite, boss });
   actor.maxHp = Math.max(1, Math.round(def.hp * scale.hp));
   actor.hp = actor.maxHp;
   actor.power = scale.damage;
+  if (elite) {
+    actor.elite = true;
+    actor.radius = def.radius * ENCOUNTERS.elite.radius;
+    actor.speed = def.speed * ENCOUNTERS.elite.speed;
+    actor.mass = (def.mass ?? 1) * 2;
+  }
   actor.summonerId = options.summonerId ?? null;
   actor.ai = {
-    /** 'idle'(대기) | 'combat'(전투) | 'return'(자리로 복귀) */
+    /** 'idle'(대기) | 'combat'(전투). 방 전투에서 나타난 적은 곧바로 전투에 들어간다. */
     mode: 'idle',
-    homeX: x,
-    homeY: y,
     /** 맞았거나 깨워져서 다음 판단 때 전투에 들어간다. */
     provoked: options.alerted === true,
     lastSeenAt: 0,
     chaseUntil: 0,
-    returnStuckSince: 0,
     /** 길찾기 기억. */
     nav: { path: null, idx: 0, goal: -1, repathAt: 0, failUntil: 0 },
     /** 보스: 현재 페이즈, 다음 패턴을 쓸 수 있는 틱, 전환이 끝나는 틱. */
@@ -146,7 +189,7 @@ export function spawnEnemy(state, bus, type, x, y, options = {}) {
     fled: false,
     nextBlinkAt: 0,
   };
-  bus.emit(EVENTS.ENTITY_SPAWNED, { id: actor.id, kind: actor.kind, type, x, y, summonerId: actor.summonerId });
+  bus.emit(EVENTS.ENTITY_SPAWNED, { id: actor.id, kind: actor.kind, type, x, y, summonerId: actor.summonerId, elite });
   return actor;
 }
 
@@ -188,7 +231,8 @@ export function findFreeSpot(state, x, y, radius, maxDist) {
 }
 
 /**
- * 층에 들어갈 때 호출한다: 이전 층의 적·투사체·장판을 지우고, 플레이어를 시작점에 두고, 맵의 배치대로 적·보스를 만든다.
+ * 층에 들어갈 때 호출한다: 이전 층의 적·투사체·장판·전리품을 지우고 플레이어를 시작점에 둔다.
+ * 적은 방에 들어설 때 나타난다(logic/combat/encounter.js).
  */
 export function populateFloor(state, bus, map) {
   const player = getPlayer(state);
@@ -196,6 +240,7 @@ export function populateFloor(state, bus, map) {
   state.projectiles = [];
   state.hazards = [];
   state.drops = [];
+  state.encounter = null;
   const sx = map.start.x + 0.5;
   const sy = map.start.y + 0.5;
   if (player && !player.dead) {
@@ -205,23 +250,16 @@ export function populateFloor(state, bus, map) {
     player.dash = null;
     player.moveX = 0;
     player.moveY = 0;
+    player.kbX = 0;
+    player.kbY = 0;
     state.entities.byId[player.id] = player;
   } else {
     state.playerId = null;
     spawnPlayer(state, bus, sx, sy);
   }
-  for (const spawn of map.spawns) {
-    if (spawn.kind !== 'enemy' && spawn.kind !== 'boss') continue;
-    spawnEnemy(state, bus, spawn.id, spawn.x + 0.5, spawn.y + 0.5);
-  }
 }
 
-/** 기본 어그로·리쉬 수치를 채운 값. */
-export function aggroRulesOf(def) {
-  return {
-    aggroRadius: def.aggroRadius ?? COMBAT.aggroRadius,
-    // 보스는 리쉬가 없다(자리를 벗어나도, 시야를 잃어도 계속 쫓는다).
-    leashRadius: def.phases ? null : def.leashRadius ?? COMBAT.leashRadius,
-    loseSight: def.phases ? null : def.loseSight ?? COMBAT.loseSight,
-  };
+/** 대기 중인 적이 플레이어를 알아채는 거리. */
+export function aggroRadiusOf(def) {
+  return def.aggroRadius ?? COMBAT.aggroRadius;
 }

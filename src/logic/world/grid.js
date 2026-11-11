@@ -106,3 +106,11 @@ export function fillRect(tiles, w, x, y, rw, rh, tile) {
     for (let xx = x; xx < x + rw; xx++) tiles[row + xx] = tile;
   }
 }
+
+/** 칸 i 와 둘레 8칸이 모두 바닥인가(맵 테두리의 칸은 넘기지 않는다). 닫힌 문은 바닥이 아니다. */
+export function isClear(tiles, w, i) {
+  for (let dy = -w; dy <= w; dy += w) {
+    for (let dx = -1; dx <= 1; dx++) if (tiles[i + dy + dx] !== TILE.FLOOR) return false;
+  }
+  return true;
+}

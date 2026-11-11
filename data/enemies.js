@@ -43,6 +43,17 @@ export const ENEMIES = deepFreeze({
       },
     },
   },
+  bone_archer: {
+    name: '해골 궁수', ai: 'ranged', hp: 24, speed: 3.0, radius: 0.32, immune: ['poison', 'bleed'],
+    aiParams: { attack: 'shoot', min: 4, max: 7.5 },
+    abilities: {
+      // 준비 시간이 길다 — 그동안 조준선이 보이고, 쏘는 방향은 준비를 시작한 순간에 고정된다.
+      shoot: {
+        windup: 0.7, recovery: 0.3, cooldown: 2.4, range: 9,
+        effects: [{ type: 'projectile', speed: 9.5, radius: 0.2, range: 12, damage: 9 }],
+      },
+    },
+  },
   zombie: {
     name: '좀비', ai: 'melee', hp: 60, speed: 1.7, radius: 0.38,
     aiParams: { attack: 'strike' },

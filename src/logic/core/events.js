@@ -10,18 +10,38 @@ export const EVENTS = Object.freeze({
   // ── 행동체 ──
   /** payload: { id, kind, type, x, y, summonerId? } */
   ENTITY_SPAWNED: 'entity:spawned',
-  /** payload: { id, kind, type, x, y, killerId } */
+  /** payload: { id, kind, type, x, y, killerId, elite, radius, kbX, kbY } — kbX/kbY 는 죽는 순간 밀려나던 속도(튕겨 나가는 연출용) */
   ENTITY_DIED: 'entity:died',
   /** payload: { id, fromX, fromY, x, y } */
   ENTITY_TELEPORTED: 'entity:teleported',
-  /** payload: { id, mode: 'idle'|'combat'|'return' } — 적의 어그로 상태가 바뀜 */
+  /** payload: { id, mode: 'idle'|'combat' } — 적이 플레이어를 알아챔 */
   AGGRO_CHANGED: 'aggro:changed',
-  /** payload: { id, dirX, dirY } */
-  PLAYER_DODGED: 'player:dodged',
+  /** payload: { id, dirX, dirY, charges } */
+  PLAYER_DASHED: 'player:dashed',
+  /** payload: { id, x, y } — 대시가 끝남 */
+  PLAYER_DASH_ENDED: 'player:dashEnded',
+  /** payload: { weapon, slot, dash:boolean, offhand:boolean, kind:'melee'|'ranged', x, y, dirX, dirY } — 플레이어가 무기를 씀 */
+  WEAPON_USED: 'weapon:used',
+  /** payload: { slot, weapon } — 든 무기를 바꿈 */
+  WEAPON_SWAPPED: 'weapon:swapped',
+  /** payload: { weapon, dropped:string|null } — 무기를 주움(자리가 없으면 든 무기와 바꿈) */
+  WEAPON_PICKED: 'weapon:picked',
+  /** payload: { need, have } — 에너지가 모자라 쏘지 못함 */
+  ENERGY_EMPTY: 'energy:empty',
+  /** payload: { character, type } — 캐릭터 스킬 사용 */
+  SKILL_USED: 'skill:used',
 
   // ── 전투 ──
-  /** payload: { targetId, sourceId, amount, kind: 'hit'|'dot', hp, blocked, crit } */
+  /** payload: { targetId, sourceId, amount, kind: 'hit'|'dot', hp, blocked, crit, x, y, proc? } — proc 은 축복이 낸 피해의 이름 */
   DAMAGE_DEALT: 'damage:dealt',
+  /** payload: { x0, y0, x1, y1, width, faction } — 광선이 나감 */
+  BEAM_FIRED: 'beam:fired',
+  /** payload: { x, y, radius, faction, proc? } — 폭발(탄, 축복) */
+  EXPLOSION: 'explosion',
+  /** payload: { points:[{x,y}…] } — 번개가 튐 */
+  CHAIN_LIGHTNING: 'chain:lightning',
+  /** payload: { count, x, y } — 적의 탄이 지워짐(대검, 탄 가르기) */
+  BULLETS_CLEARED: 'bullets:cleared',
   /** payload: { targetId, status, stacks, ticks } */
   STATUS_APPLIED: 'status:applied',
   /** payload: { targetId, status, reason: 'expired'|'removed'|'cleansed' } */
@@ -41,29 +61,33 @@ export const EVENTS = Object.freeze({
   /** payload: { id, type, from, to, phases, ticks } — 보스 페이즈 전환(연출용). ticks 동안 보스는 무적 */
   BOSS_PHASE_CHANGED: 'boss:phaseChanged',
 
-  // ── 아이템과 성장 ──
-  /** payload: { id, x, y, kind } — 바닥에 전리품이 생김 */
+  // ── 방 ──
+  /** payload: { roomId, kind } — 플레이어가 방에 처음 들어섬 */
+  ROOM_ENTERED: 'room:entered',
+  /** payload: { roomId, doors:[id…] } — 전투가 시작돼 문이 잠김 */
+  DOORS_LOCKED: 'doors:locked',
+  /** payload: { roomId, doors:[id…] } */
+  DOORS_OPENED: 'doors:opened',
+  /** payload: { roomId, wave, waves, count } — 웨이브 예고가 시작됨 */
+  WAVE_STARTED: 'wave:started',
+  /** payload: { roomId, kind, reward } — 방의 적을 모두 잡음 */
+  ROOM_CLEARED: 'room:cleared',
+  /** payload: { doorId, roomId } — 숨은 문을 찾음 */
+  SECRET_FOUND: 'secret:found',
+
+  // ── 줍기·성장 ──
+  /** payload: { id, kind, x, y } */
   DROP_SPAWNED: 'drop:spawned',
-  /** payload: { id, kind, amount?, itemId?, uid? } — 전리품을 주움 */
+  /** payload: { id, kind, amount?, x, y } */
   DROP_COLLECTED: 'drop:collected',
-  /** payload: { reason } — 가방·착용·소비 아이템·유물·금화가 바뀜(ui 가 다시 그릴 때) */
-  INVENTORY_CHANGED: 'inventory:changed',
-  /** payload: { id } */
-  CONSUMABLE_USED: 'consumable:used',
-  /** payload: { amount, level, xp } */
-  XP_GAINED: 'xp:gained',
-  /** payload: { level } */
-  LEVEL_UP: 'level:up',
-  /** payload: { options } — 강화 3택1 후보가 제시됨 */
-  UPGRADE_OFFERED: 'upgrade:offered',
-  /** payload: { kind, id, rank? } */
-  UPGRADE_CHOSEN: 'upgrade:chosen',
-  /** payload: { kind, price } */
+  /** payload: { options:[id…], rerolls } — 축복 3택1 이 제시됨 */
+  BOON_OFFERED: 'boon:offered',
+  /** payload: { boon } */
+  BOON_CHOSEN: 'boon:chosen',
+  /** payload: { kind, weapon?, boon?, price } */
   SHOP_PURCHASE: 'shop:purchase',
-  /** payload: { uid, gold } */
-  SHOP_SALE: 'shop:sale',
-  /** payload: { tier, cost, reward } */
-  ALTAR_ACCEPTED: 'altar:accepted',
+  /** payload: { gold } — 금화가 바뀜 */
+  GOLD_CHANGED: 'gold:changed',
   /** payload: { hp } — 유물로 되살아남 */
   PLAYER_REVIVED: 'player:revived',
   /** payload: { victory, souls, floor, kills, bossKills } — 런이 끝나 메타 정산을 마침 */

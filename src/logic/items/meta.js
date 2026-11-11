@@ -1,78 +1,108 @@
-// 메타 진행: 런과 런 사이에 남는 것(영혼석, 영구 해금, 기록).
+// 메타 진행: 런과 런 사이에 남는 것(영혼석, 영구 강화, 해금한 캐릭터, 기록).
 // 메타 객체는 게임 상태(state.meta)에 들어 있고, 저장 단계에서 런과 따로 보관한다.
 
-import { META_VERSION, SOULS, UNLOCKS } from '../../../data/meta.js';
+import { CHARACTERS } from '../../../data/characters.js';
+import { META_VERSION, SOULS, UPGRADES } from '../../../data/meta.js';
 
 export function createMeta() {
-  return { version: META_VERSION, souls: 0, unlocked: {}, runs: 0, victories: 0, bestFloor: 0, totalKills: 0 };
+  const characters = {};
+  for (const id of Object.keys(CHARACTERS)) if (CHARACTERS[id].cost === 0) characters[id] = true;
+  return { version: META_VERSION, souls: 0, upgrades: {}, characters, runs: 0, victories: 0, bestRooms: 0, totalKills: 0 };
 }
 
-/** 바깥에서 받은 메타를 검사해 깨끗한 사본을 만든다. 모르는 해금은 버린다. */
+const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** 바깥에서 받은 메타를 검사해 깨끗한 사본을 만든다. 모르는 강화·캐릭터와 범위를 벗어난 단계는 버린다. */
 export function normalizeMeta(meta) {
   const clean = createMeta();
-  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return clean;
-  for (const key of ['souls', 'runs', 'victories', 'bestFloor', 'totalKills']) {
+  if (!isRecord(meta)) return clean;
+  for (const key of ['souls', 'runs', 'victories', 'bestRooms', 'totalKills']) {
     if (Number.isInteger(meta[key]) && meta[key] >= 0) clean[key] = meta[key];
   }
-  // `UNLOCKS[id]` 로 확인하면 "constructor" 같은 물려받은 이름이 통과한다. 반드시 자기 키인지 본다.
-  const unlocked = meta.unlocked !== null && typeof meta.unlocked === 'object' && !Array.isArray(meta.unlocked) ? meta.unlocked : {};
-  for (const id of Object.keys(unlocked)) {
-    if (Object.hasOwn(UNLOCKS, id) && unlocked[id] === true) clean.unlocked[id] = true;
+  // `UPGRADES[id]` 로 확인하면 "constructor" 같은 물려받은 이름이 통과한다. 반드시 자기 키인지 본다.
+  const upgrades = isRecord(meta.upgrades) ? meta.upgrades : {};
+  for (const id of Object.keys(upgrades)) {
+    const level = upgrades[id];
+    if (Object.hasOwn(UPGRADES, id) && Number.isInteger(level) && level >= 1) clean.upgrades[id] = Math.min(level, UPGRADES[id].cost.length);
+  }
+  const characters = isRecord(meta.characters) ? meta.characters : {};
+  for (const id of Object.keys(characters)) {
+    if (Object.hasOwn(CHARACTERS, id) && characters[id] === true) clean.characters[id] = true;
   }
   return clean;
 }
 
-/**
- * 이 해금을 살 수 있는가.
- * @returns {{ ok:true } | { ok:false, reason:string }} reason: 'unknown' | 'owned' | 'locked' | 'no-souls'
- */
-export function canUnlock(meta, id) {
-  const def = Object.hasOwn(UNLOCKS, id) ? UNLOCKS[id] : null;
-  if (!def) return { ok: false, reason: 'unknown' };
-  if (meta.unlocked[id]) return { ok: false, reason: 'owned' };
-  if (def.requires && !meta.unlocked[def.requires]) return { ok: false, reason: 'locked' };
-  if (meta.souls < def.cost) return { ok: false, reason: 'no-souls' };
-  return { ok: true };
+export function upgradeLevel(meta, id) {
+  return Object.hasOwn(meta.upgrades, id) ? meta.upgrades[id] : 0;
 }
 
-/** 해금을 산다. */
-export function purchaseUnlock(meta, id) {
-  const check = canUnlock(meta, id);
+/**
+ * 이 강화를 한 단계 올릴 수 있는가.
+ * @returns {{ ok:true, cost:number } | { ok:false, reason:string }} reason: 'unknown' | 'maxed' | 'no-souls'
+ */
+export function canBuyUpgrade(meta, id) {
+  if (!Object.hasOwn(UPGRADES, id)) return { ok: false, reason: 'unknown' };
+  const level = upgradeLevel(meta, id);
+  const costs = UPGRADES[id].cost;
+  if (level >= costs.length) return { ok: false, reason: 'maxed' };
+  if (meta.souls < costs[level]) return { ok: false, reason: 'no-souls' };
+  return { ok: true, cost: costs[level] };
+}
+
+export function buyUpgrade(meta, id) {
+  const check = canBuyUpgrade(meta, id);
   if (!check.ok) return check;
-  meta.souls -= UNLOCKS[id].cost;
-  meta.unlocked[id] = true;
-  return { ok: true };
-}
-
-/** 해금에서 나오는 시작 보너스(능력치는 능력치 합산에서 따로 더한다). */
-export function startBonuses(meta) {
-  const start = { gold: 0, consumables: {}, capacity: 0 };
-  for (const id of Object.keys(meta.unlocked)) {
-    const effect = UNLOCKS[id].effect;
-    if (effect.gold) start.gold += effect.gold;
-    if (effect.capacity) start.capacity += effect.capacity;
-    for (const item of Object.keys(effect.consumables ?? {})) {
-      start.consumables[item] = (start.consumables[item] ?? 0) + effect.consumables[item];
-    }
-  }
-  return start;
+  meta.souls -= check.cost;
+  meta.upgrades[id] = upgradeLevel(meta, id) + 1;
+  return { ok: true, cost: check.cost, level: meta.upgrades[id] };
 }
 
 /**
- * 런 한 번의 결과로 얻는 영혼석.
- * @param {{ floor:number, kills:number, bossKills:number, victory:boolean }} summary
+ * 이 캐릭터를 해금할 수 있는가.
+ * @returns {{ ok:true, cost:number } | { ok:false, reason:string }} reason: 'unknown' | 'owned' | 'no-souls'
  */
-export function soulsForRun({ floor, kills, bossKills, victory }) {
-  return floor * SOULS.perFloor + kills * SOULS.perKill + bossKills * SOULS.perBossKill + (victory ? SOULS.victory : 0);
+export function canUnlockCharacter(meta, id) {
+  if (!Object.hasOwn(CHARACTERS, id)) return { ok: false, reason: 'unknown' };
+  if (meta.characters[id] === true) return { ok: false, reason: 'owned' };
+  if (meta.souls < CHARACTERS[id].cost) return { ok: false, reason: 'no-souls' };
+  return { ok: true, cost: CHARACTERS[id].cost };
 }
 
-/** 런 결과를 메타에 반영한다. @returns {number} 얻은 영혼석 */
+export function unlockCharacter(meta, id) {
+  const check = canUnlockCharacter(meta, id);
+  if (!check.ok) return check;
+  meta.souls -= check.cost;
+  meta.characters[id] = true;
+  return { ok: true, cost: check.cost };
+}
+
+/** 영구 강화를 모두 합친 값. */
+export function metaBonuses(meta) {
+  const total = { maxHp: 0, maxEnergy: 0, power: 0, gold: 0, dashRecharge: 0, freeRerolls: 0 };
+  if (!meta) return total;
+  for (const id of Object.keys(meta.upgrades)) {
+    if (!Object.hasOwn(UPGRADES, id)) continue;
+    const effect = UPGRADES[id].effect;
+    for (const key of Object.keys(effect)) total[key] += effect[key] * meta.upgrades[id];
+  }
+  return total;
+}
+
+/** 런 하나가 주는 영혼석. */
+export function soulsForRun({ roomsCleared, eliteKills, bossKills, victory }) {
+  return roomsCleared * SOULS.perRoom + eliteKills * SOULS.perElite + bossKills * SOULS.perBoss + (victory ? SOULS.victory : 0);
+}
+
+/**
+ * 끝난 런을 메타에 정산한다.
+ * @returns {number} 얻은 영혼석
+ */
 export function settleRun(meta, summary) {
   const souls = soulsForRun(summary);
   meta.souls += souls;
   meta.runs += 1;
   if (summary.victory) meta.victories += 1;
-  meta.bestFloor = Math.max(meta.bestFloor, summary.floor);
+  if (summary.roomsCleared > meta.bestRooms) meta.bestRooms = summary.roomsCleared;
   meta.totalKills += summary.kills;
   return souls;
 }

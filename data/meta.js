@@ -1,36 +1,39 @@
-// 메타 진행: 런이 끝나면 영혼석을 얻고, 영혼석으로 영구 해금을 산다.
+// 메타 진행(거점): 런이 끝나면 영혼석을 얻고, 영혼석으로 영구 강화를 사거나 캐릭터를 해금한다.
 
 import { deepFreeze } from './freeze.js';
 
-export const META_VERSION = 1;
+export const META_VERSION = 2;
 
 /** 런이 끝날 때 얻는 영혼석. */
 export const SOULS = deepFreeze({
-  /** 도달한 층 하나당(1층 포함). */
-  perFloor: 8,
-  perKill: 1,
-  perBossKill: 30,
-  /** 최종보스를 잡고 끝냈을 때. */
-  victory: 300,
+  perRoom: 3,
+  perElite: 4,
+  perBoss: 25,
+  /** 출구 포털까지 가서 끝냈을 때. */
+  victory: 30,
 });
 
 /**
- * 영구 해금. requires 는 먼저 사야 하는 해금.
- *   stats      시작 능력치           gold  시작 금화          consumables  시작 소비 아이템
- *   capacity   가방 칸 추가          pool  아이템 풀 확장(SETS·RELICS·CONSUMABLES 의 unlock 과 같은 이름)
+ * 영구 강화. cost[n] 은 n 단계에서 n+1 단계로 올리는 값이고, 효과는 단계 수만큼 곱해진다.
+ *   maxHp, maxEnergy, gold(시작 금화)   더한다
+ *   power(주는 피해)                    비율로 더한다
+ *   dashRecharge                        대시 충전 시간을 이 비율만큼 줄인다
+ *   freeRerolls                         축복 후보를 무료로 다시 뽑는 횟수(런마다)
  */
-export const UNLOCKS = deepFreeze({
-  vigor_1: { name: '단련 I', cost: 40, effect: { stats: { maxHp: 10 } } },
-  vigor_2: { name: '단련 II', cost: 110, requires: 'vigor_1', effect: { stats: { maxHp: 15 } } },
-  vigor_3: { name: '단련 III', cost: 260, requires: 'vigor_2', effect: { stats: { maxHp: 20 } } },
-  might_1: { name: '완력 I', cost: 50, effect: { stats: { power: 4 } } },
-  might_2: { name: '완력 II', cost: 130, requires: 'might_1', effect: { stats: { power: 6 } } },
-  might_3: { name: '완력 III', cost: 300, requires: 'might_2', effect: { stats: { power: 8 } } },
-  purse_1: { name: '여비 I', cost: 30, effect: { gold: 40 } },
-  purse_2: { name: '여비 II', cost: 90, requires: 'purse_1', effect: { gold: 80 } },
-  provisions: { name: '비상 식량', cost: 60, effect: { consumables: { health_potion: 2 } } },
-  satchel: { name: '큰 가방', cost: 120, effect: { capacity: 4 } },
-  consumable_fire_bomb: { name: '화염병 제조법', cost: 80, effect: { pool: true } },
-  relic_pack: { name: '유물 꾸러미', cost: 200, effect: { pool: true } },
-  set_windrunner: { name: '질풍 세트 도안', cost: 240, effect: { pool: true } },
+export const UPGRADES = deepFreeze({
+  vigor: { name: '단련', desc: '최대 체력 +10', cost: [20, 45, 90], effect: { maxHp: 10 } },
+  capacitor: { name: '축전', desc: '최대 에너지 +25', cost: [15, 35, 70], effect: { maxEnergy: 25 } },
+  might: { name: '완력', desc: '주는 피해 +6%', cost: [25, 55, 110], effect: { power: 0.06 } },
+  purse: { name: '여비', desc: '시작 금화 +30', cost: [15, 40], effect: { gold: 30 } },
+  agility: { name: '순발력', desc: '대시 충전 10% 빠르게', cost: [30, 70], effect: { dashRecharge: 0.1 } },
+  insight: { name: '안목', desc: '축복 무료 다시 뽑기 +1', cost: [25, 60], effect: { freeRerolls: 1 } },
+});
+
+/**
+ * 메타 버전 1(방 단위 구조로 바꾸기 전)의 영구 해금과 그 값. 그 해금은 이제 없으므로
+ * 마이그레이션(logic/save/migrate.js)이 산 만큼의 영혼석을 돌려준다.
+ */
+export const LEGACY_UNLOCK_COSTS = deepFreeze({
+  vigor_1: 40, vigor_2: 110, vigor_3: 260, might_1: 50, might_2: 130, might_3: 300, purse_1: 30, purse_2: 90,
+  provisions: 60, satchel: 120, consumable_fire_bomb: 80, relic_pack: 200, set_windrunner: 240,
 });

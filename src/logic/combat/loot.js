@@ -1,185 +1,134 @@
-// 전리품: 층에 들어갈 때 상자·상점·제단을 만들고, 적을 잡으면 보상을 주고, 바닥의 것을 줍는다.
+// 줍는 것: 적을 잡으면 떨어지는 금화·에너지·체력 구슬, 방을 깨면 나오는 보상(무기·축복·금화·체력).
+// 금화·에너지·체력은 가까이 가면 저절로 주워지고, 축복은 닿으면 3택1 이 열린다. 무기는 상호작용으로 줍는다(commands.js).
 
-import { INVENTORY } from '../../../data/items.js';
-import { RELICS } from '../../../data/relics.js';
+import { BOON_RULES } from '../../../data/boons.js';
+import { ENCOUNTERS } from '../../../data/encounters.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
-import { getPlayer } from '../entities/actors.js';
+import { getActor, getPlayer } from '../entities/actors.js';
 import { ACTOR_KIND } from '../entities/defs.js';
-import { refreshPlayerStats } from '../entities/stats.js';
-import { generateAltar } from '../items/altar.js';
-import { rollChestLoot, rollKillLoot } from '../items/drops.js';
-import { addConsumable, addGold, addRelic, addToBag } from '../items/inventory.js';
-import { gainXp, offerChoice, xpForKill } from '../items/levelup.js';
-import { generateShop } from '../items/shop.js';
+import { rollBoonChoices } from '../items/boons.js';
+import { rollWeapon } from '../items/shop.js';
+import { REWARD, ROOM_KIND } from '../world/floors.js';
 import { heal } from './damage.js';
 
-/** 장비에 고유 번호를 붙인다(상태 안에서 장비를 가리킬 때 쓴다). */
-export function stampItem(state, item) {
-  if (!item.uid) item.uid = state.entities.nextId++;
-  return item;
+/** 바닥에 무언가를 놓는다. */
+export function addDrop(state, bus, x, y, drop) {
+  const made = { id: state.entities.nextId++, x, y, ...drop };
+  state.drops.push(made);
+  bus.emit(EVENTS.DROP_SPAWNED, { id: made.id, kind: made.kind, x, y });
+  return made;
 }
 
-/** 전리품을 바닥에 놓는다. */
-export function addDrop(state, bus, x, y, loot) {
-  if (loot.kind === 'equipment') stampItem(state, loot.item);
-  const drop = { id: state.entities.nextId++, x, y, loot };
-  state.drops.push(drop);
-  bus.emit(EVENTS.DROP_SPAWNED, { id: drop.id, x, y, kind: loot.kind });
-  return drop;
-}
-
-/** 강화 후보를 제시할 것이 있으면 제시하고 이벤트를 낸다. */
-export function offerPendingChoice(state, bus) {
-  if (offerChoice(state.run, rngOf(state, 'items'))) {
-    bus.emit(EVENTS.UPGRADE_OFFERED, { options: state.run.choice.options });
-  }
+export function addGold(state, bus, amount) {
+  state.run.gold = Math.max(0, state.run.gold + amount);
+  bus.emit(EVENTS.GOLD_CHANGED, { gold: state.run.gold });
 }
 
 /**
- * 층에 들어갈 때: 맵의 아이템 자리에 상자 내용물을 놓고, 이벤트방이 있으면 상점·제단을 만든다.
- * 내용은 (런 시드, 층)으로 정해진다 — 같은 층에 다시 들어와도 같다(이미 가진 유물만 빠진다).
+ * 축복 3택1 을 제시한다. 고를 축복이 남아 있지 않으면 금화를 준다.
+ * @returns {boolean} 제시했으면 true
  */
-export function setupFloorLoot(state, bus) {
-  const map = state.world;
-  const floor = state.run.floor;
-  const rng = rngOf(state, 'items').fork(`floor:${floor}`);
-  const ctx = { floor, meta: state.meta, relics: state.inventory.relics };
-
-  state.drops = [];
-  const chestRng = rng.fork('chests');
-  const placedRelics = [];
-  for (const spawn of map.spawns) {
-    if (spawn.kind !== 'item') continue;
-    const loot = rollChestLoot(chestRng, { ...ctx, exclude: placedRelics });
-    if (loot.kind === 'relic') placedRelics.push(loot.id);
-    addDrop(state, bus, spawn.x + 0.5, spawn.y + 0.5, loot);
+export function offerBoons(state, bus) {
+  const options = rollBoonChoices(rngOf(state, 'items'), state.run.boons);
+  if (options.length === 0) {
+    addGold(state, bus, BOON_RULES.emptyGold);
+    return false;
   }
-
-  state.shop = null;
-  state.altar = null;
-  for (const room of map.eventRooms) {
-    const x = room.feature.x + 0.5;
-    const y = room.feature.y + 0.5;
-    if (room.kind === 'shop') {
-      const shop = generateShop(rng.fork('shop'), ctx);
-      for (const entry of shop.stock) if (entry.kind === 'equipment') stampItem(state, entry.item);
-      state.shop = { ...shop, x, y };
-    } else if (room.kind === 'altar') {
-      state.altar = { ...generateAltar(rng.fork('altar'), floor), x, y };
-    }
-  }
+  state.run.choice = { kind: 'boon', options, rerolls: 0 };
+  bus.emit(EVENTS.BOON_OFFERED, { options: options.slice(), rerolls: 0 });
+  return true;
 }
 
-/**
- * 적을 잡은 보상: 경험치, 전리품, 처치 시 유물 효과. 플레이어가 잡은 적만, 소환·분열로 생긴 적은 제외.
- * @param {object} actor 죽은 적 또는 보스
- */
+/** 처치 보상. 소환된 적과 플레이어가 잡지 않은 적은 아무것도 주지 않는다. 확률 굴림은 결과와 무관하게 같은 횟수만큼 굴린다. */
 export function rewardKill(state, bus, actor) {
-  const player = getPlayer(state);
-  if (!player || actor.killerId !== player.id || actor.summonerId !== null) return;
+  if (actor.summonerId !== null) return;
+  const killer = getActor(state, actor.killerId);
+  if (!killer || killer.kind !== ACTOR_KIND.PLAYER) return;
   const run = state.run;
-  const inv = state.inventory;
-  const boss = actor.kind === ACTOR_KIND.BOSS;
-  const sheet = run.sheet;
-  run.kills++;
-  if (boss) run.bossKills++;
+  run.kills += 1;
+  if (actor.elite) run.eliteKills += 1;
+  if (actor.kind === ACTOR_KIND.BOSS) run.bossKills += 1;
 
-  const xp = Math.round(xpForKill(actor.maxHp, boss) * (1 + (sheet ? sheet.xpGain : 0) / 100));
-  const levels = gainXp(run, xp);
-  bus.emit(EVENTS.XP_GAINED, { amount: xp, level: run.level, xp: run.xp });
-  if (levels > 0) {
-    bus.emit(EVENTS.LEVEL_UP, { level: run.level });
-    offerPendingChoice(state, bus);
-  }
-
-  const loot = rollKillLoot(rngOf(state, 'items'), { floor: run.floor, meta: state.meta, relics: inv.relics, boss });
-  for (const entry of loot) addDrop(state, bus, actor.x, actor.y, entry);
-
-  for (const id of inv.relics) {
-    const onKill = RELICS[id].onKill;
-    if (!onKill) continue;
-    if (onKill.heal && !player.dead) heal(player, onKill.heal);
-    if (onKill.gold) addGold(inv, onKill.gold);
-  }
+  const cfg = ENCOUNTERS.kill;
+  const rng = rngOf(state, 'items');
+  const goldRoll = rng.chance(cfg.gold.chance);
+  const goldAmount = rng.int(cfg.gold.amount[0], cfg.gold.amount[1]);
+  const energyRoll = rng.chance(cfg.energy.chance);
+  const healthRoll = rng.chance(cfg.health.chance);
+  const eliteGold = rng.int(cfg.eliteGold[0], cfg.eliteGold[1]);
+  const ox = rng.float() * 0.8 - 0.4;
+  const oy = rng.float() * 0.8 - 0.4;
+  if (actor.kind === ACTOR_KIND.BOSS) return; // 보스의 보상은 방 보상으로 나온다.
+  if (actor.elite) addDrop(state, bus, actor.x, actor.y, { kind: 'gold', amount: eliteGold });
+  else if (goldRoll) addDrop(state, bus, actor.x + ox, actor.y + oy, { kind: 'gold', amount: goldAmount });
+  if (energyRoll) addDrop(state, bus, actor.x - ox, actor.y - oy, { kind: 'energy', amount: cfg.energy.amount });
+  if (healthRoll) addDrop(state, bus, actor.x + oy, actor.y - ox, { kind: 'health', amount: cfg.health.amount });
 }
 
-/** 전리품 하나를 인벤토리에 넣는다. 자리가 없으면 false(바닥에 그대로 둔다). */
-function take(state, loot) {
-  const inv = state.inventory;
-  switch (loot.kind) {
-    case 'gold': {
-      const bonus = state.run.sheet ? state.run.sheet.goldFind : 0;
-      addGold(inv, Math.max(1, Math.round(loot.amount * (1 + bonus / 100))));
-      return true;
-    }
-    case 'consumable':
-      return addConsumable(inv, loot.id, 1) === 1;
-    case 'equipment':
-      return addToBag(inv, loot.item);
-    case 'relic':
-      // 이미 가진 유물이면 금화로 바꿔 준다.
-      if (!addRelic(inv, loot.id)) addGold(inv, Math.round(RELICS[loot.id].price / 4));
-      else refreshPlayerStats(state);
-      return true;
-    default:
-      throw new RangeError(`알 수 없는 전리품 "${loot.kind}"`);
+/** 방 보상: 방을 깼을 때(또는 싸움 없는 보상 방·숨은 방에 처음 들어섰을 때) 방 한가운데에 놓는다. */
+export function grantRoomReward(state, bus, room) {
+  const cfg = ENCOUNTERS.rewards;
+  const rng = rngOf(state, 'items');
+  const player = getPlayer(state);
+  const cx = room.feature.x + 0.5;
+  const cy = room.feature.y + 0.5;
+  // 굴림은 방의 종류와 무관하게 같은 횟수만큼 한다.
+  const clearGold = rng.int(cfg.clearGold[0], cfg.clearGold[1]);
+  const roomGold = rng.int(cfg.gold[0], cfg.gold[1]);
+  const eliteGold = rng.int(cfg.eliteGold[0], cfg.eliteGold[1]);
+  const bossGold = rng.int(cfg.bossGold[0], cfg.bossGold[1]);
+  const bonusGold = rng.int(cfg.bonusGold[0], cfg.bonusGold[1]);
+  const weapon = rollWeapon(rng, player ? player.kit.weapons.filter(Boolean) : []);
+
+  if (room.kind === ROOM_KIND.COMBAT || room.kind === ROOM_KIND.ELITE || room.kind === ROOM_KIND.BOSS) {
+    addGold(state, bus, clearGold);
+    if (player) player.kit.energy = Math.min(player.kit.maxEnergy, player.kit.energy + Math.round((player.kit.maxEnergy * cfg.clearEnergyPct) / 100));
   }
+  if (room.reward === REWARD.BOON) addDrop(state, bus, cx, cy, { kind: 'boon' });
+  else if (room.reward === REWARD.WEAPON) addDrop(state, bus, cx, cy, { kind: 'weapon', weapon });
+  else if (room.reward === REWARD.GOLD) addDrop(state, bus, cx, cy, { kind: 'gold', amount: roomGold });
+  else if (room.reward === REWARD.HEALTH) {
+    addDrop(state, bus, cx, cy, { kind: 'health', amount: player ? Math.round((player.maxHp * cfg.healthPct) / 100) : 0 });
+  }
+  if (room.kind === ROOM_KIND.ELITE) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: eliteGold });
+  if (room.kind === ROOM_KIND.BOSS) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: bossGold });
+  if (room.kind === ROOM_KIND.BONUS) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: bonusGold });
 }
 
-/** 줍기 단계(매 틱): 플레이어 가까이에 있는 전리품을 줍는다. */
+/** 줍기 단계(매 틱). */
 export function collectDrops(state, bus) {
   if (state.drops.length === 0) return;
   const player = getPlayer(state);
   if (!player || player.dead) return;
-  const reach = INVENTORY.pickupRange * INVENTORY.pickupRange;
+  const kit = player.kit;
+  const near = ENCOUNTERS.pickupRadius * ENCOUNTERS.pickupRadius;
   const left = [];
-  let changed = false;
   for (const drop of state.drops) {
     const dx = drop.x - player.x;
     const dy = drop.y - player.y;
-    if (dx * dx + dy * dy > reach || !take(state, drop.loot)) {
-      left.push(drop);
-      continue;
+    const d2 = dx * dx + dy * dy;
+    let taken = false;
+    if (d2 <= near) {
+      if (drop.kind === 'gold') {
+        addGold(state, bus, drop.amount);
+        taken = true;
+      } else if (drop.kind === 'energy' && kit.energy < kit.maxEnergy) {
+        kit.energy = Math.min(kit.maxEnergy, kit.energy + drop.amount);
+        taken = true;
+      } else if (drop.kind === 'health' && player.hp < player.maxHp) {
+        heal(player, drop.amount);
+        taken = true;
+      } else if (drop.kind === 'boon' && d2 <= 1 && state.run.choice === null) {
+        // 닿으면 3택1 이 열린다. 전투 중에는 열리지 않는다.
+        if (state.encounter === null) {
+          offerBoons(state, bus);
+          taken = true;
+        }
+      }
     }
-    changed = true;
-    const { loot } = drop;
-    bus.emit(EVENTS.DROP_COLLECTED, {
-      id: drop.id, kind: loot.kind, amount: loot.amount, itemId: loot.id, uid: loot.item ? loot.item.uid : undefined,
-    });
+    if (taken) bus.emit(EVENTS.DROP_COLLECTED, { id: drop.id, kind: drop.kind, amount: drop.amount, x: drop.x, y: drop.y });
+    else left.push(drop);
   }
-  if (changed) {
-    state.drops = left;
-    bus.emit(EVENTS.INVENTORY_CHANGED, { reason: 'pickup' });
-  }
-}
-
-/** 유지 단계(매 틱): 끝난 물약 효과를 걷어 내고, 체력 재생을 적용한다. */
-export function updateUpkeep(state) {
-  const run = state.run;
-  if (run.buffs.length > 0 && run.buffs.some((b) => b.until <= state.tick)) {
-    run.buffs = run.buffs.filter((b) => b.until > state.tick);
-    refreshPlayerStats(state);
-  }
-  const player = getPlayer(state);
-  if (!player || player.dead || player.regen <= 0 || state.tick % 60 !== 0) return;
-  if (player.hp >= player.maxHp) {
-    run.regenPool = 0;
-    return;
-  }
-  run.regenPool += player.regen;
-  if (run.regenPool >= 10) {
-    heal(player, Math.floor(run.regenPool / 10));
-    run.regenPool %= 10;
-  }
-}
-
-/** 새 층에 들어갈 때의 유물 효과. */
-export function applyFloorRelics(state) {
-  const player = getPlayer(state);
-  if (!player || player.dead) return;
-  for (const id of state.inventory.relics) {
-    const onFloor = RELICS[id].onFloor;
-    if (onFloor && onFloor.healPct) heal(player, (player.maxHp * onFloor.healPct) / 100);
-  }
+  state.drops = left;
 }
