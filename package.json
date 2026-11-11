@@ -1,0 +1,10 @@
+{
+  "name": "fable",
+  "private": true,
+  "type": "module",
+  "description": "모바일 웹 3D 로그라이크 던전 (Three.js, 빌드 도구 없음)",
+  "scripts": {
+    "test": "node scripts/run-tests.mjs",
+    "serve": "node scripts/serve.mjs"
+  }
+}
