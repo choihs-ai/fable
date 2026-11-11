@@ -74,7 +74,7 @@ export function unequip(inv, slot) {
 
 /** 소비 아이템을 넣는다. 종류별 최대 보유 수를 넘는 만큼은 들어가지 않는다. @returns {number} 실제로 들어간 수 */
 export function addConsumable(inv, id, count = 1) {
-  if (!CONSUMABLES[id]) throw new RangeError(`알 수 없는 소비 아이템 "${id}"`);
+  if (!Object.hasOwn(CONSUMABLES, id)) throw new RangeError(`알 수 없는 소비 아이템 "${id}"`);
   const have = inv.consumables[id] ?? 0;
   const added = Math.max(0, Math.min(count, INVENTORY.stackMax - have));
   if (added > 0) inv.consumables[id] = have + added;
@@ -92,7 +92,7 @@ export function takeConsumable(inv, id) {
 
 /** 유물을 얻는다. 이미 가진 유물이면 false. */
 export function addRelic(inv, id) {
-  if (!RELICS[id]) throw new RangeError(`알 수 없는 유물 "${id}"`);
+  if (!Object.hasOwn(RELICS, id)) throw new RangeError(`알 수 없는 유물 "${id}"`);
   if (inv.relics.includes(id)) return false;
   inv.relics.push(id);
   return true;

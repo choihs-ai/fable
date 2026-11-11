@@ -10,12 +10,14 @@ export function createMeta() {
 /** 바깥에서 받은 메타를 검사해 깨끗한 사본을 만든다. 모르는 해금은 버린다. */
 export function normalizeMeta(meta) {
   const clean = createMeta();
-  if (!meta || typeof meta !== 'object') return clean;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return clean;
   for (const key of ['souls', 'runs', 'victories', 'bestFloor', 'totalKills']) {
     if (Number.isInteger(meta[key]) && meta[key] >= 0) clean[key] = meta[key];
   }
-  for (const id of Object.keys(meta.unlocked ?? {})) {
-    if (UNLOCKS[id] && meta.unlocked[id] === true) clean.unlocked[id] = true;
+  // `UNLOCKS[id]` 로 확인하면 "constructor" 같은 물려받은 이름이 통과한다. 반드시 자기 키인지 본다.
+  const unlocked = meta.unlocked !== null && typeof meta.unlocked === 'object' && !Array.isArray(meta.unlocked) ? meta.unlocked : {};
+  for (const id of Object.keys(unlocked)) {
+    if (Object.hasOwn(UNLOCKS, id) && unlocked[id] === true) clean.unlocked[id] = true;
   }
   return clean;
 }
@@ -25,7 +27,7 @@ export function normalizeMeta(meta) {
  * @returns {{ ok:true } | { ok:false, reason:string }} reason: 'unknown' | 'owned' | 'locked' | 'no-souls'
  */
 export function canUnlock(meta, id) {
-  const def = UNLOCKS[id];
+  const def = Object.hasOwn(UNLOCKS, id) ? UNLOCKS[id] : null;
   if (!def) return { ok: false, reason: 'unknown' };
   if (meta.unlocked[id]) return { ok: false, reason: 'owned' };
   if (def.requires && !meta.unlocked[def.requires]) return { ok: false, reason: 'locked' };

@@ -68,4 +68,6 @@ export const EVENTS = Object.freeze({
   PLAYER_REVIVED: 'player:revived',
   /** payload: { victory, souls, floor, kills, bossKills } — 런이 끝나 메타 정산을 마침 */
   RUN_ENDED: 'run:ended',
+  /** payload: { mode: 'exact'|'rebuilt', floor } — 세이브에서 런을 이어함. 'rebuilt' 는 층을 다시 만든 경우(render·ui 는 화면을 새로 차려야 한다) */
+  GAME_RESTORED: 'game:restored',
 });

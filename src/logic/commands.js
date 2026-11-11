@@ -92,7 +92,7 @@ export function compareItem(game, bagIndex) {
 export function useConsumable(game, id) {
   const player = activePlayer(game);
   if (!player) return fail('not-playing');
-  const def = CONSUMABLES[id];
+  const def = Object.hasOwn(CONSUMABLES, id) ? CONSUMABLES[id] : null;
   if (!def) return fail('no-such-item');
   const { state, bus } = game;
   const { effect } = def;

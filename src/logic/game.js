@@ -8,16 +8,17 @@ import { resolveDashes, updateActions } from './combat/abilities.js';
 import { runAI } from './combat/ai/brain.js';
 import { processDeaths } from './combat/deaths.js';
 import { updateHazards } from './combat/hazards.js';
-import { applyFloorRelics, collectDrops, setupFloorLoot, updateUpkeep } from './combat/loot.js';
+import { applyFloorRelics, collectDrops, offerPendingChoice, setupFloorLoot, updateUpkeep } from './combat/loot.js';
 import { controlPlayer } from './combat/player.js';
 import { updateProjectiles } from './combat/projectiles.js';
 import { updateStatuses } from './combat/statuses.js';
-import { populateFloor } from './entities/actors.js';
+import { getPlayer, populateFloor } from './entities/actors.js';
 import { integrateMovement } from './entities/movement.js';
 import { refreshPlayerStats } from './entities/stats.js';
 import { resetVision, updateVision } from './entities/vision.js';
 import { createInventory } from './items/inventory.js';
 import { createMeta, normalizeMeta, settleRun, startBonuses } from './items/meta.js';
+import { extractCore } from './save/salvage.js';
 import { TOTAL_FLOORS } from './world/floors.js';
 import { generateFloorFromRng } from './world/generate.js';
 
@@ -78,6 +79,72 @@ export function enterFloor(game, floor) {
   setupFloorLoot(game.state, game.bus);
   resetVision(game.state);
   game.bus.emit(EVENTS.FLOOR_ENTERED, { floor, zoneId: map.zoneId, kind: map.kind });
+}
+
+/**
+ * 건져 낸 핵심(logic/save/salvage.js 의 extractCore)으로 런을 다시 차린다: 시드·진행도·인벤토리는 그대로 두고,
+ * 그 층을 시드에서 다시 만들어 층의 처음부터 시작한다(적·상자도 처음 상태로 돌아간다).
+ */
+function rebuildGame(core, meta, bus) {
+  const game = createGame({ seed: core.seed, meta, bus });
+  const { state } = game;
+  state.tick = core.tick;
+  // 난수 스트림의 키는 시드에서 다시 만든 것을 쓰고, 수열 위치만 세이브에서 가져온다.
+  if (core.rng) {
+    for (const name of Object.keys(state.rng)) state.rng[name].s = [...core.rng[name]];
+  }
+  Object.assign(state.run, core.run);
+  state.inventory = core.inventory;
+  state.entities.nextId = core.nextId;
+  enterFloor(game, core.run.floor);
+  const player = getPlayer(state);
+  if (core.hp !== null) player.hp = Math.min(player.maxHp, core.hp);
+  offerPendingChoice(state, bus);
+  setPhase(game, PHASE.PAUSED);
+  return game;
+}
+
+/**
+ * 세이브에서 읽은 런(logic/save/codec.js 의 readRun 결과)으로 게임을 만든다.
+ * - 'exact': 저장한 순간의 상태 그대로 이어한다(페이즈도 저장한 그대로).
+ * - 'salvage': 핵심만 건진 경우. 그 층을 다시 만들고 PAUSED 로 둔다.
+ * @param {object} options
+ * @param {object} options.run readRun 의 결과
+ * @param {object} [options.meta] 메타 진행(메타 세이브에서 읽은 것)
+ * @param {EventBus} [options.bus]
+ * @returns {{ game:{ state:object, bus:EventBus }, mode:'exact'|'rebuilt' } | null} 이어할 런이 없으면 null
+ */
+export function resumeGame({ run, meta, bus = new EventBus() }) {
+  let game;
+  let mode;
+  if (run.status === 'exact') {
+    const { state } = run;
+    state.meta = meta ? normalizeMeta(meta) : createMeta();
+    game = { state, bus };
+    // 합산 능력치는 저장된 값을 믿지 않고 다시 계산한다(메타가 달라졌을 수도 있다).
+    refreshPlayerStats(state);
+    mode = 'exact';
+  } else if (run.status === 'salvage') {
+    game = rebuildGame(run.core, meta, bus);
+    mode = 'rebuilt';
+  } else {
+    return null;
+  }
+  bus.emit(EVENTS.GAME_RESTORED, { mode, floor: game.state.run.floor });
+  return { game, mode };
+}
+
+/**
+ * 실행 중이던 게임이 더는 돌릴 수 없게 됐을 때(틱이 예외를 던졌을 때) 핵심만 건져 그 층을 다시 차린다.
+ * 같은 이벤트버스를 이어 쓴다.
+ * @returns {{ state:object, bus:EventBus } | null} 건질 수 없으면 null(새 런을 시작해야 한다)
+ */
+export function rescueGame(game) {
+  const extracted = extractCore(game.state);
+  if (!extracted.ok || game.state.run.ended === true) return null;
+  const rebuilt = rebuildGame(extracted.core, game.state.meta, game.bus);
+  game.bus.emit(EVENTS.GAME_RESTORED, { mode: 'rebuilt', floor: rebuilt.state.run.floor });
+  return rebuilt;
 }
 
 /**
