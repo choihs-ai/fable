@@ -13,7 +13,9 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { SAVE } from '../data/save.js';
+import { acceptAltar, buyItem } from '../src/logic/commands.js';
 import { EventBus } from '../src/logic/core/event-bus.js';
+import { getPlayer } from '../src/logic/entities/actors.js';
 import { PHASE } from '../src/logic/core/state.js';
 import { createGame, endRun, enterFloor, resumeGame, setPhase } from '../src/logic/game.js';
 import { readRun, serializeRun } from '../src/logic/save/codec.js';
@@ -68,6 +70,22 @@ function surviveCheck(read, label, ticks = 120) {
   }
 }
 
+/** 상점에서 살 수 있는 것을 다 사고, 제단의 제안 하나를 받는다. */
+function useFacilities(game) {
+  const { state } = game;
+  const player = getPlayer(state);
+  if (state.shop) {
+    player.x = state.shop.x;
+    player.y = state.shop.y;
+    state.shop.stock.forEach((_, i) => buyItem(game, i));
+  }
+  if (state.altar) {
+    player.x = state.altar.x;
+    player.y = state.altar.y;
+    for (let i = 0; i < state.altar.offers.length && !state.altar.used; i++) acceptAltar(game, i);
+  }
+}
+
 /** 상태에 들어 있는 요소를 센다. */
 function coverageOf(state, out) {
   const add = (key, yes) => {
@@ -82,7 +100,9 @@ function coverageOf(state, out) {
   add('boss', actors.some((a) => a.kind === 'boss' && !a.dead));
   add('drops', state.drops.length > 0);
   add('shop', state.shop !== null);
+  add('sold', state.shop !== null && state.shop.stock.some((e) => e.sold && e.kind === 'equipment'));
   add('altar', state.altar !== null);
+  add('altarUsed', state.altar !== null && state.altar.used);
   add('choice', state.run.choice !== null);
   add('buffs', state.run.buffs.length > 0);
   add('bag', state.inventory.bag.length > 0);
@@ -133,6 +153,8 @@ if (run('roundtrip')) {
             play(game, rng, 3, { memo, commands: false });
           }
         } else play(game, rng, span, { memo });
+        // 두 번째 저장 전에 상점·제단을 실제 명령으로 쓴다(진행 시뮬레이션처럼 그 자리로 옮겨 가서).
+        if (span === 70 && game.state.phase === PHASE.PLAYING) useFacilities(game);
         if (game.state.phase !== PHASE.PLAYING) {
           ended++;
           break;
@@ -179,7 +201,7 @@ if (run('roundtrip')) {
   sizes.sort((x, y) => x - y);
   const names = {
     hazards: '장판', projectiles: '투사체', statuses: '상태이상', actions: '기술 준비·경직', dashes: '돌진', boss: '보스',
-    drops: '바닥 전리품', shop: '상점', altar: '제단', choice: '강화 후보', buffs: '물약 효과', bag: '가방 장비', relics: '유물', paused: '일시정지',
+    drops: '바닥 전리품', shop: '상점', sold: '팔린 장비', altar: '제단', altarUsed: '쓴 제단', choice: '강화 후보', buffs: '물약 효과', bag: '가방 장비', relics: '유물', paused: '일시정지',
   };
   console.log(`  저장한 순간 가운데 들어 있던 것: ${Object.keys(names).map((k) => `${names[k]} ${coverage[k] ?? 0}`).join(', ')}`);
   for (const k of Object.keys(names)) {
@@ -350,7 +372,11 @@ if (run('sessions')) {
           if (r.ok) {
             stats.saves++;
             if (store.persistent) lastSaved = backend.items.get(SAVE.keys.run) ?? null;
-          } else if (r.reason !== 'run-ended') stats.saveFailed[r.reason] = (stats.saveFailed[r.reason] ?? 0) + 1;
+          } else if (r.reason !== 'run-ended') {
+            stats.saveFailed[r.reason] = (stats.saveFailed[r.reason] ?? 0) + 1;
+            // 정상 플레이 중의 상태가 검증을 통과하지 못했다 = 검증기의 오탐이거나 로직의 버그다.
+            if (r.reason === 'invalid-state') report(`세션 ${s}`, `저장 거절(검증 실패): ${(r.problems ?? []).slice(0, 2).join(' / ')}`);
+          }
           if (r.reason === 'run-ended') lastSaved = null;
         },
       });

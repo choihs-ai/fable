@@ -42,6 +42,16 @@ function anyItem(d) {
   return item;
 }
 const freshId = (d) => d.entities.nextId++;
+/** 오른쪽 이웃이 벽인 바닥 칸. */
+function cellBesideWall(world) {
+  const { width: w, height: h, tiles } = world;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      if (tiles[y * w + x] === 1 && tiles[y * w + x + 1] === 0) return { x, y };
+    }
+  }
+  throw new Error('벽 옆 칸을 찾지 못함');
+}
 /** 네 이웃이 모두 벽인 벽 칸(테두리 제외). */
 function sealedCell(world) {
   const { width: w, height: h, tiles } = world;
@@ -177,6 +187,7 @@ export const CASES = [
   { id: 'actor-x-null', title: '위치가 null(NaN 이 저장된 경우)', expect: 'salvage', corrupt: edit((d) => { enemyOf(d).x = null; }) },
   { id: 'actor-outside', title: '맵 밖의 위치', expect: 'salvage', corrupt: edit((d) => { playerOf(d).x = -40; }) },
   { id: 'actor-in-wall', title: '벽 속의 위치', expect: 'salvage', corrupt: edit((d) => { playerOf(d).x = 0.5; playerOf(d).y = 0.5; }) },
+  { id: 'actor-body-wall', title: '몸이 벽과 겹침(벽 옆 칸에서 반지름이 커짐)', expect: 'salvage', corrupt: edit((d) => { const c = cellBesideWall(d.world); Object.assign(playerOf(d), { x: c.x + 0.5, y: c.y + 0.5, radius: 0.9 }); }) },
   { id: 'actor-hp-over', title: '체력이 최대 체력보다 큼', expect: 'salvage', corrupt: edit((d) => { enemyOf(d).hp = enemyOf(d).maxHp + 500; }) },
   { id: 'actor-hp-float', title: '체력이 소수', expect: 'salvage', corrupt: edit((d) => { playerOf(d).hp = 12.75; }) },
   { id: 'actor-maxhp-zero', title: '최대 체력이 0', expect: 'salvage', corrupt: edit((d) => { enemyOf(d).maxHp = 0; enemyOf(d).hp = 0; }) },

@@ -95,6 +95,18 @@ test('왕복: 플레이어 위치·체력·장비·유물·금화·강화·경�
   assert.ok(original.state.inventory.relics.length > 0 && original.state.run.level > 5, '표본에 성장 요소가 있다');
 });
 
+test('불러올 때 능력치를 다시 합산한다: 런을 저장한 뒤 메타 해금이 늘었으면 반영된다', () => {
+  // 자동 저장은 메타를 먼저 쓰고 런을 쓴다. 런 쓰기만 실패하면(용량) 메타가 런보다 새것일 수 있다.
+  const game = sampleGame({ floor: 9, ticks: 60 });
+  const read = readRun(serializeRun(game.state).text);
+  const meta = { ...structuredClone(game.state.meta), souls: 999 };
+  assert.equal(purchaseUnlock(meta, 'might_1').ok, true);
+  const before = getPlayer(game.state).power;
+  const loaded = resumeGame({ run: read, meta }).game;
+  assert.ok(getPlayer(loaded.state).power > before, `${getPlayer(loaded.state).power} > ${before}`);
+  assert.equal(loaded.state.run.sheet.power, game.state.run.sheet.power + 4);
+});
+
 test('저장 거절: 끝난 런·시작 전 상태·망가진 상태는 쓰지 않고 이유를 알린다(예외 없음)', () => {
   const notStarted = createGame({ seed: 'x' });
   assert.deepEqual(serializeRun(notStarted.state), { ok: false, reason: 'not-started' });
