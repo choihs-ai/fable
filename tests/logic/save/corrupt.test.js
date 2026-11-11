@@ -9,14 +9,17 @@ import { CASES, groupOf } from '../../../scripts/lib/save-cases.js';
 import { findBadNumber } from '../../../scripts/lib/save-sim.js';
 import { Rng, play, sampleSave } from '../../helpers/save.js';
 
+/** 캐릭터 해금이 들어 있는 메타(마법사 표본을 이어하려면 필요하다). */
+const META = { version: 2, souls: 0, upgrades: {}, characters: { mage: true } };
+
 const BASES = [
-  { name: '9층(일반, 전투 중)', ...sampleSave({ floor: 9, ticks: 300 }) },
-  { name: '15층(중간보스)', ...sampleSave({ floor: 15, ticks: 300 }) },
+  { name: '기사, 전투 중', ...sampleSave({ seed: 'corrupt-a' }) },
+  { name: '마법사, 판 후반의 전투', ...sampleSave({ seed: 'corrupt-b', minTick: 6000, character: 'mage', meta: { version: 2, souls: 0, upgrades: {}, characters: { mage: true } } }) },
 ];
 
 /** 읽은 결과로 이어해서 잠시 돌린다. 예외 없이 돌아야 하고, 돌린 뒤의 상태도 온전해야 한다. */
 function survive(read, label) {
-  const resumed = resumeGame({ run: read, meta: null });
+  const resumed = resumeGame({ run: read, meta: META });
   if (!resumed) return null;
   const { game } = resumed;
   setPhase(game, PHASE.PLAYING);
@@ -31,7 +34,7 @@ test(`손상 케이스 ${CASES.length}가지: 묶음마다 충분히 있다`, ()
   for (const c of CASES) groups[groupOf(c)] = (groups[groupOf(c)] ?? 0) + 1;
   assert.ok(CASES.length >= 20);
   assert.equal(new Set(CASES.map((c) => c.id)).size, CASES.length, 'id 가 겹친다');
-  for (const group of ['text', 'env', 'core', 'prog', 'inv', 'world', 'actor', 'floor']) assert.ok(groups[group] >= 5, `${group} 묶음이 ${groups[group] ?? 0}개`);
+  for (const group of ['text', 'env', 'core', 'prog', 'kit', 'world', 'actor', 'floor']) assert.ok(groups[group] >= 5, `${group} 묶음이 ${groups[group] ?? 0}개`);
 });
 
 for (const base of BASES) {
@@ -65,54 +68,89 @@ test('손상 세이브의 "__proto__"·"constructor" 같은 키가 객체 원형
   assert.equal(Object.prototype.polluted, undefined);
 });
 
-test('건져 내기: 틀린 항목만 버리고 나머지(장비·금화·유물·강화·경험치)는 남긴다', () => {
-  const base = BASES[0];
+test('건져 내기: 틀린 항목만 버리고 나머지(무기·축복·금화·기록)는 남긴다', () => {
+  const base = BASES[1];
   const find = (id) => CASES.find((c) => c.id === id);
-  const inv = base.data.inventory;
-
-  // 장비 하나가 깨지면 그 장비만 빠진다.
-  const item = readRun(find('inv-item-base').corrupt(base));
-  const before = inv.bag.length + Object.values(inv.equipped).filter(Boolean).length;
-  const after = item.core.inventory.bag.length + Object.values(item.core.inventory.equipped).filter(Boolean).length;
-  assert.equal(after, before - 1);
-  assert.equal(item.core.inventory.gold, inv.gold);
-  assert.deepEqual(item.core.inventory.relics, inv.relics);
-  assert.deepEqual(item.core.run.upgrades, base.data.run.upgrades);
-  assert.equal(item.core.run.xp, base.data.run.xp);
+  const run = base.data.run;
+  const kit = base.data.entities.byId[base.data.playerId].kit;
+  assert.ok(run.boons.length > 0 && run.gold > 0, '표본에 축복과 금화가 있다');
 
   // 금화가 깨지면 금화만 0 이 된다.
-  const gold = readRun(find('inv-gold-negative').corrupt(base));
-  assert.equal(gold.core.inventory.gold, 0);
-  assert.deepEqual(gold.core.inventory.bag, inv.bag);
-  assert.ok(gold.repaired.some((r) => r.startsWith('inventory')));
+  const gold = readRun(find('prog-gold-negative').corrupt(base));
+  assert.equal(gold.core.run.gold, 0);
+  assert.deepEqual(gold.core.run.boons, run.boons);
+  assert.deepEqual(gold.core.kit.weapons, kit.weapons);
+  assert.deepEqual(gold.repaired, ['run.gold']);
 
-  // 모르는 강화는 버리고 나머지 강화는 남는다.
-  const upgrade = readRun(find('prog-upgrade-unknown').corrupt(base));
-  assert.deepEqual(upgrade.core.run.upgrades, base.data.run.upgrades);
+  // 모르는 축복·겹친 축복은 버리고 나머지 축복은 남는다.
+  for (const id of ['prog-boon-unknown', 'prog-boon-proto', 'prog-boon-duplicate']) {
+    const read = readRun(find(id).corrupt(base));
+    assert.deepEqual(read.core.run.boons.filter((b) => run.boons.includes(b)), run.boons, id);
+    assert.equal(new Set(read.core.run.boons).size, read.core.run.boons.length, id);
+    assert.equal(read.core.run.gold, run.gold, id);
+  }
+
+  // 모르는 무기는 그 칸만 비우고, 든 칸이 비면 다른 칸을 든다.
+  const weapon = readRun(find('kit-weapon-unknown').corrupt(base));
+  assert.deepEqual(weapon.core.kit.weapons, [null, kit.weapons[1]]);
+  assert.equal(weapon.core.kit.slot, 1);
+  // 무기가 하나도 남지 않으면 캐릭터의 시작 무기로 돌아간다.
+  const none = readRun(find('kit-weapons-empty').corrupt(base));
+  assert.equal(none.core.kit, null);
+  const rebuilt = resumeGame({ run: none, meta: META }).game;
+  assert.deepEqual(getPlayer(rebuilt.state).kit.weapons, ['staff', 'dagger']);
+
+  // 모르는 캐릭터는 기본 캐릭터가 된다.
+  const character = readRun(find('prog-character-unknown').corrupt(base));
+  assert.equal(character.core.run.character, 'knight');
 
   // 체크섬이 틀린 경우: 본문의 값은 믿지 않고 검사해서 쓴다(검사를 통과한 값만 남는다).
   const digit = readRun(find('text-digit').corrupt(base));
   assert.equal(digit.checksumOk, false);
-  assert.equal(digit.core.run.level, base.data.run.level);
+  assert.deepEqual(digit.core.run.boons, run.boons);
 
-  // 행동체가 깨졌으면 그 층을 처음부터 다시 만든다. 플레이어 체력은 저장된 값을 이어 쓴다.
+  // 행동체가 깨졌으면 그 층을 처음부터 다시 만든다. 플레이어의 체력·무기·에너지·축복·금화는 저장된 값을 이어 쓴다.
   const actor = readRun(find('actor-type').corrupt(base));
-  const game = resumeGame({ run: actor, meta: null }).game;
+  const game = resumeGame({ run: actor, meta: META }).game;
+  const player = getPlayer(game.state);
+  const saved = base.data.entities.byId[base.data.playerId];
   assert.equal(game.state.phase, PHASE.PAUSED, '다시 만든 층은 일시정지로 시작한다');
-  assert.equal(getPlayer(game.state).hp, Math.min(getPlayer(game.state).maxHp, base.data.entities.byId[base.data.playerId].hp));
-  assert.equal(game.state.world.floor, base.data.run.floor);
+  assert.equal(player.hp, Math.min(player.maxHp, saved.hp));
+  assert.deepEqual(player.kit.weapons, saved.kit.weapons);
+  assert.equal(player.kit.slot, saved.kit.slot);
+  assert.equal(player.kit.energy, Math.min(player.kit.maxEnergy, saved.kit.energy));
+  assert.deepEqual(game.state.run.boons, run.boons);
+  assert.equal(game.state.run.gold, run.gold);
+  assert.equal(game.state.run.character, 'mage');
+  assert.equal(game.state.run.roomsCleared, run.roomsCleared);
+  // 방의 진행은 처음으로 돌아간다: 플레이어는 시작 방에 있고 전투 중인 방이 없다.
+  assert.equal(game.state.encounter, null);
+  assert.ok(game.state.world.rooms.every((r) => r.state !== 'active'));
+  assert.deepEqual([player.x, player.y], [game.state.world.start.x + 0.5, game.state.world.start.y + 0.5]);
+  assert.deepEqual(validateRunState(game.state), []);
 });
 
-test('건져 내기: 제시된 채로 저장된 강화 후보는 다시 제시된다', () => {
+test('건져 내기: 해금이 사라진 캐릭터의 런은 기본 캐릭터로 이어한다', () => {
+  const base = BASES[1];
+  const read = readRun(CASES.find((c) => c.id === 'actor-type').corrupt(base));
+  const game = resumeGame({ run: read, meta: null }).game;
+  assert.equal(game.state.run.character, 'knight');
+  assert.equal(getPlayer(game.state).kit.character, 'knight');
+  assert.deepEqual(validateRunState(game.state), []);
+});
+
+test('건져 내기: 제시된 채로 저장된 축복 3택1 은 다시 제시된다', () => {
   const base = BASES[0];
   const data = structuredClone(base.data);
-  data.run.choice = { options: [{ kind: 'upgrade', id: 'sharpness' }] };
+  data.run.choice = { kind: 'boon', options: ['chain', 'pierce', 'split'], rerolls: 1 };
   data.world.zoneId = 'moon'; // 층을 다시 만들게 한다.
   const read = readRun(JSON.stringify({ ...JSON.parse(base.text), data, checksum: 'x' }));
   assert.equal(read.status, 'salvage');
+  assert.equal(read.core.pendingChoice, true);
   const game = resumeGame({ run: read, meta: null }).game;
   assert.notEqual(game.state.run.choice, null);
-  assert.equal(game.state.run.pendingChoices, base.data.run.pendingChoices);
+  assert.equal(game.state.run.choice.options.length, 3);
+  assert.equal(game.state.run.choice.rerolls, 0);
 });
 
 test('건져 낸 런의 난수 수열은 저장된 위치에서 이어진다(키는 시드에서 다시 만든다)', () => {
@@ -126,4 +164,5 @@ test('건져 낸 런의 난수 수열은 저장된 위치에서 이어진다(키
   const again = readRun(JSON.stringify({ ...JSON.parse(base.text), data, checksum: 'x' }));
   const game = resumeGame({ run: again, meta: null }).game;
   assert.deepEqual(game.state.rng.items.key, base.data.rng.items.key);
+  assert.deepEqual(game.state.rng.combat.s, base.data.rng.combat.s);
 });

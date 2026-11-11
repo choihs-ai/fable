@@ -10,7 +10,7 @@ import { runAI } from './combat/ai/brain.js';
 import { processDeaths } from './combat/deaths.js';
 import { updateEncounter } from './combat/encounter.js';
 import { updateHazards } from './combat/hazards.js';
-import { collectDrops } from './combat/loot.js';
+import { collectDrops, offerBoons } from './combat/loot.js';
 import { controlPlayer } from './combat/player.js';
 import { updateProjectiles } from './combat/projectiles.js';
 import { updateStatuses } from './combat/statuses.js';
@@ -117,6 +117,7 @@ function rebuildGame(core, meta, bus) {
     player.kit.energy = Math.min(player.kit.maxEnergy, core.kit.energy);
   }
   if (core.hp !== null) player.hp = Math.max(1, Math.min(player.maxHp, core.hp));
+  if (core.pendingChoice) offerBoons(state, bus);
   setPhase(game, PHASE.PAUSED);
   return game;
 }

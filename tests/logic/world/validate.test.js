@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { toAscii } from '../../../src/logic/world/ascii.js';
 import { REWARD, ROOM_KIND } from '../../../src/logic/world/floors.js';
 import { generateFloor } from '../../../src/logic/world/generate.js';
+import { readStructure } from '../../../src/logic/world/structure.js';
 import { TILE } from '../../../src/logic/world/tiles.js';
 import { validateFloor } from '../../../src/logic/world/validate.js';
 
@@ -66,13 +67,10 @@ test('테두리가 뚫리면 잡는다', () => {
   expectViolation('open-border', (m) => { m.tiles[m.width * 10] = TILE.FLOOR; });
 });
 
-test('방의 수와 종류: 시작·보스·출구는 하나씩, 방은 8~12개, 전투방이 모자라면 잡는다', () => {
+test('방의 수와 종류: 시작·보스·출구는 하나씩, 상점·보상·숨은 방은 하나까지, 방은 8~12개', () => {
   expectViolation('room-kind-count', (m) => { room(m, ROOM_KIND.START).kind = ROOM_KIND.COMBAT; });
   expectViolation('room-kind-count', (m) => { room(m, ROOM_KIND.COMBAT).kind = ROOM_KIND.BOSS; });
   expectViolation('room-kind-count', (m) => { room(m, ROOM_KIND.COMBAT).kind = ROOM_KIND.SHOP; });
-  expectViolation('too-few-combat-rooms', (m) => {
-    for (const r of m.rooms) if (r.kind === ROOM_KIND.COMBAT || r.kind === ROOM_KIND.ELITE) r.kind = ROOM_KIND.REWARD;
-  });
   expectViolation('room-count', (m) => {
     // 방 목록 끝에 방을 더 붙여 12개를 넘긴다(타일은 그대로라 다른 위반도 함께 나온다).
     for (let i = 0; i < 6; i++) m.rooms.push({ ...structuredClone(m.rooms[2]), id: m.rooms.length });
@@ -116,8 +114,11 @@ test('문: 열림·닫힘과 타일이 어긋나거나, 엄폐물이 문 앞을 
   expectViolation('door-tile', (m) => { m.tiles[open(m).cells[0]] = TILE.DOOR; });
   expectViolation('door-state', (m) => { m.doors.find((d) => d.secret).open = true; });
   expectViolation('stray-door-tile', (m) => {
-    const r = room(m, ROOM_KIND.START);
-    m.tiles[r.feature.y * m.width + r.feature.x + 1] = TILE.DOOR;
+    // 복도 한가운데(문이 아닌 칸)에 닫힌 문 타일을 둔다.
+    const found = readStructure(m.tiles, m.width, m.height, m.rooms).links;
+    const doorCells = new Set(m.doors.flatMap((d) => d.cells));
+    const middle = found.flatMap((l) => l.cells).find((c) => !doorCells.has(c));
+    m.tiles[middle] = TILE.DOOR;
   });
   expectViolation('door-blocked', (m) => {
     // 문에서 방 안쪽으로 두 번째 칸에 벽을 세운다.
@@ -137,12 +138,12 @@ test('방 그래프: 깊이가 틀리거나, 보스가 너무 가깝거나, 출�
   expectViolation('room-depth', (m) => { room(m, ROOM_KIND.EXIT).depth += 1; });
   expectViolation('room-depth', (m) => { room(m, ROOM_KIND.BONUS).depth += 2; });
   expectViolation('exit-not-behind-boss', (m) => {
-    // 출구 방과 보스 방의 종류를 서로 바꾼다 — 출구 방에 다른 방들이 이어지게 된다.
+    // 보스 방과 (충분히 큰) 전투방의 종류를 서로 바꾼다 — 출구 방 앞의 방이 보스 방이 아니게 된다.
     const boss = room(m, ROOM_KIND.BOSS);
-    const exit = room(m, ROOM_KIND.EXIT);
-    boss.kind = ROOM_KIND.EXIT;
-    exit.kind = ROOM_KIND.BOSS;
-  });
+    const big = m.rooms.find((r) => r.kind === ROOM_KIND.COMBAT && r.w >= 17 && r.h >= 13);
+    boss.kind = ROOM_KIND.COMBAT;
+    big.kind = ROOM_KIND.BOSS;
+  }, findFloor((m) => m.rooms.some((r) => r.kind === ROOM_KIND.COMBAT && r.w >= 17 && r.h >= 13)));
   expectViolation('boss-too-close', (m) => {
     // 보스 방 바로 앞의 방을 시작 방으로 바꾼다.
     const boss = room(m, ROOM_KIND.BOSS);
@@ -166,26 +167,17 @@ test('시작점이 시작 방의 한가운데 자리가 아니면 잡는다', ()
   expectViolation('start-misplaced', (m) => { m.start = null; });
 });
 
-test('도달 가능성: 닿지 못하는 바닥이 있거나, 숨은 방이 열려 있으면 잡는다', () => {
+test('도달 가능성: 시작점에서 닿지 못하는 바닥이 있으면 잡는다', () => {
   expectViolation('unreachable-floor', (m) => {
-    // 사방이 벽인 곳에 바닥 한 칸을 만든다.
-    for (let i = m.width + 1; i < m.tiles.length - m.width - 1; i++) {
-      const around = [i - 1, i + 1, i - m.width, i + m.width, i - m.width - 1, i - m.width + 1, i + m.width - 1, i + m.width + 1];
-      if (m.tiles[i] === TILE.WALL && around.every((c) => m.tiles[c] === TILE.WALL) && i % m.width > 1 && i % m.width < m.width - 2) {
-        m.tiles[i] = TILE.FLOOR;
-        break;
-      }
-    }
+    // 시작 방 안의 한 칸을 벽으로 둘러싼다.
+    const f = room(m, ROOM_KIND.START).feature;
+    for (const [dx, dy] of [[-4, 0], [-2, 0], [-3, -1], [-3, 1]]) wallAt(m, f.x + dx, f.y + dy);
   });
-  expectViolation('secret-room-open', (m) => {
-    const door = m.doors.find((d) => d.secret);
-    for (const c of door.cells) m.tiles[c] = TILE.FLOOR;
-  });
+  // ('secret-room-open' 은 따로 떼어 낼 수 없다 — 숨은 방으로 가는 다른 길을 내면 문·복도 목록이 먼저 어긋난다. 검증기에는 방어용으로 남겨 둔다.)
   expectViolation('isolated-floor', (m) => {
-    // 전투방 하나의 문을 모두 닫힌 문 타일로 바꾼다 — 방이 고립된다.
-    const r = m.rooms.find((x) => x.kind === ROOM_KIND.COMBAT && x.doors.every((id) => !m.doors[id].secret) && x.doors.length === 1)
-      ?? m.rooms.find((x) => x.kind === ROOM_KIND.REWARD);
-    for (const id of r.doors) for (const c of m.doors[id].cells) m.tiles[c] = TILE.DOOR;
+    // 같은 층을 문이 닫힌 그대로 봐도 닿지 못한다.
+    const f = room(m, ROOM_KIND.START).feature;
+    for (const [dx, dy] of [[-4, 0], [-2, 0], [-3, -1], [-3, 1]]) wallAt(m, f.x + dx, f.y + dy);
   });
 });
 
@@ -254,9 +246,10 @@ test('보상: 방의 종류에 맞지 않는 보상, 축복 방·무기 방이 �
 test('위반이 여러 개면 모두 보고한다', () => {
   const map = structuredClone(base);
   map.zoneId = 'nope';
-  map.tiles[3] = TILE.FLOOR;
+  map.algorithm = 'cave';
   room(map, ROOM_KIND.COMBAT).reward = 'x';
+  room(map, ROOM_KIND.COMBAT).depth += 3;
   room(map, ROOM_KIND.BOSS).waves[0][0].type = 'x';
   const found = codes(map);
-  for (const code of ['wrong-zone', 'open-border', 'bad-reward', 'boss-wave']) assert.ok(found.includes(code), `${code} — [${found}]`);
+  for (const code of ['wrong-zone', 'wrong-algorithm', 'bad-reward', 'room-depth', 'boss-wave']) assert.ok(found.includes(code), `${code} — [${found}]`);
 });

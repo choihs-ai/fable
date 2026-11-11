@@ -1,12 +1,14 @@
 // 세이브 검증용 도구: 실제 로직으로 "플레이 중인 상태"를 만들어 내는 자동 조작, 가짜 저장소, 무작위 손상기.
 // tests/logic/save, tests/save 와 scripts/verify-save.mjs 가 함께 쓴다.
 
+import { buyShopItem, chooseBoon, interact, rerollBoons, rerollShop, swapWeapons } from '../../src/logic/commands.js';
 import { setInput } from '../../src/logic/combat/player.js';
 import { EventBus } from '../../src/logic/core/event-bus.js';
 import { Rng } from '../../src/logic/core/prng.js';
 import { PHASE } from '../../src/logic/core/state.js';
-import { allActors, getPlayer } from '../../src/logic/entities/actors.js';
-import { setPhase, tick } from '../../src/logic/game.js';
+import { getPlayer } from '../../src/logic/entities/actors.js';
+import { createGame, enterFloor, setPhase, tick } from '../../src/logic/game.js';
+import { botStep, createBot } from './bot.js';
 
 export const DT = 1 / 60;
 
@@ -15,73 +17,44 @@ export function cloneGame(game) {
   return { state: structuredClone(game.state), bus: new EventBus() };
 }
 
-/**
- * 이번 틱의 입력을 정한다: 가까운 적에게 다가가 때리고, 가끔 기술·회피를 쓰고, 적이 없으면 돌아다닌다.
- * 잘 싸우는 것이 목적이 아니라 상태에 투사체·장판·상태이상·전리품이 고루 생기게 하는 것이 목적이다.
- */
-export function driveInput(game, rng, t, memo) {
-  const { state } = game;
-  const player = getPlayer(state);
-  if (!player) return;
-  if (t % 40 === 0 || memo.dirX === undefined) {
-    // 아날로그 입력(크기가 1 보다 작은 값, 음수 0 포함)도 섞는다.
-    const k = rng.int(0, 7);
-    const scale = rng.chance(0.3) ? rng.float() : 1;
-    memo.dirX = [1, 1, 0, -1, -1, -1, 0, 1][k] * scale;
-    memo.dirY = [0, 1, 1, 1, 0, -1, -1, -1][k] * scale;
-  }
-  let moveX = memo.dirX;
-  let moveY = memo.dirY;
-  let nearest = null;
-  let best = 81;
-  for (const actor of allActors(state)) {
-    if (actor.faction !== 'enemy' || actor.dead) continue;
-    const d = (actor.x - player.x) * (actor.x - player.x) + (actor.y - player.y) * (actor.y - player.y);
-    if (d < best) {
-      best = d;
-      nearest = actor;
-    }
-  }
-  if (nearest) {
-    moveX = Math.sign(nearest.x - player.x);
-    moveY = Math.sign(nearest.y - player.y);
-  }
-  setInput(state, {
-    moveX,
-    moveY,
-    aimX: rng.chance(0.2) ? rng.float() - 0.5 : 0,
-    aimY: rng.chance(0.2) ? rng.float() - 0.5 : 0,
-    attack: !rng.chance(0.1),
-    skill: rng.chance(0.04) ? rng.int(0, 2) : -1,
-    dodge: rng.chance(0.01),
-  });
-}
-
 /** 명령 하나를 무작위로 실행한다. 거절돼도 된다(예외만 없으면 된다). */
 export function randomCommand(game, rng) {
-  const { state } = game;
-  const pick = rng.int(0, 7);
-  if (pick === 0) return equipItem(game, rng.int(0, Math.max(0, state.inventory.bag.length - 1)));
-  if (pick === 1) return unequipItem(game, rng.pick(SLOTS));
-  if (pick === 2) return useConsumable(game, rng.pick(Object.keys(CONSUMABLES)));
-  if (pick === 3) return buyItem(game, rng.int(0, 7));
-  if (pick === 4) return sellItem(game, rng.int(0, Math.max(0, state.inventory.bag.length - 1)));
-  if (pick === 5) return acceptAltar(game, rng.int(0, 2));
-  if (pick === 6) return chooseUpgrade(game, rng.int(0, 2));
-  return discardItem(game, rng.int(0, Math.max(0, state.inventory.bag.length - 1)));
+  const pick = rng.int(0, 5);
+  if (pick === 0) return swapWeapons(game);
+  if (pick === 1) return interact(game);
+  if (pick === 2) return rerollBoons(game);
+  if (pick === 3) return buyShopItem(game, rng.int(0, 5));
+  if (pick === 4) return rerollShop(game);
+  return game.state.run.choice ? chooseBoon(game, rng.int(0, 2)) : swapWeapons(game);
 }
 
 /**
  * 자동 조작으로 ticks 틱을 돌린다. 런이 끝나면 거기서 멈춘다.
- * @param {{ commands?:boolean, memo?:object, onTick?:(t:number)=>void }} [options]
+ * 봇(scripts/lib/bot.js)이 방을 골라 싸우고, 사이사이 무작위 조작(엉뚱한 방향, 아날로그 입력, 수동 조준, 대시·스킬 난타)과
+ * 무작위 명령을 섞는다 — 잘 싸우는 것이 목적이 아니라 상태가 여러 모양을 거치게 하는 것이 목적이다.
+ * @param {{ commands?:boolean, wild?:boolean, bot?:object, onTick?:(t:number)=>void }} [options]
+ *   wild 가 false 면 봇만 조작한다(끝까지 살아남게 할 때).
  * @returns {number} 실제로 돌린 틱 수
  */
 export function play(game, rng, ticks, options = {}) {
-  const memo = options.memo ?? {};
+  const bot = options.bot ?? createBot();
+  const wild = options.wild !== false;
   for (let t = 0; t < ticks; t++) {
     if (game.state.phase !== PHASE.PLAYING) return t;
-    driveInput(game, rng, t, memo);
-    if (options.commands !== false && rng.chance(0.05)) randomCommand(game, rng);
+    botStep(game, bot);
+    if (wild && rng.chance(0.15)) {
+      // 아날로그 입력(크기가 1 보다 작은 값, 음수 0 포함)과 수동 조준도 섞는다.
+      setInput(game.state, {
+        moveX: (rng.float() * 2 - 1) * (rng.chance(0.3) ? rng.float() : 1),
+        moveY: -0 + (rng.float() * 2 - 1),
+        aimX: rng.chance(0.5) ? rng.float() - 0.5 : 0,
+        aimY: rng.chance(0.5) ? rng.float() - 0.5 : 0,
+        attack: !rng.chance(0.2),
+        dash: rng.chance(0.2),
+        skill: rng.chance(0.2),
+      });
+    }
+    if (wild && options.commands !== false && rng.chance(0.03)) randomCommand(game, rng);
     tick(game, DT);
     if (options.onTick) options.onTick(t);
   }
@@ -89,24 +62,41 @@ export function play(game, rng, ticks, options = {}) {
 }
 
 /**
- * 진행 시뮬레이션(전투 없이 30층을 실제 로직으로 진행)의 각 층에서 게임을 떼어 낸다.
- * 장비·강화·유물·금화가 층에 맞게 쌓인 상태에서 시작하므로, 여기에 play 를 돌리면 실전에 가까운 상태가 나온다.
- * @param {{ seed:string, meta?:object, floors?:(floor:number)=>boolean }} options
- * @returns {{ game:object, floor:number, seed:string }[]}
+ * 한 판을 봇으로 돌리면서 여러 순간의 게임을 떼어 낸다(전투 한가운데, 방을 깬 직후, 축복 3택1 이 떠 있을 때, 상점 등).
+ * @param {{ seed:string, meta?:object, character?:string, every?:number, limit?:number }} options every 틱마다 하나씩, limit 개까지
+ * @returns {{ game:object, at:number, seed:string }[]} 각 게임은 PLAYING 상태의 사본이다
  */
-export function floorGames({ seed, meta, floors = () => true }) {
+export function stageGames({ seed, meta, character, every = 600, limit = 12 }) {
+  const game = createGame({ seed, meta, character });
+  enterFloor(game, 1);
+  setPhase(game, PHASE.PLAYING);
+  const bot = createBot();
   const out = [];
-  simulateRun({
-    seed,
-    meta,
-    onFloor(game, floor) {
-      if (!floors(floor)) return;
-      const copy = cloneGame(game);
-      setPhase(copy, PHASE.PLAYING);
-      out.push({ game: copy, floor, seed });
-    },
-  });
+  for (let t = 1; out.length < limit && game.state.phase === PHASE.PLAYING && t < 40000; t++) {
+    // 축복 3택1 이 떠 있는 순간도 표본에 넣기 위해, 떼어 내는 틱에는 봇이 고르기 전에 뜬다.
+    if (t % every === 0) out.push({ game: cloneGame(game), at: game.state.tick, seed });
+    botStep(game, bot);
+    tick(game, DT);
+  }
   return out;
+}
+
+/** 방 전투가 한창인(적이 둘 이상 살아 있는) 게임 하나. */
+export function combatGame({ seed, meta, character, minTick = 900 }) {
+  const game = createGame({ seed, meta, character });
+  enterFloor(game, 1);
+  setPhase(game, PHASE.PLAYING);
+  const bot = createBot();
+  for (let t = 0; t < 30000 && game.state.phase === PHASE.PLAYING; t++) {
+    botStep(game, bot);
+    tick(game, DT);
+    const { state } = game;
+    if (state.tick < minTick || !state.encounter) continue;
+    let enemies = 0;
+    for (const actor of Object.values(state.entities.byId)) if (actor.faction === 'enemy' && !actor.dead) enemies++;
+    if (enemies >= 2 && getPlayer(state).hp > 20) return game;
+  }
+  throw new Error(`전투 중인 표본을 만들지 못함: ${seed}`);
 }
 
 /**

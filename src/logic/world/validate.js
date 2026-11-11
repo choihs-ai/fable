@@ -66,6 +66,8 @@ export function validateFloor(map) {
   if (openBorder > 0) fail('open-border', `${openBorder}칸`);
 
   // ── 방: 형태, 종류, 크기 ──
+  // 여기서 문제가 나오면 뒤의 검사(구조·그래프)가 뜻이 없으므로 그 자리에서 끝낸다. 앞에서 적은 위반은 그대로 남긴다.
+  const beforeRooms = errors.length;
   const byKind = {};
   for (let r = 0; r < map.rooms.length; r++) {
     const room = map.rooms[r];
@@ -97,7 +99,7 @@ export function validateFloor(map) {
   for (const kind of [ROOM_KIND.SHOP, ROOM_KIND.REWARD, ROOM_KIND.BONUS]) {
     if (count(kind) > 1) fail('room-kind-count', `${kind} ${count(kind)}개`);
   }
-  if (errors.length > 0) return errors;
+  if (errors.length > beforeRooms) return errors;
   const counted = map.rooms.length - count(ROOM_KIND.EXIT) - count(ROOM_KIND.BONUS);
   if (counted < WORLD.roomCount[0] || counted > WORLD.roomCount[1]) fail('room-count', `${counted}`);
   if (count(ROOM_KIND.COMBAT) + count(ROOM_KIND.ELITE) < rules.minCombatRooms) fail('too-few-combat-rooms');
@@ -107,6 +109,7 @@ export function validateFloor(map) {
   const bonusRoom = byKind[ROOM_KIND.BONUS] ? byKind[ROOM_KIND.BONUS][0] : null;
 
   // ── 구조: 타일에서 다시 읽은 방·복도·문이 맵에 적힌 것과 같아야 한다 ──
+  const beforeStructure = errors.length;
   const structure = readStructure(tiles, w, h, map.rooms);
   for (const e of structure.errors) fail('structure', e);
   if (structure.links.length !== map.links.length) return [...errors, `link-count: ${map.links.length} (타일: ${structure.links.length})`];
@@ -161,7 +164,7 @@ export function validateFloor(map) {
   for (const room of map.rooms) {
     for (const id of room.doors) if (!map.doors[id] || map.doors[id].room !== room.id) fail('room-door-mismatch', `방 ${room.id} 문 ${id}`);
   }
-  if (errors.length > 0) return errors;
+  if (errors.length > beforeStructure) return errors;
 
   // ── 방 그래프: 깊이, 시작 방과 보스 방 사이, 출구 방·숨은 방이 달린 자리 ──
   const side = new Set([exitRoom.id]);

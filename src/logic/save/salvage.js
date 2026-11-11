@@ -22,8 +22,8 @@ function good(check, value) {
  * @param {*} data 세이브 본문 또는 실행 중이던 상태
  * @returns {{ ok:true, core:object, repaired:string[] } | { ok:false, reason:string }}
  *   core: { seed, tick, rng, run:{ floor, character, gold, boons, boonState, freeRerolls, kills, eliteKills, bossKills, roomsCleared },
- *           kit:{ weapons, slot, energy }|null, hp, nextId } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
- *           kit 은 플레이어의 무기와 에너지 또는 null, hp 는 플레이어 체력 또는 null
+ *           kit:{ weapons, slot, energy }|null, hp, nextId, pendingChoice } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
+ *           kit 은 플레이어의 무기와 에너지 또는 null, hp 는 플레이어 체력 또는 null, pendingChoice 는 축복 3택1 이 떠 있었는가
  *   repaired: 기본값으로 되돌린 항목
  */
 export function extractCore(data) {
@@ -50,6 +50,8 @@ export function extractCore(data) {
       else repaired.push('run.boons[]');
     }
   } else repaired.push('run.boons');
+  // 제시된 채로 저장된 축복 3택1 은 층을 다시 만든 뒤 다시 제시한다(주운 축복이 사라지지 않도록).
+  const pendingChoice = isObject(rawRun.choice);
   // 축복의 진행 상태에서는 "되살아났는가"만 가져온다(나머지는 틱에 묶인 값이라 층을 다시 만들면 의미가 없다).
   if (isObject(rawRun.boonState) && rawRun.boonState.revived === true) run.boonState.revived = true;
 
@@ -82,5 +84,5 @@ export function extractCore(data) {
   if (kit === null) repaired.push('player.kit');
 
   const nextId = isObject(data.entities) && isInt(data.entities.nextId, 1, L.id) ? data.entities.nextId : 1;
-  return { ok: true, core: { seed: data.seed, tick, rng, run, kit, hp, nextId }, repaired };
+  return { ok: true, core: { seed: data.seed, tick, rng, run, kit, hp, nextId, pendingChoice }, repaired };
 }
