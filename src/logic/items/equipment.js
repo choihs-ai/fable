@@ -109,6 +109,14 @@ export function rollEquipmentDrop(rng, { floor, meta, minRarity = null, rarityFl
 }
 
 /** 구매가(상점의 층 할증 전). */
+/**
+ * 장비의 사본. 상태 안에서 한 장비 객체를 두 곳이 함께 가리키면 안 된다 — 저장했다 불러오면 둘로 갈라져,
+ * 저장한 게임과 저장하지 않은 게임이 달라질 수 있다.
+ */
+export function copyItem(item) {
+  return { ...item, implicit: item.implicit.map((o) => ({ ...o })), affixes: item.affixes.map((o) => ({ ...o })) };
+}
+
 export function buyPrice(item) {
   return Math.max(1, Math.round(RARITY[item.rarity].price * (1 + PRICES.perLevel * (item.ilvl - 1)) * (item.setId ? 1.25 : 1)));
 }

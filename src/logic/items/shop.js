@@ -4,7 +4,7 @@ import { CONSUMABLES } from '../../../data/consumables.js';
 import { RELICS } from '../../../data/relics.js';
 import { SHOP } from '../../../data/shop.js';
 import { consumablePool, rollRelic } from './drops.js';
-import { buyPrice, rollEquipmentDrop, sellPrice } from './equipment.js';
+import { buyPrice, copyItem, rollEquipmentDrop, sellPrice } from './equipment.js';
 import { addConsumable, addRelic, addToBag, bagHasRoom, removeFromBag, spendGold } from './inventory.js';
 
 /** 층 할증을 적용한 가격. */
@@ -54,7 +54,8 @@ export function buyFromShop(shop, inv, index) {
   // 받을 자리가 있는지 먼저 확인하고, 그다음에 돈을 낸다(돈만 나가는 일이 없도록).
   if (entry.kind === 'equipment') {
     if (!bagHasRoom(inv)) return { ok: false, reason: 'bag-full' };
-    addToBag(inv, entry.item);
+    // 가방에는 사본을 넣는다. 품목 목록의 장비는 "팔린 물건"의 기록으로 남는다(같은 번호를 쓰지만 같은 객체는 아니다).
+    addToBag(inv, copyItem(entry.item));
   } else if (entry.kind === 'consumable') {
     if (addConsumable(inv, entry.id, 1) !== 1) return { ok: false, reason: 'stack-full' };
   } else if (!addRelic(inv, entry.id)) {

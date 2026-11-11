@@ -4,23 +4,31 @@ import { PHASE } from '../../../src/logic/core/state.js';
 import { createGame, enterFloor, setPhase } from '../../../src/logic/game.js';
 import { validateRunCore, validateRunState } from '../../../src/logic/save/validate.js';
 import { createReport, int, list, record, shape } from '../../../src/logic/save/schema.js';
-import { floorGames, mutateRandom } from '../../../scripts/lib/save-sim.js';
+import { findSharedObject, floorGames, mutateRandom } from '../../../scripts/lib/save-sim.js';
 import { Rng, play, sampleGame } from '../../helpers/save.js';
 
-test('검증기: 실제로 플레이 중인 상태는 매 순간 통과한다(오탐 없음)', () => {
+test('검증기: 실제로 교전 중인 상태는 매 순간 통과하고, 상태 안에 공유·동결 객체가 없다', () => {
+  // 오탐은 곧 "저장 실패"다. 층의 적을 모두 깨워 장판·투사체·상태이상이 생기는 교전을 만든다.
+  // (이 검사로 찾은 것: 맵 밖에 깔린 보스 장판, 상점에서 산 장비의 번호 겹침, 설정 객체를 그대로 가리키는 status)
   let checked = 0;
+  let hazards = 0;
   for (const { game, floor } of floorGames({ seed: 'validate-live', floors: (f) => f % 3 === 0 || f === 5 || f === 25 })) {
+    for (const actor of Object.values(game.state.entities.byId)) {
+      if (actor.ai) actor.ai.provoked = true;
+    }
     const rng = Rng.fromSeed(`validate-live:${floor}`);
     play(game, rng, 900, {
       onTick: (t) => {
         if (t % 9 !== 0 || game.state.run.ended) return;
-        const problems = validateRunState(game.state);
-        assert.deepEqual(problems, [], `${floor}층 ${t}틱`);
+        assert.deepEqual(validateRunState(game.state), [], `${floor}층 ${t}틱`);
+        assert.equal(findSharedObject(game.state), null, `${floor}층 ${t}틱`);
+        if (game.state.hazards.length > 0) hazards++;
         checked++;
       },
     });
   }
   assert.ok(checked > 800, `확인한 순간 ${checked}`);
+  assert.ok(hazards > 10, `장판이 있던 순간 ${hazards}`);
 });
 
 test('검증기: 막 시작한 런(1층 진입 직후)과 일시정지 중인 런도 통과한다', () => {

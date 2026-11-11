@@ -4,6 +4,7 @@
 //   --seeds N(왕복 시드 수, 기본 6) --fuzz N(무작위 손상 수, 기본 6000) --sessions N(세션 수, 기본 400)
 //
 // 1. 왕복: 시드 × 30층 × 여러 순간에 저장 → 읽기 → 이어하기가 상태를 완전히 보존하는지, 이어서 같은 입력을 주면 계속 같은지.
+//    저장한 순간에 무엇(장판·투사체·상태이상·보스·상점…)이 들어 있었는지 세고, 한 번도 없었던 것이 있으면 문제로 본다.
 // 2. 구버전: tests/fixtures 의 v1~v3 세이브(옛 코드가 실제로 만든 것)를 읽어 이어하고 돌린다.
 // 3. 손상 케이스: scripts/lib/save-cases.js 의 목록 × 여러 층의 세이브. 기대한 결과로 읽히는지, 이어한 게임이 죽지 않는지.
 // 4. 무작위 손상: 본문을 무작위로 망가뜨려(체크섬을 다시 맞춘 것과 글 자체를 망가뜨린 것) 읽고, 이어하고, 돌린다.
@@ -24,7 +25,7 @@ import { createSaveStore } from '../src/save/save-store.js';
 import { openStorage } from '../src/save/storage.js';
 import { CASES, groupOf } from './lib/save-cases.js';
 import {
-  Rng, cloneGame, corruptText, createFakeStorage, findBadNumber, floorGames, mutateRandom, play,
+  Rng, cloneGame, corruptText, createFakeStorage, findBadNumber, findSharedObject, floorGames, mutateRandom, play,
 } from './lib/save-sim.js';
 import { readFileSync } from 'node:fs';
 
@@ -67,6 +68,28 @@ function surviveCheck(read, label, ticks = 120) {
   }
 }
 
+/** 상태에 들어 있는 요소를 센다. */
+function coverageOf(state, out) {
+  const add = (key, yes) => {
+    if (yes) out[key] = (out[key] ?? 0) + 1;
+  };
+  const actors = Object.values(state.entities.byId);
+  add('hazards', state.hazards.length > 0);
+  add('projectiles', state.projectiles.length > 0);
+  add('statuses', actors.some((a) => Object.keys(a.statuses).length > 0));
+  add('actions', actors.some((a) => a.action !== null));
+  add('dashes', actors.some((a) => a.dash !== null));
+  add('boss', actors.some((a) => a.kind === 'boss' && !a.dead));
+  add('drops', state.drops.length > 0);
+  add('shop', state.shop !== null);
+  add('altar', state.altar !== null);
+  add('choice', state.run.choice !== null);
+  add('buffs', state.run.buffs.length > 0);
+  add('bag', state.inventory.bag.length > 0);
+  add('relics', state.inventory.relics.length > 0);
+  add('paused', state.phase === PHASE.PAUSED);
+}
+
 /** 저장 → 읽기 → 이어하기. */
 function roundTrip(game) {
   const saved = serializeRun(game.state, 1);
@@ -79,10 +102,12 @@ function roundTrip(game) {
 
 // ── 1. 왕복 ──────────────────────────────────────────────────────────────────
 if (run('roundtrip')) {
-  console.log(`\n━━ 1. 저장 → 불러오기 왕복 (시드 ${SEEDS}개 × ${TOTAL_FLOORS}층 × 3순간) ━━`);
+  console.log(`\n━━ 1. 저장 → 불러오기 왕복 (시드 ${SEEDS}개 × ${TOTAL_FLOORS}층 × 4순간) ━━`);
   const t0 = performance.now();
   let trips = 0;
   let same = 0;
+  /** 저장한 순간에 무엇이 들어 있었는가(왕복이 그것을 실제로 거쳤는지 확인하려고 센다). */
+  const coverage = {};
   let continued = 0;
   let textSame = 0;
   let ended = 0;
@@ -96,13 +121,26 @@ if (run('roundtrip')) {
       const rng = Rng.fromSeed(`${seed}:${floor}`);
       const memo = {};
       // 층에 들어선 뒤 40·110·200틱째에 저장한다.
-      for (const span of [40, 70, 90]) {
-        play(game, rng, span, { memo });
+      // 층에 들어선 뒤 40·110·200틱째에 저장하고, 마지막으로 적을 모두 깨워 장판이 깔린 순간을 찾아(최대 900틱) 한 번 더 저장한다.
+      for (const span of [40, 70, 90, 'busy']) {
+        if (span === 'busy') {
+          // 층의 적을 모두 깨워(맞았을 때와 같은 표시) 교전이 일어나게 한다.
+          for (const actor of Object.values(game.state.entities.byId)) {
+            if (actor.ai && !actor.dead) actor.ai.provoked = true;
+          }
+          for (let t = 0; t < 900 && game.state.phase === PHASE.PLAYING; t += 3) {
+            if (game.state.hazards.length > 0) break;
+            play(game, rng, 3, { memo, commands: false });
+          }
+        } else play(game, rng, span, { memo });
         if (game.state.phase !== PHASE.PLAYING) {
           ended++;
           break;
         }
         if (rng.chance(0.25)) setPhase(game, PHASE.PAUSED);
+        coverageOf(game.state, coverage);
+        const shared = findSharedObject(game.state);
+        if (shared) report(`${seed} ${floor}층 ${game.state.tick}틱`, `상태 안의 공유·설정 객체: ${shared}`);
         phases[game.state.phase] = (phases[game.state.phase] ?? 0) + 1;
         const a = performance.now();
         const saved = serializeRun(game.state, 1);
@@ -139,6 +177,14 @@ if (run('roundtrip')) {
     }
   }
   sizes.sort((x, y) => x - y);
+  const names = {
+    hazards: '장판', projectiles: '투사체', statuses: '상태이상', actions: '기술 준비·경직', dashes: '돌진', boss: '보스',
+    drops: '바닥 전리품', shop: '상점', altar: '제단', choice: '강화 후보', buffs: '물약 효과', bag: '가방 장비', relics: '유물', paused: '일시정지',
+  };
+  console.log(`  저장한 순간 가운데 들어 있던 것: ${Object.keys(names).map((k) => `${names[k]} ${coverage[k] ?? 0}`).join(', ')}`);
+  for (const k of Object.keys(names)) {
+    if (!coverage[k]) report('왕복', `저장한 순간에 ${names[k]}이(가) 한 번도 없었다 — 그 부분의 왕복은 검증되지 않았다`);
+  }
   const avg = sizes.reduce((x, y) => x + y, 0) / Math.max(1, sizes.length);
   console.log(`  왕복 ${trips}회: 상태 완전 일치 ${same}회, 다시 저장한 글 일치 ${textSame}회, 이어서 150틱 일치 ${continued}회`);
   console.log(`  저장한 순간의 페이즈: ${Object.entries(phases).map(([k, v]) => `${k} ${v}`).join(', ')} / 그 전에 런이 끝난 층 ${ended}`);

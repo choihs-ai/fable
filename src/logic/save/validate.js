@@ -211,6 +211,8 @@ function checkPosition(r, x, y, p, needFloor) {
 
 // ── 행동체 ───────────────────────────────────────────────────────────────────
 
+/** 장판의 중심은 맵 둘레 이만큼까지 허용한다(보스 패턴의 오프셋은 최대 2.4칸). */
+const HAZARD_MARGIN = 8;
 /** 몸이 벽에 이만큼 파고든 것까지는 허용한다(충돌 처리의 계산 오차). */
 const BODY_SLACK = 0.02;
 
@@ -455,7 +457,11 @@ function checkFloor(r, state) {
   }
   if (passes(r, list(hazardShape, L.listLength), state.hazards, 'hazards')) {
     state.hazards.forEach((hz, i) => {
-      checkPosition(r, hz.x, hz.y, `hazards[${i}]`, false);
+      // 장판은 대상 위치에 오프셋을 더해 깔리므로 맵 밖에 놓일 수 있다(그러면 시야선이 막혀 아무도 맞지 않는다).
+      const { w, h } = r.map;
+      if (!isNum(hz.x, -HAZARD_MARGIN, w + HAZARD_MARGIN) || !isNum(hz.y, -HAZARD_MARGIN, h + HAZARD_MARGIN)) {
+        r.fail(`hazards[${i}]`, `맵에서 너무 먼 위치 (${show(hz.x)}, ${show(hz.y)})`);
+      }
       claim(hz.id, `hazards[${i}].id`);
     });
   }
@@ -479,8 +485,9 @@ function checkFloor(r, state) {
     });
   }
   if (state.shop !== null && passes(r, shopShape, state.shop, 'shop')) {
+    // 팔린 품목의 장비는 "판 물건"의 기록이라, 산 사람의 가방에 같은 번호의 사본이 있다. 팔리지 않은 것만 센다.
     state.shop.stock.forEach((entry, i) => {
-      if (entry.kind === 'equipment') claimItem(entry.item, `shop.stock[${i}].item`);
+      if (entry.kind === 'equipment' && !entry.sold) claimItem(entry.item, `shop.stock[${i}].item`);
     });
   }
   if (state.altar !== null) altarShape(r, state.altar, 'altar');

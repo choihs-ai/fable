@@ -20,7 +20,7 @@ export function spawnHazard(state, bus, owner, effect, x, y) {
     damage: effect.damage,
     /** 깔린 순간의 공격 배율. */
     power: owner.power,
-    status: effect.status ?? null,
+    status: effect.status ? { ...effect.status } : null, // 데이터의 정의 객체를 상태에 그대로 넣지 않는다(저장·불러오기 뒤에도 같도록)
     /** 다음에 터지는 틱, 다시 터지는 간격(0 이면 한 번만), 사라지는 틱. */
     nextAt: armAt,
     interval: lasts > 0 ? ticksOf(effect.interval ?? 0.5) : 0,

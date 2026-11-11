@@ -113,6 +113,23 @@ export function floorGames({ seed, meta, floors = () => true }) {
   return out;
 }
 
+/**
+ * 상태 안에서 같은 객체(배열 포함)를 두 곳이 가리키거나, data/** 의 동결된 설정 객체를 가리키면 그 경로를 돌려준다(없으면 null).
+ * JSON 으로 저장했다 불러오면 그런 객체는 갈라지거나 동결이 풀리므로, 상태에 있으면 안 된다.
+ */
+export function findSharedObject(value, path = 'state', seen = new Map()) {
+  if (value === null || typeof value !== 'object') return null;
+  if (seen.has(value)) return `${path} (= ${seen.get(value)})`;
+  // data/** 의 설정은 깊게 동결돼 있다. 동결된 객체가 상태에 있으면 설정을 그대로 가리키는 것이다.
+  if (Object.isFrozen(value)) return `${path} (동결된 설정 객체)`;
+  seen.set(value, path);
+  for (const key of Object.keys(value)) {
+    const found = findSharedObject(value[key], `${path}.${key}`, seen);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** 상태 안에 NaN·Infinity·undefined 가 있으면 그 경로를 돌려준다(없으면 null). */
 export function findBadNumber(value, path = 'state') {
   if (typeof value === 'number') return Number.isFinite(value) ? null : path;

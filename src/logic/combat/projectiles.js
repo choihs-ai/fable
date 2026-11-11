@@ -19,7 +19,7 @@ export function spawnProjectile(state, bus, owner, effect, dirX, dirY) {
     damage: effect.damage,
     /** 쏜 순간의 공격 배율. */
     power: owner.power,
-    status: effect.status ?? null,
+    status: effect.status ? { ...effect.status } : null, // 데이터의 정의 객체를 상태에 그대로 넣지 않는다(저장·불러오기 뒤에도 같도록)
     expiresAt: state.tick + ticksOf(effect.range / effect.speed),
   };
   state.projectiles.push(projectile);

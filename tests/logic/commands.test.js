@@ -662,3 +662,22 @@ test('물려받은 이름("constructor"·"toString")을 아이템·해금 이름
   assert.deepEqual(useConsumable(game, 'constructor'), { ok: false, reason: 'no-such-item' });
   assert.deepEqual(buyUnlock(game, 'hasOwnProperty'), { ok: false, reason: 'unknown' });
 });
+
+test('상점에서 산 장비는 사본이 가방에 들어간다(품목 목록과 한 객체를 함께 가리키지 않는다)', () => {
+  const game = createGame({ seed: 'shop-copy' });
+  enterFloor(game, 1);
+  setPhase(game, PHASE.PLAYING);
+  const { state } = game;
+  const player = getPlayer(state);
+  const item = rollEquipment(new Rng({ key: [1, 2, 3, 4], s: [5, 6, 7, 8] }), { ilvl: 1, rarity: 'rare', slot: 'weapon' });
+  item.uid = state.entities.nextId++;
+  state.shop = { floor: 1, stock: [{ kind: 'equipment', item, price: 1, sold: false }], x: player.x, y: player.y };
+  state.inventory.gold = 10;
+  assert.equal(buyItem(game, 0).ok, true);
+  const bought = state.inventory.bag.at(-1);
+  assert.deepEqual(bought, item);
+  assert.notEqual(bought, item);
+  assert.notEqual(bought.implicit, item.implicit);
+  assert.notEqual(bought.affixes[0], item.affixes[0]);
+  assert.equal(state.shop.stock[0].sold, true);
+});

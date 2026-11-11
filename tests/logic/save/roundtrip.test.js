@@ -158,3 +158,21 @@ test('설정: 왕복하면 그대로이고, 틀린 항목만 기본값으로 되
   assert.throws(() => withSetting(defaultSettings(), 'masterVolume', 101), RangeError);
   assert.throws(() => withSetting(defaultSettings(), 'vibration', 'yes'), RangeError);
 });
+
+test('왕복: 보스 장판이 맵 밖에 깔린 순간에도 저장된다(검증기가 거절하지 않는다)', () => {
+  // 25층 보스전에서 실제로 나온 경우: 맵 높이 37 인데 장판 중심이 y = 37.1 이었다.
+  const game = sampleGame({ floor: 25, ticks: 120 });
+  const { state } = game;
+  const owner = Object.values(state.entities.byId).find((a) => a.kind === 'boss');
+  for (const [x, y] of [[state.world.width + 1.5, 3], [-2.4, state.world.height - 2], [5, state.world.height + 0.1]]) {
+    state.hazards.push({
+      id: state.entities.nextId++, ownerId: owner.id, faction: 'enemy', x, y, radius: 1.3, damage: 12, power: owner.power,
+      status: { id: 'burn' }, nextAt: state.tick + 30, interval: 0, endAt: state.tick + 30,
+    });
+  }
+  const { game: loaded } = roundTrip(game);
+  assert.deepStrictEqual(loaded.state, state);
+  // 맵에서 터무니없이 먼 장판은 손상으로 본다.
+  state.hazards.push({ ...state.hazards[0], id: state.entities.nextId++, x: state.world.width + 40 });
+  assert.equal(serializeRun(state).reason, 'invalid-state');
+});

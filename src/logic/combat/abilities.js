@@ -142,7 +142,7 @@ export function runEffects(state, bus, actor, effects, action) {
           speed: effect.speed,
           endAt: state.tick + Math.max(1, Math.ceil((effect.distance / effect.speed) * TICK_RATE)),
           damage: effect.damage ?? 0,
-          status: effect.status ?? null,
+          status: effect.status ? { ...effect.status } : null, // 데이터의 정의 객체를 상태에 그대로 넣지 않는다(저장·불러오기 뒤에도 같도록)
           /** 이미 맞힌 대상 id(한 번의 돌진은 대상마다 한 번만 맞는다). */
           hit: [],
           stopOnWall: effect.stopOnWall === true,
