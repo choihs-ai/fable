@@ -26,10 +26,10 @@ function fakeTarget(extra = {}) {
   };
 }
 
-function setup({ floor = 9 } = {}) {
+function setup() {
   const backend = createFakeStorage();
   const store = createSaveStore({ storage: openStorage(() => backend), now: () => 1 });
-  let game = sampleGame({ floor, ticks: 60 });
+  let game = sampleGame({ seed: 'autosave', minTick: 3000 });
   const results = [];
   const autosave = createAutosave({ getGame: () => game, store, onResult: (r) => results.push(r) });
   const detach = autosave.attach(game.bus);
@@ -38,17 +38,20 @@ function setup({ floor = 9 } = {}) {
 
 const savedRun = (backend) => readRun(backend.items.get(keys.run));
 
-test('층 이동: 저장을 예약하고, 틱이 끝난 뒤 flush 에서 새 층으로 저장한다', () => {
-  const ctx = setup({ floor: 9 });
+test('층 진입: 저장을 예약하고, 틱이 끝난 뒤 flush 에서 새 층으로 저장한다', () => {
+  // 맛보기 판은 한 층이라 같은 층에 다시 들어가는 것으로 확인한다(층에 들어가면 방의 진행이 처음으로 돌아간다).
+  const ctx = setup();
   assert.equal(ctx.autosave.flush(), null, '예약된 것이 없으면 아무것도 하지 않는다');
-  enterFloor(ctx.game, 10);
+  assert.ok(ctx.game.state.encounter, '표본은 전투 중');
+  enterFloor(ctx.game, 1);
   assert.equal(ctx.autosave.pending, 'floor');
   assert.equal(ctx.backend.items.has(keys.run), false, '이벤트가 난 자리에서는 쓰지 않는다');
   const result = ctx.autosave.flush();
   assert.equal(result.trigger, 'floor');
   assert.equal(result.run.ok, true);
   assert.equal(result.meta.ok, true);
-  assert.equal(savedRun(ctx.backend).state.run.floor, 10);
+  assert.equal(savedRun(ctx.backend).state.run.floor, 1);
+  assert.equal(savedRun(ctx.backend).state.encounter, null, '새로 들어간 층의 처음 상태가 저장된다');
   assert.equal(ctx.autosave.pending, null);
 });
 
@@ -92,6 +95,7 @@ test('런 종료: 메타는 저장하고 런 세이브는 지운다(죽은 런�
   assert.equal(ctx.backend.items.has(keys.run + SAVE.backupSuffix), true);
 
   const soulsBefore = ctx.game.state.meta.souls;
+  assert.ok(ctx.game.state.run.roomsCleared > 0, '깬 방이 있어야 영혼석을 얻는다');
   endRun(ctx.game, false);
   const result = ctx.autosave.flush();
   assert.equal(result.trigger, 'run-ended');
@@ -102,7 +106,7 @@ test('런 종료: 메타는 저장하고 런 세이브는 지운다(죽은 런�
 });
 
 test('플레이어가 실제로 죽어 런이 끝나는 흐름에서도 런 세이브가 지워진다', () => {
-  const ctx = setup({ floor: 25 });
+  const ctx = setup();
   ctx.autosave.saveNow('manual');
   const player = getPlayer(ctx.game.state);
   player.hp = 1;
@@ -142,25 +146,28 @@ test('예약은 처음 것이 남되, 런 종료는 언제나 우선한다', () 
   assert.equal(ctx.autosave.pending, 'run-ended');
   ctx.detach();
   ctx.autosave.flush();
-  enterFloor(ctx.game, 10);
+  enterFloor(ctx.game, 1);
   assert.equal(ctx.autosave.pending, null, '연결을 끊은 뒤에는 예약하지 않는다');
 });
 
 test('틱 예외 복구(rescueGame): 핵심만 건져 같은 층을 다시 차리고, 같은 이벤트버스를 쓴다', () => {
-  const ctx = setup({ floor: 15 });
-  const before = ctx.game.state;
+  const ctx = setup();
+  const before = structuredClone(ctx.game.state);
+  const live = ctx.game.state;
   const restored = [];
   ctx.game.bus.on(EVENTS.GAME_RESTORED, (e) => restored.push(e));
   // 로직이 망가진 상황을 흉내: 행동체 하나가 NaN 위치를 갖게 됐다.
-  getPlayer(before).x = Number.NaN;
+  getPlayer(live).x = Number.NaN;
   const rescued = rescueGame(ctx.game);
   assert.ok(rescued);
   assert.equal(rescued.bus, ctx.game.bus);
-  assert.deepEqual(restored, [{ mode: 'rebuilt', floor: 15 }]);
+  assert.deepEqual(restored, [{ mode: 'rebuilt', floor: 1 }]);
   assert.equal(rescued.state.seed, before.seed);
-  assert.equal(rescued.state.run.floor, 15);
-  assert.deepEqual(rescued.state.inventory, before.inventory);
-  assert.deepEqual(rescued.state.run.upgrades, before.run.upgrades);
+  assert.equal(rescued.state.run.floor, 1);
+  assert.deepEqual(rescued.state.run.boons, before.run.boons);
+  assert.equal(rescued.state.run.gold, before.run.gold);
+  assert.deepEqual(getPlayer(rescued.state).kit.weapons, getPlayer(before).kit.weapons);
+  assert.equal(rescued.state.encounter, null, '층의 처음부터');
   assert.equal(rescued.state.phase, PHASE.PAUSED);
   ctx.game = rescued;
   setPhase(rescued, PHASE.PLAYING);

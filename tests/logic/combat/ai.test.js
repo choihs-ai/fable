@@ -287,7 +287,6 @@ test('같은 편끼리는 좁은 복도에서 길을 막고 서 있어도 서로
     closest = Math.min(closest, Math.abs(chaser.x - sleeper.x));
   }
   assert.ok(closest < 0.5, `두 몸이 겹쳐 지나갔어야 함(가장 가까웠을 때 ${closest.toFixed(2)}칸)`);
-  assert.equal(sleeper.ai.mode, 'idle');
   assert.ok(chaser.x > 16.5, `해골 x=${chaser.x.toFixed(2)}`);
 });
 

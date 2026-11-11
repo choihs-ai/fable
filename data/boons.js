@@ -52,7 +52,7 @@ export const BOONS = deepFreeze({
   split: { name: '분열탄', family: null, weight: 3, desc: '탄이 맞으면 두 갈래로 갈라진다.', ratio: 0.5, range: 5 },
   ricochet: { name: '도탄', family: null, weight: 2, desc: '탄이 벽에 한 번 튕긴다.', bounces: 1 },
   desperado: { name: '궁지', family: null, weight: 3, desc: '체력이 낮을수록 주는 피해가 는다(최대 +80%).', max: 0.8 },
-  afterimage: { name: '잔상', family: null, weight: 3, desc: '대시 직후의 첫 공격은 반드시 치명타다.', window: 1.0 },
+  afterimage: { name: '잔상', family: null, weight: 3, desc: '대시 직후의 첫 공격은 반드시 치명타다.', windowSec: 1.0 },
   vampire: { name: '흡혈', family: null, weight: 2, desc: '적을 처치하면 체력을 회복한다.', heal: 2 },
   third_dash: { name: '세 번째 숨', family: null, weight: 2, desc: '대시 충전이 하나 는다.', charges: 1 },
   momentum: { name: '가속', family: null, weight: 2, desc: '대시가 훨씬 빨리 충전된다.', rechargeMul: 0.6 },

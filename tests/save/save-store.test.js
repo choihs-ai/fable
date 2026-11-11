@@ -156,6 +156,9 @@ test('용량 초과: 자리를 비워도 안 되면 실패를 알리고, 이미 
   const before = backend.items.get(keys.run);
   backend.quota = backend.used() + 10;
   play(game, Rng.fromSeed('full'), 60);
+  // 새 세이브가 앞의 것보다 확실히 길어지도록 바닥에 금화를 잔뜩 깐다(올바른 상태다).
+  const player = game.state.entities.byId[game.state.playerId];
+  for (let i = 0; i < 40; i++) game.state.drops.push({ id: game.state.entities.nextId++, kind: 'gold', x: player.x, y: player.y, amount: 1 });
   const result = store.saveRun(game.state);
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'quota');

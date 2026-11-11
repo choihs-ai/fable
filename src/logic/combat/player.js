@@ -90,7 +90,7 @@ function startDash(state, bus, player, input, moveLen) {
   };
   kit.dashing = true;
   kit.dashAttackUntil = tick + dashTicks + ticksOf(cfg.attackWindow);
-  if (hasBoon(state, 'afterimage')) kit.critUntil = tick + dashTicks + ticksOf(BOONS.afterimage.window);
+  if (hasBoon(state, 'afterimage')) kit.critUntil = tick + dashTicks + ticksOf(BOONS.afterimage.windowSec);
   kit.trailAt = tick;
   bus.emit(EVENTS.PLAYER_DASHED, { id: player.id, dirX, dirY, charges: kit.charges });
 }
