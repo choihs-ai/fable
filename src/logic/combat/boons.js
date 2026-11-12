@@ -5,6 +5,7 @@ import { BOONS } from '../../../data/boons.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
 import { ticksOf } from '../core/time.js';
+import { metaBonuses } from '../items/meta.js';
 import { opponentsOf } from '../entities/actors.js';
 import { ACTOR_KIND } from '../entities/defs.js';
 import { lineOfSight } from '../world/los.js';
@@ -189,16 +190,20 @@ export function onHurt(state, bus, player) {
   bus.emit(EVENTS.EXPLOSION, { x: player.x, y: player.y, radius: cfg.radius, faction: player.faction, proc: 'ice' });
 }
 
-/** 쓰러진 플레이어를 되살릴 수 있으면 되살린다(런마다 한 번). */
+/**
+ * 쓰러진 플레이어를 되살릴 수 있으면 되살린다(런마다 한 번).
+ * 축복 "두 번째 바람"과 영구 강화 "불사의 서약" 어느 쪽이든 한 번만 되살리고, 체력은 둘 중 큰 쪽을 따른다.
+ */
 export function tryRevive(state, bus, player) {
-  if (!hasBoon(state, 'second_wind') || state.run.boonState.revived) return false;
-  const cfg = BOONS.second_wind;
+  if (state.run.boonState.revived) return false;
+  const pct = Math.max(hasBoon(state, 'second_wind') ? BOONS.second_wind.hpPct : 0, metaBonuses(state.meta).reviveHp);
+  if (pct <= 0) return false;
   state.run.boonState.revived = true;
   player.dead = false;
   player.killerId = null;
   player.diedWith = [];
-  player.hp = Math.max(1, Math.round((player.maxHp * cfg.hpPct) / 100));
-  player.invulnUntil = state.tick + ticksOf(cfg.invuln);
+  player.hp = Math.max(1, Math.round((player.maxHp * pct) / 100));
+  player.invulnUntil = state.tick + ticksOf(BOONS.second_wind.invuln);
   bus.emit(EVENTS.PLAYER_REVIVED, { hp: player.hp });
   return true;
 }

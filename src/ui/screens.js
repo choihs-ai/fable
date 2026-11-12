@@ -93,18 +93,24 @@ export function createScreens({ layer, ctx }) {
   // ── 거점: 영구 강화 ──
   function hub() {
     const meta = state().meta;
-    const rows = Object.keys(UPGRADES).map((id) => {
+    const row = (id) => {
       const u = UPGRADES[id];
       const level = upgradeLevel(meta, id);
       const maxed = level >= u.cost.length;
       const cost = maxed ? null : u.cost[level];
-      return h('div', { class: 'row upgrade', 'data-upgrade': id },
+      return h('div', { class: `row upgrade ${u.kind}`, 'data-upgrade': id },
         h('div', { class: 'grow' }, h('b', { text: `${u.name} ${'●'.repeat(level)}${'○'.repeat(u.cost.length - level)}` }), h('small', { text: u.desc })),
         button(maxed ? '최대' : `${cost}`, () => {
           const result = run(buyMetaUpgrade(game(), id));
           if (result.ok) ctx.actions.metaChanged();
         }, { disabled: maxed || meta.souls < cost, class: 'buy', action: `buy-${id}` }));
-    });
+    };
+    // 싸우는 방식이 달라지는 강화를 위에, 수치를 더하는 강화를 아래에 묶는다.
+    const ids = Object.keys(UPGRADES);
+    const rows = [
+      h('h4', { class: 'group', text: '싸우는 방식이 달라진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'rule').map(row),
+      h('h4', { class: 'group', text: '능력치' }), ...ids.filter((id) => UPGRADES[id].kind === 'stat').map(row),
+    ];
     const stats = h('p', { class: 'meta', text: `판 ${meta.runs} · 승리 ${meta.victories} · 가장 많이 깬 방 ${meta.bestRooms} · 처치 ${meta.totalKills}` });
     return panel('거점', souls(), h('div', { class: 'list scroll' }, rows), stats,
       button('캐릭터', () => open('characters', 'hub'), { action: 'characters' }),

@@ -36,7 +36,7 @@ export function refreshPlayerStats(state) {
   kit.maxEnergy = maxEnergy;
   if (kit.energy > maxEnergy) kit.energy = maxEnergy;
 
-  const maxCharges = PLAYER.dash.charges + (has('third_dash') ? BOONS.third_dash.charges : 0);
+  const maxCharges = PLAYER.dash.charges + bonus.dashCharges + (has('third_dash') ? BOONS.third_dash.charges : 0);
   if (maxCharges > kit.maxCharges) kit.charges += maxCharges - kit.maxCharges;
   kit.maxCharges = maxCharges;
   if (kit.charges >= maxCharges) {

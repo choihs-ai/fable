@@ -92,6 +92,8 @@ export function enterFloor(game, floor) {
   // 시작 방과 거기서 나가는 복도는 처음부터 드러나 있다.
   updateEncounter(state, bus);
   bus.emit(EVENTS.FLOOR_ENTERED, { floor, zoneId: map.zoneId, kind: map.kind });
+  // 영구 강화 "첫 선물": 새 판(틱 0)의 첫 층에 들어서면 축복 3택1 을 먼저 연다. 이어한 판(틱 > 0)에서는 다시 열지 않는다.
+  if (floor === 1 && state.tick === 0 && state.run.choice === null && metaBonuses(state.meta).startBoons > 0) offerBoons(state, bus);
 }
 
 /**

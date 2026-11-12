@@ -9,6 +9,7 @@
 //   node scripts/bot-run.mjs --plan short          보스로 곧장 가는 길만(기본 full: 갈 수 있는 방을 모두 깬다)
 //   node scripts/bot-run.mjs --no-dodge            피하지 않는 봇(적이 얼마나 아픈지 본다)
 //   node scripts/bot-run.mjs --dodge-rate 50       위협의 절반만 알아채는 봇(사람처럼 놓친다)
+//   node scripts/bot-run.mjs --upgrades all       거점의 영구 강화를 모두 끝까지 올린 채로 시작(첫 선물·부활·상점 할인·방 회복 경로 확인)
 //   node scripts/bot-run.mjs --workers 1           워커 수 (기본: CPU 수, 최대 8)
 //   node scripts/bot-run.mjs --one bot-17          한 판을 다시 돌려 방마다의 기록을 출력
 //
@@ -24,6 +25,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 
+import { UPGRADES } from '../data/meta.js';
 import { EVENTS } from '../src/logic/core/events.js';
 import { PHASE } from '../src/logic/core/state.js';
 import { allActors, getPlayer } from '../src/logic/entities/actors.js';
@@ -45,8 +47,9 @@ function option(args, name, fallback) {
 }
 
 /** 한 판을 돌린다. */
-export function playRun({ seed, character = 'knight', plan = 'full', dodge = true, dodgeRate = 100, verbose = false, resumeCheck = false }) {
-  const meta = character === 'knight' ? undefined : { version: 2, souls: 0, upgrades: {}, characters: { [character]: true } };
+export function playRun({ seed, character = 'knight', plan = 'full', dodge = true, dodgeRate = 100, upgrades = 'none', verbose = false, resumeCheck = false }) {
+  const owned = upgrades === 'all' ? Object.fromEntries(Object.entries(UPGRADES).map(([id, u]) => [id, u.cost.length])) : {};
+  const meta = character === 'knight' && upgrades !== 'all' ? undefined : { version: 2, souls: 0, upgrades: owned, characters: { knight: true, [character]: true } };
   const game = createGame({ seed, meta, character });
   const { state, bus } = game;
   const problems = [];
@@ -163,7 +166,7 @@ function summarize(results, options) {
   const deaths = by('death');
   const deathAt = {};
   for (const r of deaths) deathAt[r.deathAt] = (deathAt[r.deathAt] ?? 0) + 1;
-  console.log(`판 수 ${n} — 캐릭터 ${options.character}, 계획 ${options.plan}${options.dodge ? (options.dodgeRate < 100 ? `, 위협의 ${options.dodgeRate}% 만 피함` : '') : ', 피하지 않음'}`);
+  console.log(`판 수 ${n} — 캐릭터 ${options.character}, 계획 ${options.plan}${options.upgrades === 'all' ? ', 영구 강화 모두' : ''}${options.dodge ? (options.dodgeRate < 100 ? `, 위협의 ${options.dodgeRate}% 만 피함` : '') : ', 피하지 않음'}`);
   console.log(`  승리 ${wins.length} (${((wins.length / n) * 100).toFixed(1)}%) / 사망 ${deaths.length} / 끝나지 않음 ${by('timeout').length} / 예외 ${by('error').length}`);
   console.log(`  승리한 판의 시간: 평균 ${min(avg(wins.map((r) => r.sec)))}, 중앙 ${min(pct(wins.map((r) => r.sec), 0.5))}, 10%~90% ${min(pct(wins.map((r) => r.sec), 0.1))} ~ ${min(pct(wins.map((r) => r.sec), 0.9))}`);
   console.log(`  깬 방: 평균 ${avg(results.map((r) => r.roomsCleared)).toFixed(1)}, 축복 ${avg(results.map((r) => r.boons)).toFixed(1)}개, 처치 ${avg(results.map((r) => r.kills)).toFixed(0)}`);
@@ -184,7 +187,7 @@ if (!isMainThread) {
   for (const seed of seeds) parentPort.postMessage(playRun({ seed, ...options, resumeCheck: seed.endsWith('0') || seed.endsWith('5') }));
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  const options = { character: option(args, 'character', 'knight'), plan: option(args, 'plan', 'full'), dodge: !args.includes('--no-dodge'), dodgeRate: Number(option(args, 'dodge-rate', 100)) };
+  const options = { character: option(args, 'character', 'knight'), plan: option(args, 'plan', 'full'), dodge: !args.includes('--no-dodge'), dodgeRate: Number(option(args, 'dodge-rate', 100)), upgrades: option(args, 'upgrades', 'none') };
   const one = option(args, 'one', null);
   if (one) {
     const result = playRun({ seed: one, ...options, verbose: true, resumeCheck: true });

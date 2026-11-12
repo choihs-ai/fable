@@ -6,9 +6,11 @@ import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
 import { ticksOf } from '../core/time.js';
 import { getPlayer, opponentsOf, spawnEnemy } from '../entities/actors.js';
+import { metaBonuses } from '../items/meta.js';
 import { ROOM_KIND, isFightRoom } from '../world/floors.js';
 import { navOf, regionAt, setTiles } from '../world/nav.js';
 import { TILE } from '../world/tiles.js';
+import { heal } from './damage.js';
 import { grantRoomReward } from './loot.js';
 
 /** 플레이어가 있는 구역과, 거기서 보이는 곳을 드러낸다. */
@@ -105,6 +107,10 @@ function clearRoom(state, bus, room) {
   bus.emit(EVENTS.DOORS_OPENED, { roomId: room.id, doors: opened });
   bus.emit(EVENTS.ROOM_CLEARED, { roomId: room.id, kind: room.kind, reward: room.reward });
   grantRoomReward(state, bus, room);
+  // 영구 강화 "응급 처치": 방을 깰 때마다 조금 회복한다.
+  const player = getPlayer(state);
+  const pct = metaBonuses(state.meta).roomHeal;
+  if (player && pct > 0) heal(player, (player.maxHp * pct) / 100);
 }
 
 function runEncounter(state, bus, player) {

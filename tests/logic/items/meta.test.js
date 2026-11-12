@@ -13,7 +13,7 @@ test('새 메타: 영혼석 0, 처음부터 쓸 수 있는 캐릭터만 해금�
   assert.equal(meta.souls, 0);
   assert.deepEqual(meta.upgrades, {});
   assert.deepEqual(Object.keys(meta.characters), Object.keys(CHARACTERS).filter((id) => CHARACTERS[id].cost === 0));
-  assert.deepEqual(metaBonuses(meta), { maxHp: 0, maxEnergy: 0, power: 0, gold: 0, dashRecharge: 0, freeRerolls: 0 });
+  assert.deepEqual(metaBonuses(meta), { maxHp: 0, maxEnergy: 0, power: 0, gold: 0, dashRecharge: 0, freeRerolls: 0, startBoons: 0, dashCharges: 0, reviveHp: 0, shopDiscount: 0, roomHeal: 0 });
   assert.deepEqual(metaBonuses(null), metaBonuses(meta));
 });
 

@@ -78,7 +78,7 @@ export function unlockCharacter(meta, id) {
 
 /** 영구 강화를 모두 합친 값. */
 export function metaBonuses(meta) {
-  const total = { maxHp: 0, maxEnergy: 0, power: 0, gold: 0, dashRecharge: 0, freeRerolls: 0 };
+  const total = { maxHp: 0, maxEnergy: 0, power: 0, gold: 0, dashRecharge: 0, freeRerolls: 0, startBoons: 0, dashCharges: 0, reviveHp: 0, shopDiscount: 0, roomHeal: 0 };
   if (!meta) return total;
   for (const id of Object.keys(meta.upgrades)) {
     if (!Object.hasOwn(UPGRADES, id)) continue;

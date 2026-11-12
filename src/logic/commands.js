@@ -18,7 +18,7 @@ import { getPlayer } from './entities/actors.js';
 import { refreshPlayerStats } from './entities/stats.js';
 import { endRun, enterFloor } from './game.js';
 import { rerollCost, rollBoonChoices } from './items/boons.js';
-import { buyUpgrade, unlockCharacter } from './items/meta.js';
+import { buyUpgrade, metaBonuses, unlockCharacter } from './items/meta.js';
 import { healPrice, rollShopStock, shopRerollCost } from './items/shop.js';
 import { ROOM_KIND, TOTAL_FLOORS } from './world/floors.js';
 
@@ -189,7 +189,10 @@ function inShop(game) {
 
 /** 진열품의 지금 값(회복은 살 때마다 비싸진다). */
 export function shopPrice(state, item) {
-  return item.kind === 'heal' ? healPrice(state.shop.heals) : item.price;
+  const base = item.kind === 'heal' ? healPrice(state.shop.heals) : item.price;
+  // 영구 강화 "단골": 값을 %로 깎는다(0 원이던 기본 무기는 그대로 0).
+  const discount = metaBonuses(state.meta).shopDiscount;
+  return base === 0 ? 0 : Math.max(1, Math.round((base * (100 - discount)) / 100));
 }
 
 /**
