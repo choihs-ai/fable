@@ -135,7 +135,10 @@ test('건져 내기: 해금이 사라진 캐릭터의 런은 기본 캐릭터로
   const read = readRun(CASES.find((c) => c.id === 'actor-type').corrupt(base));
   const game = resumeGame({ run: read, meta: null }).game;
   assert.equal(game.state.run.character, 'knight');
-  assert.equal(getPlayer(game.state).kit.character, 'knight');
+  // 시작 캐릭터의 탈은 기본 캐릭터의 것으로 바뀐다. 판 중에 주운 다른 탈은 그대로 남는다.
+  const { kit } = getPlayer(game.state);
+  assert.ok(!kit.forms.includes('mage') && kit.character !== 'mage');
+  assert.ok(kit.forms.includes('knight'));
   assert.deepEqual(validateRunState(game.state), []);
 });
 

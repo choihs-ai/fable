@@ -1,6 +1,7 @@
 // 줍는 것: 적을 잡으면 떨어지는 금화·에너지·체력 구슬, 방을 깨면 나오는 보상(무기·축복·금화·체력).
 // 금화·에너지·체력은 가까이 가면 저절로 주워지고, 축복은 닿으면 3택1 이 열린다. 무기는 상호작용으로 줍는다(commands.js).
 
+import { CHARACTER_ORDER } from '../../../data/characters.js';
 import { BOON_RULES } from '../../../data/boons.js';
 import { ENCOUNTERS } from '../../../data/encounters.js';
 import { EVENTS } from '../core/events.js';
@@ -91,7 +92,13 @@ export function grantRoomReward(state, bus, room) {
   else if (room.reward === REWARD.HEALTH) {
     addDrop(state, bus, cx, cy, { kind: 'health', amount: player ? Math.round((player.maxHp * cfg.healthPct) / 100) : 0 });
   }
-  if (room.kind === ROOM_KIND.ELITE) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: eliteGold });
+  if (room.kind === ROOM_KIND.ELITE) {
+    addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: eliteGold });
+    // 정예 방은 탈을 하나 떨어뜨린다(지금 들고 있지 않은 것 가운데).
+    const carried = player ? player.kit.forms : [];
+    const pool = CHARACTER_ORDER.filter((id) => !carried.includes(id));
+    if (pool.length > 0) addDrop(state, bus, cx - 1, cy, { kind: 'form', form: rng.pick(pool) });
+  }
   if (room.kind === ROOM_KIND.BOSS) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: bossGold });
   if (room.kind === ROOM_KIND.BONUS) addDrop(state, bus, cx + 1, cy, { kind: 'gold', amount: bonusGold });
 }

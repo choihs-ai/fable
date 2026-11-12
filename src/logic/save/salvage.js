@@ -2,6 +2,7 @@
 // 층의 진행 중 상태(적·투사체·맵·방의 진행)는 버리고, 불러오는 쪽(logic/game.js 의 resumeGame)이 그 층을 시드로 다시 만든다.
 // 항목마다 따로 검사해서 통과한 것만 받는다 — 하나가 틀렸다고 전부 버리지 않는다.
 
+import { CHARACTERS } from '../../../data/characters.js';
 import { BOONS } from '../../../data/boons.js';
 import { SAVE } from '../../../data/save.js';
 import { WEAPONS } from '../../../data/weapons.js';
@@ -22,7 +23,7 @@ function good(check, value) {
  * @param {*} data 세이브 본문 또는 실행 중이던 상태
  * @returns {{ ok:true, core:object, repaired:string[] } | { ok:false, reason:string }}
  *   core: { seed, tick, rng, run:{ floor, character, gold, boons, boonState, freeRerolls, kills, eliteKills, bossKills, roomsCleared },
- *           kit:{ weapons, slot, energy }|null, hp, nextId, pendingChoice } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
+ *           kit:{ weapons, slot, energy, forms }|null, hp, nextId, pendingChoice } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
  *           kit 은 플레이어의 무기와 에너지 또는 null, hp 는 플레이어 체력 또는 null, pendingChoice 는 축복 3택1 이 떠 있었는가
  *   repaired: 기본값으로 되돌린 항목
  */
@@ -78,7 +79,11 @@ export function extractCore(data) {
     const slot = rawKit.slot === 1 ? 1 : 0;
     // 든 칸에는 무기가 있어야 한다.
     if (weapons[slot] !== null || weapons[1 - slot] !== null) {
-      kit = { weapons, slot: weapons[slot] !== null ? slot : 1 - slot, energy: isNum(rawKit.energy, 0, L.count) ? rawKit.energy : 0 };
+      // 탈: 아는 이름만 남기고, 같은 탈이 두 칸에 있으면 하나만 둔다. 없으면 null(다시 차릴 때 시작 캐릭터를 쓴다).
+      let forms = Array.isArray(rawKit.forms) && rawKit.forms.length === 2 ? rawKit.forms.map((id) => (isKeyOf(CHARACTERS, id) ? id : null)) : [null, null];
+      if (forms[0] !== null && forms[0] === forms[1]) forms[1] = null;
+      if (forms[0] === null && forms[1] === null) forms = null;
+      kit = { weapons, slot: weapons[slot] !== null ? slot : 1 - slot, energy: isNum(rawKit.energy, 0, L.count) ? rawKit.energy : 0, forms };
     }
   }
   if (kit === null) repaired.push('player.kit');

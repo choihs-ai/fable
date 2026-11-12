@@ -117,7 +117,12 @@ export function spawnPlayer(state, bus, x, y) {
   actor.critDamage = PLAYER.critDamage;
   /** 플레이어만 가지는 것: 에너지, 대시 충전, 무기, 입력 버퍼, 스킬·축복의 진행 상태. */
   actor.kit = {
+    /** 지금 쓰고 있는 탈, 무기 칸마다 딸린 탈(빈 칸은 null — 그 칸으로 바꿔도 탈은 그대로다). */
     character: state.run.character,
+    forms: [state.run.character, null],
+    /** 탈을 바꾸며 다 깎지 못한 체력·에너지(combat/player.js 의 wearForm). */
+    hpDebt: 0,
+    energyDebt: 0,
     energy: character.energy,
     maxEnergy: character.energy,
     /** 남은 대시 충전과 최대치, 다음 충전이 차는 틱(가득 차 있으면 0), 한 번 차는 데 걸리는 틱. */

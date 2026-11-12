@@ -94,7 +94,7 @@ export function createActorViews({ scene, assets }) {
     const key = keyOf(lookKey, actor.elite);
     const fig = acquire(key, look, actor.elite);
     const view = {
-      key, fig, look, id: actor.id, kind: actor.kind,
+      key, lookKey, fig, look, id: actor.id, kind: actor.kind,
       prevX: actor.x, prevY: actor.y, x: actor.x, y: actor.y,
       walk: 0, speed: 0, yaw: Math.atan2(actor.facingX, actor.facingY), weaponLook: undefined,
       attackAt: -1, swing: 'slash', hurtAt: -1, flashUntil: -1, offhand: false,
@@ -209,6 +209,15 @@ export function createActorViews({ scene, assets }) {
         const actor = state.entities.byId[key];
         seen.add(actor.id);
         let view = views.get(actor.id);
+        // 탈을 바꿔 썼으면 생김새가 달라진다: 앞의 모델을 돌려놓고 새 모델로 바꾼다(자리·방향·걸음은 잇는다).
+        if (view && actor.kit && view.lookKey !== actor.kit.character) {
+          const old = view;
+          release(old);
+          view = createView(actor);
+          Object.assign(view, { prevX: old.prevX, prevY: old.prevY, x: old.x, y: old.y, yaw: old.yaw, walk: old.walk, speed: old.speed });
+          view.flashUntil = clock + 0.12;
+          views.set(actor.id, view);
+        }
         if (!view) {
           view = createView(actor);
           views.set(actor.id, view);

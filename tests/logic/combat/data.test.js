@@ -184,8 +184,8 @@ test('플레이어 데이터: 대시는 충전식이고 무적 시간이 돌진�
   assert.ok(PLAYER.bash.effects[0].damage > 0, '에너지가 없을 때의 근접 공격');
 });
 
-test('캐릭터 데이터: 2종 이상, 시작 무기 둘과 고유 스킬 하나', () => {
-  assert.ok(CHARACTER_ORDER.length >= 2);
+test('탈(캐릭터) 데이터: 4종 이상, 시작 무기 둘, 서로 다른 스킬과 교체 기술', () => {
+  assert.ok(CHARACTER_ORDER.length >= 4);
   assert.deepEqual([...CHARACTER_ORDER].sort(), Object.keys(CHARACTERS).sort());
   const skills = new Set();
   for (const [id, c] of Object.entries(CHARACTERS)) {
@@ -193,10 +193,14 @@ test('캐릭터 데이터: 2종 이상, 시작 무기 둘과 고유 스킬 하�
     assert.equal(c.weapons.length, 2, id);
     for (const w of c.weapons) assert.ok(WEAPONS[w], `${id}: 무기 ${w}`);
     assert.ok(c.skill.cooldown > 0 && c.skill.name && c.skill.desc, id);
-    skills.add(c.skill.type);
+    assert.ok(['dual', 'warp', 'cast'].includes(c.skill.type), id);
+    if (c.skill.type === 'cast') assert.ok(c.skill.effects.length > 0, id);
+    assert.ok(c.swap.name && c.swap.desc && c.swap.effects.length > 0, `${id}: 교체 기술`);
+    skills.add(c.skill.name);
+    skills.add(c.swap.name);
     assert.ok(Number.isInteger(c.cost) && c.cost >= 0, id);
   }
-  assert.equal(skills.size, CHARACTER_ORDER.length, '스킬이 서로 다르다');
+  assert.equal(skills.size, CHARACTER_ORDER.length * 2, '스킬과 교체 기술의 이름이 모두 다르다');
   assert.ok(Object.values(CHARACTERS).some((c) => c.cost === 0), '처음부터 쓸 수 있는 캐릭터가 있다');
   assert.ok(Object.values(CHARACTERS).some((c) => c.cost > 0), '해금하는 캐릭터가 있다');
 });

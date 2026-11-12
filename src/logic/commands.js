@@ -13,7 +13,7 @@ import { PHASE, rngOf } from './core/state.js';
 import { heal } from './combat/damage.js';
 import { currentRoom } from './combat/encounter.js';
 import { addDrop, addGold } from './combat/loot.js';
-import { swapWeapon } from './combat/player.js';
+import { swapWeapon, wearForm } from './combat/player.js';
 import { getPlayer } from './entities/actors.js';
 import { refreshPlayerStats } from './entities/stats.js';
 import { endRun, enterFloor } from './game.js';
@@ -44,17 +44,17 @@ function within(player, x, y, radius) {
 
 /**
  * 지금 상호작용할 수 있는 것. ui 가 상호작용 버튼을 보일지 정할 때도 쓴다(상태를 바꾸지 않는다).
- * @returns {{ type:'weapon', dropId:number, weapon:string } | { type:'shop' } | { type:'portal' } | null}
+ * @returns {{ type:'weapon', dropId:number, weapon:string } | { type:'form', dropId:number, form:string } | { type:'shop' } | { type:'portal' } | null}
  */
 export function interactTarget(state) {
   const player = getPlayer(state);
   if (!player || player.dead || !state.world || state.phase === PHASE.GAME_OVER || state.phase === PHASE.VICTORY) return null;
   const radius = ENCOUNTERS.interactRadius;
-  // 가장 가까운 무기.
+  // 가장 가까운 무기 또는 탈.
   let best = null;
   let bestD2 = radius * radius;
   for (const drop of state.drops) {
-    if (drop.kind !== 'weapon') continue;
+    if (drop.kind !== 'weapon' && drop.kind !== 'form') continue;
     const dx = drop.x - player.x;
     const dy = drop.y - player.y;
     const d2 = dx * dx + dy * dy;
@@ -63,6 +63,7 @@ export function interactTarget(state) {
       bestD2 = d2;
     }
   }
+  if (best && best.kind === 'form') return { type: 'form', dropId: best.id, form: best.form };
   if (best) return { type: 'weapon', dropId: best.id, weapon: best.weapon };
   const room = currentRoom(state);
   if (!room || state.encounter) return null;
@@ -91,8 +92,33 @@ function takeWeapon(game, player, weaponId, x, y) {
 }
 
 /**
+ * 탈을 쓴다: 주운 탈은 지금 든 칸에 들어가고 곧바로 쓴다. 쓰고 있던 탈은 다른 칸이 비어 있으면 그리로 가고,
+ * 둘 다 차 있으면 그 자리에 놓인다. 이미 들고 있는 탈이면 그 칸의 것과 자리를 바꾸지 않고 그대로 둔다(줍지 않는다).
+ * @returns {string|null} 바닥에 놓인 탈
+ */
+function takeForm(game, player, form, x, y) {
+  const { state, bus } = game;
+  const kit = player.kit;
+  const from = kit.character;
+  const here = kit.slot;
+  let dropped = null;
+  if (kit.forms[here] === null) kit.forms[here] = form;
+  else if (kit.forms[1 - here] === null) {
+    kit.forms[1 - here] = kit.forms[here];
+    kit.forms[here] = form;
+  } else {
+    dropped = kit.forms[here];
+    kit.forms[here] = form;
+    addDrop(state, bus, x, y, { kind: 'form', form: dropped });
+  }
+  wearForm(state, player, form);
+  bus.emit(EVENTS.FORM_CHANGED, { id: player.id, from, to: form, burst: false, picked: true, x: player.x, y: player.y });
+  return dropped;
+}
+
+/**
  * 가까이 있는 것과 상호작용한다: 무기는 줍고, 상인 앞이면 상점을 열라고 알리고, 포털이면 나간다.
- * @returns {{ ok:true, type:string, … } | { ok:false, reason:string }} reason: 'not-playing' | 'nothing'
+ * @returns {{ ok:true, type:string, … } | { ok:false, reason:string }} reason: 'not-playing' | 'nothing' | 'owned-form'(이미 들고 있는 탈)
  */
 export function interact(game) {
   const player = activePlayer(game);
@@ -106,6 +132,15 @@ export function interact(game) {
     game.bus.emit(EVENTS.DROP_COLLECTED, { id: drop.id, kind: drop.kind, x: drop.x, y: drop.y });
     const dropped = takeWeapon(game, player, drop.weapon, drop.x, drop.y);
     return { ok: true, type: 'weapon', weapon: drop.weapon, dropped };
+  }
+  if (target.type === 'form') {
+    const { state } = game;
+    const drop = state.drops.find((d) => d.id === target.dropId);
+    if (player.kit.forms.includes(drop.form)) return fail('owned-form');
+    state.drops = state.drops.filter((d) => d !== drop);
+    game.bus.emit(EVENTS.DROP_COLLECTED, { id: drop.id, kind: drop.kind, x: drop.x, y: drop.y });
+    const dropped = takeForm(game, player, drop.form, drop.x, drop.y);
+    return { ok: true, type: 'form', form: drop.form, dropped };
   }
   if (target.type === 'shop') return { ok: true, type: 'shop' };
   return usePortal(game);

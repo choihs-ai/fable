@@ -266,6 +266,14 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
           else if (e.kind === 'health') effects.text(player.x, player.y, 1.3, `+${e.amount}`, config.colors.heal);
         }),
         bus.on(EVENTS.SECRET_FOUND, () => kick(S.explosion)),
+        // 탈 교체: 교체 기술이 나가면 크게, 아니면 작게 터뜨린다.
+        bus.on(EVENTS.FORM_CHANGED, (e) => {
+          effects.burst(e.x, e.y, 0.6, e.burst ? 0xfff2c0 : 0xb8c8ff, e.burst ? 22 : 8, e.burst ? 1.6 : 1);
+          if (e.burst) {
+            effects.explosion(e.x, e.y, 2.6, 'player', true);
+            kick(S.explosion * 0.6);
+          }
+        }),
       ];
       return () => offs.forEach((off) => off());
     },

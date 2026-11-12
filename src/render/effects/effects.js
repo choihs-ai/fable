@@ -14,7 +14,7 @@ import { ENCOUNTERS } from '../../../data/encounters.js';
 import { FEEL } from '../../../data/feel.js';
 import { WEAPONS } from '../../../data/weapons.js';
 import { defOf } from '../../logic/entities/defs.js';
-import { buildWeapon } from '../entities/models.js';
+import { buildFigure, buildWeapon, lookOf } from '../entities/models.js';
 import { createPool, createSlots } from '../pool.js';
 
 const TICK_SEC = 1 / LOOP.tickRate;
@@ -86,6 +86,8 @@ export function createEffects({ scene, assets, rng }) {
         halo: mesh('ring', assets.glow(0xffffff, 0.4), 0.45),
         pedestal: mesh('tube', assets.toon(0x4a4a52), 0.3),
         weapons: {},
+        /** 탈: 탈 이름 → 그 캐릭터의 작은 모형(처음 보일 때 만든다). */
+        forms: {},
         shown: null,
       };
       item.pedestal.scale.set(0.32, 0.25, 0.32);
@@ -98,12 +100,23 @@ export function createEffects({ scene, assets, rng }) {
       item.group.visible = shown;
     },
   });
-  function showDrop(item, kind, weapon) {
-    const key = kind === 'weapon' ? `w:${weapon}` : kind;
+  function showDrop(item, kind, weapon, form) {
+    const key = kind === 'weapon' ? `w:${weapon}` : kind === 'form' ? `f:${form}` : kind;
     if (item.shown === key) return;
     for (const name of ['gold', 'energy', 'health', 'boon', 'pedestal']) item[name].visible = false;
     for (const group of Object.values(item.weapons)) group.visible = false;
-    if (kind === 'weapon') {
+    for (const group of Object.values(item.forms)) group.visible = false;
+    if (kind === 'form') {
+      if (!item.forms[form]) {
+        const fig = buildFigure(assets, lookOf(form));
+        fig.shadow.visible = false;
+        fig.root.scale.setScalar(0.55);
+        item.group.add(fig.root);
+        item.forms[form] = fig.root;
+      }
+      item.forms[form].visible = true;
+      item.pedestal.visible = true;
+    } else if (kind === 'weapon') {
       const look = WEAPONS[weapon].look;
       if (!item.weapons[look]) {
         const built = buildWeapon(assets, look).group;
@@ -114,7 +127,7 @@ export function createEffects({ scene, assets, rng }) {
       item.weapons[look].visible = true;
       item.pedestal.visible = true;
     } else item[kind].visible = true;
-    item.halo.visible = kind === 'boon' || kind === 'weapon';
+    item.halo.visible = kind === 'boon' || kind === 'weapon' || kind === 'form';
     item.shown = key;
   }
 
@@ -508,10 +521,14 @@ export function createEffects({ scene, assets, rng }) {
       for (const drop of state.drops) {
         const item = drops.next();
         if (!item) break;
-        showDrop(item, drop.kind, drop.weapon);
+        showDrop(item, drop.kind, drop.weapon, drop.form);
         const bob = Math.sin(time * 3 + drop.id) * 0.06;
-        item.group.position.set(drop.x, drop.kind === 'weapon' ? 0 : 0.35 + bob, drop.y);
+        const grounded = drop.kind === 'weapon' || drop.kind === 'form';
+        item.group.position.set(drop.x, grounded ? 0 : 0.35 + bob, drop.y);
         item.group.rotation.y = time * (drop.kind === 'gold' ? 3 : 1.2);
+        if (drop.kind === 'form') {
+          for (const root of Object.values(item.forms)) root.position.set(0, 0.3 + bob, 0);
+        }
         if (drop.kind === 'weapon') {
           for (const group of Object.values(item.weapons)) group.position.set(0.3, 0.75 + bob, 0);
         }

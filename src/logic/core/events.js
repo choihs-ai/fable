@@ -30,6 +30,8 @@ export const EVENTS = Object.freeze({
   ENERGY_EMPTY: 'energy:empty',
   /** payload: { character, type } — 캐릭터 스킬 사용 */
   SKILL_USED: 'skill:used',
+  /** 쓰고 있는 탈이 바뀌었다: { id, from, to, burst:교체 기술이 나갔는가, x, y }. 주웠을 때는 picked:true. */
+  FORM_CHANGED: 'form:changed',
 
   // ── 전투 ──
   /** payload: { targetId, sourceId, amount, kind: 'hit'|'dot', hp, blocked, crit, x, y, proc? } — proc 은 축복이 낸 피해의 이름 */

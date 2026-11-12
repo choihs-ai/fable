@@ -318,6 +318,12 @@ function explore(game, bot, nav, player, input) {
           bot.ignored.push(drop.id);
           continue;
         }
+      } else if (drop.kind === 'form') {
+        // 탈: 빈 칸이 있을 때만 줍는다(둘을 들면 더 바꾸지 않는다).
+        if (!kit.forms.includes(null) || kit.forms.includes(drop.form)) {
+          bot.ignored.push(drop.id);
+          continue;
+        }
       } else if (drop.kind === 'health' && player.hp >= player.maxHp) continue;
       else if (drop.kind === 'energy' && kit.energy >= kit.maxEnergy) continue;
       const d2 = dist2(drop, player);
@@ -337,6 +343,10 @@ function explore(game, bot, nav, player, input) {
       // 등급이 낮은 쪽을 들고 주우면 그 무기와 바뀐다.
       const other = kit.weapons[1 - kit.slot];
       if (!kit.weapons.includes(null) && other && WEAPONS[other].tier < WEAPONS[kit.weapons[kit.slot]].tier) swapWeapons(game);
+      interact(game);
+      return;
+    }
+    if (want.kind === 'form' && target && target.type === 'form' && target.dropId === want.id) {
       interact(game);
       return;
     }

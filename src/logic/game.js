@@ -11,7 +11,7 @@ import { processDeaths } from './combat/deaths.js';
 import { updateEncounter } from './combat/encounter.js';
 import { updateHazards } from './combat/hazards.js';
 import { collectDrops, offerBoons } from './combat/loot.js';
-import { controlPlayer } from './combat/player.js';
+import { controlPlayer, wearForm } from './combat/player.js';
 import { updateProjectiles } from './combat/projectiles.js';
 import { updateStatuses } from './combat/statuses.js';
 import { getPlayer, populateFloor } from './entities/actors.js';
@@ -116,6 +116,14 @@ function rebuildGame(core, meta, bus) {
   if (core.kit) {
     player.kit.weapons = [...core.kit.weapons];
     player.kit.slot = core.kit.slot;
+    // 들고 있던 탈을 되돌리고, 든 칸의 탈을 쓴다.
+    if (core.kit.forms) {
+      // 시작 캐릭터의 해금이 사라져 기본 캐릭터로 바뀌었으면 그 탈도 기본 캐릭터의 것으로 바꾼다.
+      const swapped = core.kit.forms.map((id) => (id === core.run.character ? state.run.character : id));
+      if (swapped[0] === swapped[1]) swapped[1] = null;
+      player.kit.forms = swapped;
+      wearForm(state, player, player.kit.forms[player.kit.slot] ?? player.kit.forms[1 - player.kit.slot]);
+    }
     player.kit.energy = Math.min(player.kit.maxEnergy, core.kit.energy);
   }
   if (core.hp !== null) player.hp = Math.max(1, Math.min(player.maxHp, core.hp));

@@ -288,6 +288,9 @@ const aiShape = shape({
 });
 const kitShape = shape({
   character: keyOf(CHARACTERS),
+  forms: list(nullable(keyOf(CHARACTERS)), 2, 2),
+  hpDebt: int(0, L.hp),
+  energyDebt: num(0, L.count),
   energy: num(0, L.count),
   maxEnergy: num(0, L.count),
   charges: int(0, 16),
@@ -379,7 +382,10 @@ function checkActor(r, actor, p, state) {
     if (kit.weapons[kit.slot] === null) r.fail(`${p}.kit.slot`, '든 칸에 무기가 없음');
     if (kit.charges > kit.maxCharges) r.fail(`${p}.kit.charges`, `최대치(${kit.maxCharges})보다 큼 (${kit.charges})`);
     if (kit.energy > kit.maxEnergy) r.fail(`${p}.kit.energy`, `최대치(${kit.maxEnergy})보다 큼 (${kit.energy})`);
-    if (isObject(state.run) && kit.character !== state.run.character) r.fail(`${p}.kit.character`, `런의 캐릭터(${show(state.run.character)})와 다름`);
+    // 쓰고 있는 탈 = 든 칸에 딸린 탈(그 칸이 비어 있으면 다른 칸의 탈). 같은 탈을 두 칸에 들 수 없다.
+    const worn = kit.forms[kit.slot] ?? kit.forms[1 - kit.slot];
+    if (kit.character !== worn) r.fail(`${p}.kit.character`, `든 칸의 탈(${show(worn)})과 다름`);
+    if (kit.forms[0] !== null && kit.forms[0] === kit.forms[1]) r.fail(`${p}.kit.forms`, '같은 탈이 두 칸에 있음');
     return;
   }
   if (actor.kit !== undefined) r.fail(`${p}.kit`, '적에게 플레이어의 장비가 있음');
@@ -426,6 +432,7 @@ const dropShape = variant({
   energy: shape({ ...place, kind: among(['energy']), amount: int(0, L.count) }),
   health: shape({ ...place, kind: among(['health']), amount: int(0, L.hp) }),
   weapon: shape({ ...place, kind: among(['weapon']), weapon: weaponId }),
+  form: shape({ ...place, kind: among(['form']), form: keyOf(CHARACTERS) }),
   boon: shape({ ...place, kind: among(['boon']) }),
 }, 'kind');
 

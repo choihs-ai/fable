@@ -24,6 +24,8 @@ export const LOOKS = Object.freeze({
   // 주인공들
   knight: { form: 'biped', scale: 1.18, body: 0x3a6fc4, trim: 0x262b40, skin: 0xd9e0ea, face: 'visor', eye: 0x7af2ff, weaponScale: 1.3, extras: ['plume', 'scarf'] },
   mage: { form: 'biped', scale: 1.18, body: 0x7a3fc0, trim: 0xf0b83a, skin: 0x1c1430, face: 'glow', eye: 0xffd84a, weaponScale: 1.3, extras: ['hood', 'robe'] },
+  rogue: { form: 'biped', scale: 1.14, body: 0x1f8a80, trim: 0x16242c, skin: 0x10141c, face: 'glow', eye: 0xff5a7a, weaponScale: 1.3, thin: true, extras: ['cowl', 'scarf'] },
+  brute: { form: 'biped', scale: 1.3, body: 0xc0452e, trim: 0x3a2018, skin: 0xe8b890, face: 'eyes', eye: 0x2a1410, weaponScale: 1.25, extras: ['horns', 'pauldrons'] },
   // 지하 묘지
   skeleton: { form: 'biped', scale: 1.08, body: 0xefe7d2, trim: 0x6a5a48, skin: 0xefe7d2, face: 'skull', eye: 0xff8a2a, thin: true, weapon: 'sword', extras: ['jaw'] },
   bone_archer: { form: 'biped', scale: 1.08, body: 0x3f7a4a, trim: 0x2a3a26, skin: 0xe6dcc4, face: 'skull', eye: 0x9aff6a, thin: true, weapon: 'bow', extras: ['jaw', 'cowl'] },

@@ -14,7 +14,8 @@ import { getPlayer } from './actors.js';
 export function refreshPlayerStats(state) {
   const player = getPlayer(state);
   if (!player || !player.kit) return null;
-  const character = CHARACTERS[state.run.character];
+  // 능력치는 지금 쓰고 있는 탈의 것이다(판을 시작한 캐릭터가 아니라).
+  const character = CHARACTERS[player.kit.character];
   const bonus = metaBonuses(state.meta);
   const has = (id) => state.run.boons.includes(id);
   const kit = player.kit;

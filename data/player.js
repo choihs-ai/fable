@@ -43,6 +43,11 @@ export const PLAYER = deepFreeze({
   bash: { cooldown: 0.45, effects: [{ type: 'arc', range: 1.4, cosHalf: 0.3, damage: 5, knockback: 7 }] },
   /** 에너지가 모자라 쏘지 못했다는 알림을 다시 내기까지(초). */
   emptyNoticeSec: 1,
+  /**
+   * 탈 교체: 교체 기술이 다시 나가기까지(초), 교체 기술이 나갈 때의 무적(초).
+   * 교체 자체(탈과 무기가 함께 바뀜)는 언제나 된다.
+   */
+  swap: { cooldown: 7, invuln: 0.35 },
   /** 맞은 뒤 잠깐의 무적(초). 여러 탄을 한꺼번에 맞아 즉사하는 일을 막는다. */
   hurtInvuln: 0.45,
 });

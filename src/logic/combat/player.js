@@ -16,8 +16,10 @@ import { weaponAbilityId } from '../entities/defs.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
 import { abilityOf, cooldownTicks, isReady, runEffects, startAbility } from './abilities.js';
+import { refreshPlayerStats } from '../entities/stats.js';
 import { hasBoon, onDashEnd } from './boons.js';
 import { spawnHazard, spawnWarpField } from './hazards.js';
+import { clearBullets } from './projectiles.js';
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -98,8 +100,11 @@ function startDash(state, bus, player, input, moveLen) {
 function useSkill(state, bus, player, input) {
   const kit = player.kit;
   const skill = CHARACTERS[kit.character].skill;
-  player.cooldowns.skill = state.tick + cooldownTicks(player, skill.cooldown);
-  if (skill.type === 'dual') {
+  player.cooldowns[skillKey(kit.character)] = state.tick + cooldownTicks(player, skill.cooldown);
+  if (skill.type === 'cast') {
+    const aim = aimDirection(state, player, input);
+    runEffects(state, bus, player, skill.effects, { dirX: aim.x, dirY: aim.y, targetX: aim.tx, targetY: aim.ty });
+  } else if (skill.type === 'dual') {
     kit.dualUntil = state.tick + ticksOf(skill.duration);
   } else if (skill.type === 'warp') {
     // 겨눈 적의 자리에 깐다. 적이 없으면 바라보는 쪽 조금 앞.
@@ -183,14 +188,62 @@ function attack(state, bus, player, input) {
   }
 }
 
-/** 든 무기를 바꾼다. 다른 칸이 비어 있으면 아무 일도 없다. */
+/** 탈마다 스킬의 재사용 대기를 따로 센다. */
+export const skillKey = (form) => `skill:${form}`;
+
+/**
+ * 쓰는 탈을 바꾼다: 능력치를 그 탈의 것으로 다시 합산한다. 잃은 체력·쓴 에너지는 그대로 가져간다
+ * (최대치가 다른 탈로 오가며 회복하지 못하게 — 모자란 양을 유지한다).
+ * 새 탈의 최대치가 모자란 양보다 작으면 체력은 1, 에너지는 0 에서 멈추고, 다 깎지 못한 양은 빚(hpDebt, energyDebt)으로 적어 둔다.
+ * 다음에 탈을 바꿀 때 그 빚을 다시 얹으므로 오가도 늘지 않는다.
+ */
+export function wearForm(state, player, form) {
+  if (!Object.hasOwn(CHARACTERS, form)) throw new RangeError(`wearForm: 알 수 없는 탈 "${form}"`);
+  const kit = player.kit;
+  const missingHp = player.maxHp - player.hp + kit.hpDebt;
+  const missingEnergy = kit.maxEnergy - kit.energy + kit.energyDebt;
+  kit.character = form;
+  kit.dualUntil = 0;
+  refreshPlayerStats(state);
+  const hp = player.maxHp - missingHp;
+  player.hp = Math.max(1, hp);
+  kit.hpDebt = Math.max(0, 1 - hp);
+  const energy = kit.maxEnergy - missingEnergy;
+  kit.energy = Math.max(0, energy);
+  kit.energyDebt = Math.max(0, -energy);
+}
+
+/**
+ * 교체: 다른 칸의 무기를 든다. 그 칸에 탈이 딸려 있으면 탈도 함께 바뀌고, 교체 기술이 준비돼 있으면 새 탈의 교체 기술이 나간다.
+ * 다른 칸에 무기가 없으면 아무 일도 없다.
+ */
 export function swapWeapon(state, bus) {
   const player = getPlayer(state);
   if (!player || player.dead) return false;
   const kit = player.kit;
   if (!kit.weapons[1 - kit.slot]) return false;
   kit.slot = 1 - kit.slot;
+  kit.dashAttackUntil = 0;
   bus.emit(EVENTS.WEAPON_SWAPPED, { slot: kit.slot, weapon: kit.weapons[kit.slot] });
+  const form = kit.forms[kit.slot];
+  if (form !== null && form !== kit.character) {
+    const from = kit.character;
+    wearForm(state, player, form);
+    let burst = false;
+    if ((player.cooldowns.swap ?? 0) <= state.tick) {
+      burst = true;
+      const swap = CHARACTERS[form].swap;
+      player.cooldowns.swap = state.tick + ticksOf(PLAYER.swap.cooldown);
+      player.invulnUntil = Math.max(player.invulnUntil, state.tick + ticksOf(PLAYER.swap.invuln));
+      const aim = aimDirection(state, player, state.input);
+      if (swap.clearBullets) {
+        const r2 = swap.clearBullets * swap.clearBullets;
+        clearBullets(state, bus, player.faction, (p) => (p.x - player.x) * (p.x - player.x) + (p.y - player.y) * (p.y - player.y) <= r2, player.x, player.y);
+      }
+      runEffects(state, bus, player, swap.effects, { dirX: aim.x, dirY: aim.y, targetX: aim.tx, targetY: aim.ty });
+    }
+    bus.emit(EVENTS.FORM_CHANGED, { id: player.id, from, to: form, burst, picked: false, x: player.x, y: player.y });
+  }
   return true;
 }
 
@@ -242,7 +295,7 @@ export function controlPlayer(state, bus) {
     startDash(state, bus, player, input, moveLen);
     return;
   }
-  if (kit.buffer && kit.buffer.kind === 'skill' && !player.action && isReady(state, player, 'skill')) {
+  if (kit.buffer && kit.buffer.kind === 'skill' && !player.action && isReady(state, player, skillKey(kit.character))) {
     kit.buffer = null;
     useSkill(state, bus, player, input);
   }

@@ -28,7 +28,27 @@ function fill(target, defaults) {
 
 const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
 
-const RUN_MIGRATIONS = {};
+const RUN_MIGRATIONS = {
+  // v5 → v6(탈 교체): 플레이어의 장비에 무기 칸마다 딸린 탈(forms)이 생겼다. 쓰고 있던 캐릭터를 든 칸의 탈로 둔다.
+  5(run) {
+    run.version = 6;
+    const byId = isObject(run.entities) && isObject(run.entities.byId) ? run.entities.byId : {};
+    for (const key of Object.keys(byId)) {
+      const actor = byId[key];
+      if (!isObject(actor) || !isObject(actor.kit) || Object.hasOwn(actor.kit, 'forms')) continue;
+      const forms = [null, null];
+      forms[actor.kit.slot === 1 ? 1 : 0] = typeof actor.kit.character === 'string' ? actor.kit.character : null;
+      actor.kit.forms = forms;
+      fill(actor.kit, { hpDebt: 0, energyDebt: 0 });
+      // 스킬의 재사용 대기는 이제 탈마다 따로 센다.
+      if (isObject(actor.cooldowns) && Object.hasOwn(actor.cooldowns, 'skill')) {
+        if (typeof actor.kit.character === 'string') actor.cooldowns[`skill:${actor.kit.character}`] = actor.cooldowns.skill;
+        delete actor.cooldowns.skill;
+      }
+    }
+    return run;
+  },
+};
 
 const META_MIGRATIONS = {
   // v1 → v2(방 단위 구조): 영구 해금(장비 세트·유물 등)이 사라지고 영구 강화와 캐릭터 해금이 생겼다.
