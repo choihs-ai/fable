@@ -8,7 +8,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
 
 test('조이스틱: 닿은 곳이 중심, 민 방향과 거리가 이동 입력이 된다', () => {
   const c = createControls();
-  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, attack: false, skill: -1, dodge: false });
+  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false });
   assert.equal(c.stickDown(1, 100, 300), true);
   assert.deepEqual(c.take().moveX, 0, '닿기만 하면 움직이지 않는다');
   c.pointerMove(1, 100 + R, 300);
@@ -58,15 +58,15 @@ test('멀티터치: 스틱과 버튼을 서로 다른 손가락으로 동시에 
   c.stickDown(1, 100, 300);
   c.pointerMove(1, 100 - R, 300);
   assert.equal(c.buttonDown(2, 'attack'), true);
-  assert.equal(c.buttonDown(3, 'skill1'), true);
+  assert.equal(c.buttonDown(3, 'skill'), true);
   const now = c.take();
   assert.ok(near(now.moveX, -1));
   assert.equal(now.attack, true);
-  assert.equal(now.skill, 1);
-  assert.deepEqual(c.held(), { stick: 1, buttons: ['attack', 'skill1'], pointers: 3 });
-  // 기술은 한 번만 나가고, 공격은 누르는 동안 계속 나간다.
+  assert.equal(now.skill, true);
+  assert.deepEqual(c.held(), { stick: 1, aim: 2, buttons: ['attack', 'skill'], pointers: 3 });
+  // 스킬은 한 번만 나가고, 공격은 누르는 동안 계속 나간다.
   const next = c.take();
-  assert.equal(next.skill, -1);
+  assert.equal(next.skill, false);
   assert.equal(next.attack, true);
   // 버튼 손가락을 떼도 스틱은 그대로다. 스틱 손가락을 떼도 공격은 그대로다.
   c.pointerUp(3);
@@ -89,8 +89,8 @@ test('멀티터치: 스틱이 잡혀 있으면 둘째 손가락은 스틱이 될
   // 스틱 손가락은 버튼을 누를 수 없고, 한 손가락이 버튼 둘을 잡을 수 없다.
   assert.equal(c.buttonDown(1, 'attack'), false);
   c.buttonDown(5, 'attack');
-  assert.equal(c.buttonDown(5, 'dodge'), false);
-  assert.equal(c.take().dodge, false);
+  assert.equal(c.buttonDown(5, 'dash'), false);
+  assert.equal(c.take().dash, false);
   // 첫 손가락을 뗀 뒤에는 다른 손가락이 스틱을 잡을 수 있다.
   c.pointerUp(1);
   assert.equal(c.stickDown(7, 50, 50), true);
@@ -121,20 +121,21 @@ test('터치 취소(touchcancel·캡처 해제): 그 손가락이 쥔 것만 놓
   // 모르는 포인터의 취소·뗌은 아무 일도 없다.
   c.pointerCancel(99);
   c.pointerUp(98);
-  assert.deepEqual(c.held(), { stick: null, buttons: [], pointers: 0 });
+  assert.deepEqual(c.held(), { stick: null, aim: null, buttons: [], pointers: 0 });
 });
 
-test('전부 놓기(백그라운드 전환·화면 회전·메뉴): 쥔 것과 가져가지 않은 기술·회피를 모두 버린다', () => {
+test('전부 놓기(백그라운드 전환·화면 회전·메뉴): 쥔 것과 가져가지 않은 한 번짜리 입력을 모두 버린다', () => {
   const c = createControls();
   c.stickDown(1, 100, 300);
   c.pointerMove(1, 100 + R, 300);
   c.buttonDown(2, 'attack');
-  c.buttonDown(3, 'skill2');
-  c.buttonDown(4, 'dodge');
+  c.buttonDown(3, 'skill');
+  c.buttonDown(4, 'dash');
+  c.buttonDown(5, 'swap');
   c.keyDown('KeyW');
   c.reset();
-  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, attack: false, skill: -1, dodge: false });
-  assert.deepEqual(c.held(), { stick: null, buttons: [], pointers: 0 });
+  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false });
+  assert.deepEqual(c.held(), { stick: null, aim: null, buttons: [], pointers: 0 });
   // 놓인 뒤에 늦게 도착한 이동·뗌 이벤트는 무시된다(옛 손가락이 되살아나지 않는다).
   c.pointerMove(1, 999, 999);
   c.pointerUp(2);
@@ -143,16 +144,61 @@ test('전부 놓기(백그라운드 전환·화면 회전·메뉴): 쥔 것과 �
   assert.equal(c.stickDown(1, 10, 10), true);
 });
 
-test('기술·회피는 누른 순간 한 번만: 누르고 있어도 되풀이되지 않고, 한 프레임에 둘을 누르면 마지막 기술이 나간다', () => {
+test('대시·스킬·무기 교체·상호작용은 누른 순간 한 번만: 누르고 있어도 되풀이되지 않는다', () => {
   const c = createControls();
-  c.buttonDown(1, 'dodge');
-  assert.equal(c.take().dodge, true);
-  assert.equal(c.take().dodge, false);
+  c.buttonDown(1, 'dash');
+  assert.equal(c.take().dash, true);
+  assert.equal(c.take().dash, false);
   c.pointerUp(1);
-  c.buttonDown(1, 'skill0');
-  c.buttonDown(2, 'skill2');
-  assert.equal(c.take().skill, 2);
+  c.buttonDown(1, 'swap');
+  c.buttonDown(2, 'interact');
+  const both = c.take();
+  assert.equal(both.swap && both.interact, true);
+  assert.equal(c.take().swap, false);
   assert.throws(() => c.buttonDown(3, 'jump'), RangeError);
+});
+
+test('수동 조준: 공격 버튼을 누른 채 끌면 그 방향으로 겨누고, 조금만 움직이거나 놓으면 자동 조준', () => {
+  const c = createControls();
+  c.buttonDown(1, 'attack', 300, 500);
+  let a = c.take();
+  assert.equal(a.attack, true);
+  assert.deepEqual([a.aimX, a.aimY], [0, 0], '누르기만 하면 자동 조준');
+  c.pointerMove(1, 300 + INPUT.aim.aimStart * 0.5, 500);
+  assert.deepEqual([c.take().aimX, c.take().aimY], [0, 0], '조금 움직인 것은 손 떨림');
+  c.pointerMove(1, 300, 500 - 80);
+  a = c.take();
+  assert.ok(near(a.aimX, 0) && near(a.aimY, -1), '화면 위로 끌면 -y 쪽을 겨눈다');
+  assert.deepEqual(c.aimShape(), { x: 0, y: -1 });
+  c.pointerMove(1, 300 + 60, 500 + 60);
+  a = c.take();
+  assert.ok(near(a.aimX, Math.SQRT1_2) && near(a.aimY, Math.SQRT1_2));
+  // 손가락이 화면 밖으로 나가도 유지된다.
+  c.pointerMove(1, 5000, 500);
+  assert.ok(near(c.take().aimX, 1));
+  c.pointerUp(1);
+  a = c.take();
+  assert.deepEqual([a.attack, a.aimX, a.aimY], [false, 0, 0]);
+  assert.equal(c.aimShape(), null);
+});
+
+test('수동 조준과 이동은 서로 다른 손가락: 스틱을 움직여도 조준이 흔들리지 않고, 취소되면 조준만 풀린다', () => {
+  const c = createControls();
+  c.stickDown(1, 100, 500);
+  c.buttonDown(2, 'attack', 600, 500);
+  c.pointerMove(2, 700, 500);
+  c.pointerMove(1, 100, 500 + R);
+  const a = c.take();
+  assert.ok(near(a.moveY, 1) && near(a.aimX, 1) && near(a.aimY, 0));
+  // 둘째 공격 손가락(공격 버튼을 이미 다른 손가락이 쥐고 있음)은 조준을 빼앗지 못한다.
+  c.buttonDown(3, 'attack', 0, 0);
+  c.pointerMove(3, 0, -900);
+  assert.ok(near(c.take().aimX, 1));
+  c.pointerCancel(2);
+  const b = c.take();
+  assert.deepEqual([b.aimX, b.aimY], [0, 0]);
+  assert.equal(b.attack, true, '셋째 손가락은 여전히 공격 버튼을 누르고 있다');
+  assert.ok(near(b.moveY, 1));
 });
 
 test('키보드: 대각선은 길이 1 로 맞추고, 자동 반복은 한 번으로 보고, 스틱이 잡혀 있으면 스틱이 우선한다', () => {
@@ -163,8 +209,13 @@ test('키보드: 대각선은 길이 1 로 맞추고, 자동 반복은 한 번�
   assert.ok(near(d.moveX * d.moveX + d.moveY * d.moveY, 1) && d.moveX > 0 && d.moveY > 0);
   c.keyDown('KeyK');
   c.keyDown('KeyK');
-  assert.equal(c.take().dodge, true);
-  assert.equal(c.take().dodge, false);
+  assert.equal(c.take().dash, true);
+  assert.equal(c.take().dash, false);
+  c.keyDown('KeyE');
+  c.keyDown('KeyR');
+  c.keyDown('KeyL');
+  const once = c.take();
+  assert.deepEqual([once.interact, once.swap, once.skill], [true, true, true]);
   c.keyUp('KeyK');
   c.keyDown('Space');
   assert.equal(c.take().attack, true);

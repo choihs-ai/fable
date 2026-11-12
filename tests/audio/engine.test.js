@@ -125,11 +125,21 @@ test('이벤트에 맞는 효과음이 나고, 화면이 가려지면 멈춘다'
   bus.emit(EVENTS.DAMAGE_DEALT, { targetId: 1, amount: 3 });
   bus.emit(EVENTS.DAMAGE_DEALT, { targetId: 5, amount: 0 });
   assert.equal(count(), n + 2, '피해 0 은 소리가 없다');
-  bus.emit(EVENTS.FLOOR_ENTERED, { floor: 5, zoneId: 'crypt', kind: 'midBoss' });
-  assert.deepEqual([audio.status().zone, audio.status().boss, audio.status().scheduling], ['crypt', true, true]);
+  bus.emit(EVENTS.FLOOR_ENTERED, { floor: 1, zoneId: 'crypt', kind: 'stage' });
+  assert.deepEqual([audio.status().zone, audio.status().boss, audio.status().scheduling], ['crypt', false, true]);
+  bus.emit(EVENTS.ROOM_ENTERED, { roomId: 3, kind: 'boss' });
+  assert.equal(audio.status().boss, true, '보스 방에 들어서면 배경음이 빨라진다');
+  // 무기마다 다른 소리, 대시·문·웨이브·방 깨기에도 소리가 난다.
+  n = count();
+  bus.emit(EVENTS.WEAPON_USED, { weapon: 'shotgun', kind: 'ranged', dash: false, offhand: false });
+  bus.emit(EVENTS.WEAPON_USED, { weapon: 'sword', kind: 'melee', dash: false, offhand: false });
+  bus.emit(EVENTS.PLAYER_DASHED, { id: 1 });
+  bus.emit(EVENTS.DOORS_LOCKED, { roomId: 3, doors: [] });
+  bus.emit(EVENTS.ROOM_CLEARED, { roomId: 3 });
+  assert.equal(count(), n + 5);
   audio.suspend();
   n = count();
-  bus.emit(EVENTS.LEVEL_UP, { level: 2 });
+  bus.emit(EVENTS.BOON_CHOSEN, { boon: 'chain' });
   assert.equal(count(), n, '멈춘 동안에는 내지 않는다');
   assert.equal(audio.status().scheduling, false);
   audio.resume();
@@ -137,7 +147,7 @@ test('이벤트에 맞는 효과음이 나고, 화면이 가려지면 멈춘다'
   assert.equal(audio.status().zone, null);
   off();
   n = count();
-  bus.emit(EVENTS.LEVEL_UP, { level: 3 });
+  bus.emit(EVENTS.BOON_CHOSEN, { boon: 'pierce' });
   assert.equal(count(), n, '연결을 끊은 뒤');
   audio.dispose();
 });

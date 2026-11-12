@@ -4,7 +4,8 @@
 // 그래서 AudioContext 는 unlock() — 첫 터치·클릭·키 입력 — 에서 만든다. 그 전의 요청은 조용히 버린다.
 // 소리를 낼 수 없는 환경(WebAudio 없음, 만들기 실패)에서는 모든 함수가 아무 일도 하지 않는다.
 
-import { MUSIC, SFX, SFX_MIN_GAP } from '../../data/audio.js';
+import { MUSIC, SFX, SFX_MIN_GAP, WEAPON_SFX } from '../../data/audio.js';
+import { WEAPONS } from '../../data/weapons.js';
 import { EVENTS } from '../logic/core/events.js';
 import { Rng } from '../logic/core/prng.js';
 
@@ -194,23 +195,38 @@ export function createAudio({ contextClass = () => globalThis.AudioContext ?? gl
       const play = (name) => () => this.play(name);
       const offs = [
         bus.on(EVENTS.DAMAGE_DEALT, (e) => {
-          if (e.amount <= 0) return;
-          this.play(e.targetId === getState().playerId ? 'hurt' : e.crit ? 'crit' : 'hit');
+          if (e.amount <= 0 || e.kind === 'dot') return;
+          this.play(e.targetId === getState().playerId ? 'hurt' : e.proc === 'bolt' ? 'bolt' : e.crit ? 'crit' : 'hit');
         }),
         bus.on(EVENTS.ENTITY_DIED, (e) => {
           if (e.kind !== 'player') this.play(e.kind === 'boss' ? 'bossKill' : 'kill');
         }),
-        bus.on(EVENTS.ABILITY_USED, (e) => {
-          if (e.actorId === getState().playerId) this.play(e.ability === 'slash' || e.ability === 'whirlwind' ? 'swing' : 'cast');
+        bus.on(EVENTS.WEAPON_USED, (e) => {
+          if (e.bash) this.play('swing');
+          else this.play(WEAPON_SFX[WEAPONS[e.weapon].look] ?? 'swing');
         }),
-        bus.on(EVENTS.PLAYER_DODGED, play('dodge')),
+        bus.on(EVENTS.ENERGY_EMPTY, play('empty')),
+        bus.on(EVENTS.PLAYER_DASHED, play('dash')),
+        bus.on(EVENTS.SKILL_USED, play('skill')),
+        bus.on(EVENTS.WEAPON_SWAPPED, play('swap')),
+        bus.on(EVENTS.WEAPON_PICKED, play('pickup')),
+        bus.on(EVENTS.EXPLOSION, play('explosion')),
+        bus.on(EVENTS.CHAIN_LIGHTNING, play('bolt')),
         bus.on(EVENTS.DROP_COLLECTED, (e) => this.play(e.kind === 'gold' ? 'coin' : 'pickup')),
-        bus.on(EVENTS.LEVEL_UP, play('levelUp')),
-        bus.on(EVENTS.CONSUMABLE_USED, play('potion')),
+        bus.on(EVENTS.BOON_CHOSEN, play('boon')),
+        bus.on(EVENTS.SHOP_PURCHASE, play('coin')),
+        bus.on(EVENTS.DOORS_LOCKED, play('doorLock')),
+        bus.on(EVENTS.DOORS_OPENED, play('doorOpen')),
+        bus.on(EVENTS.WAVE_STARTED, play('wave')),
+        bus.on(EVENTS.ROOM_CLEARED, play('clear')),
+        bus.on(EVENTS.SECRET_FOUND, play('secret')),
         bus.on(EVENTS.BOSS_PHASE_CHANGED, play('phase')),
+        bus.on(EVENTS.ROOM_ENTERED, (e) => {
+          if (e.kind === 'boss') this.setMusic(zone, true);
+        }),
         bus.on(EVENTS.FLOOR_ENTERED, (e) => {
-          this.play('stairs');
-          this.setMusic(e.zoneId, e.kind !== 'normal');
+          this.play('portal');
+          this.setMusic(e.zoneId, false);
         }),
         bus.on(EVENTS.RUN_ENDED, (e) => {
           this.play(e.victory ? 'victory' : 'death');

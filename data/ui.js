@@ -9,8 +9,16 @@ export const INPUT = deepFreeze({
    * deadzone: 이 비율 안쪽의 움직임은 0 으로 본다(손 떨림).
    */
   stick: { radius: 60, deadzone: 0.14 },
-  /** 진동 길이(ms). 배열은 진동·쉼의 되풀이다. */
-  vibration: { hurt: 28, kill: 10, levelUp: [18, 40, 18], death: 140, deny: 8 },
+  /**
+   * 공격 버튼을 누른 채 끌면 수동 조준이 된다. 누른 자리에서 aimStart 넘게 끌어야 조준으로 본다(누르기만 하면 자동 조준).
+   * 손을 떼면 다시 자동 조준.
+   */
+  aim: { aimStart: 18 },
+  /**
+   * 연속 터치 막기: 이 시간(ms) 안에 다시 손을 떼면(두 번 두드림) 브라우저의 기본 동작(확대·스크롤)을 막는다.
+   * 버튼은 막은 대신 눌림을 직접 전달한다.
+   */
+  doubleTapMs: 300,
   /** 키보드(데스크톱 확인용). */
   keys: {
     up: ['KeyW', 'ArrowUp'],
@@ -18,10 +26,10 @@ export const INPUT = deepFreeze({
     left: ['KeyA', 'ArrowLeft'],
     right: ['KeyD', 'ArrowRight'],
     attack: ['KeyJ', 'Space'],
-    skill0: ['Digit1', 'KeyU'],
-    skill1: ['Digit2', 'KeyI'],
-    skill2: ['Digit3', 'KeyO'],
-    dodge: ['KeyK', 'ShiftLeft', 'ShiftRight'],
+    dash: ['KeyK', 'ShiftLeft', 'ShiftRight'],
+    skill: ['KeyL', 'KeyQ'],
+    swap: ['KeyR', 'Tab'],
+    interact: ['KeyE', 'KeyF'],
   },
 });
 
