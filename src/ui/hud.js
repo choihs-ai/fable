@@ -1,16 +1,22 @@
-// HUD: 체력·에너지, 금화, 무기 두 칸, 가진 축복, 방·웨이브 알림, 보스 체력, 미니맵, 일시정지 버튼, 알림 문구.
+// HUD: 체력·에너지, 금화, 탈과 무기 두 칸(쓰는 칸·바꿀 칸), 가진 축복, 방·웨이브 알림, 보스 체력, 미니맵, 일시정지 버튼, 알림 문구.
+// 글자 대신 아이콘(icons.js)을 쓴다. 이모지는 쓰지 않는다.
 // 상태를 읽어 그린다. 프레임마다 update() 를 부르되, 값이 바뀐 것만 DOM 을 고친다.
 
 import { BOSSES } from '../../data/bosses.js';
 import { CHARACTERS } from '../../data/characters.js';
 import { UI } from '../../data/ui.js';
 import { WEAPONS } from '../../data/weapons.js';
+import { BOONS } from '../../data/boons.js';
+import { PLAYER } from '../../data/player.js';
 import { cooldownTicks } from '../logic/combat/abilities.js';
+import { skillKey } from '../logic/combat/player.js';
+import { ticksOf } from '../logic/core/time.js';
 import { currentRoom } from '../logic/combat/encounter.js';
 import { interactTarget } from '../logic/commands.js';
 import { h, setText } from './dom.js';
 import { createMinimap } from './minimap.js';
-import { boonColor, boonName, weaponName } from './text.js';
+import { familyIcon, icon, maskPortrait } from './icons.js';
+import { boonColor, boonName, characterName, weaponName } from './text.js';
 
 /**
  * @param {object} options
@@ -22,13 +28,16 @@ export function createHud({ root, on }) {
   const hpText = h('span', { class: 'label' });
   const enFill = h('div', { class: 'fill' });
   const enText = h('span', { class: 'label' });
-  const gold = h('span', { class: 'gold' });
+  const gold = h('span', { class: 'num' });
   const room = h('div', { class: 'room-info' });
   const bossFill = h('div', { class: 'fill' });
   const bossName = h('span', { class: 'label' });
   const boss = h('div', { class: 'bar boss hidden' }, bossFill, bossName);
-  const weaponMain = h('div', { class: 'weapon main' });
-  const weaponOff = h('div', { class: 'weapon off', 'data-tap': '', onclick: () => on.swap() });
+  // 쓰는 칸(탈 초상 + 무기)과 바꿀 칸(누르면 교체, 교체 기술의 대기 시간이 차오른다).
+  const slotMain = h('div', { class: 'slot main' });
+  const swapCool = h('div', { class: 'cool' });
+  const slotOffBody = h('div', { class: 'body' });
+  const slotOff = h('div', { class: 'slot off', 'data-tap': '', onclick: () => on.swap() }, swapCool, slotOffBody);
   const boons = h('div', { class: 'boons' });
   const banner = h('div', { class: 'banner hidden' });
   const toasts = h('div', { class: 'toasts' });
@@ -36,12 +45,16 @@ export function createHud({ root, on }) {
   const hud = h('div', { class: 'hud hidden' },
     h('div', { class: 'top' },
       h('div', { class: 'vitals' },
-        h('div', { class: 'bar hp' }, hpFill, hpText),
-        h('div', { class: 'bar energy' }, enFill, enText),
-        h('div', { class: 'weapons' }, weaponMain, weaponOff),
+        h('div', { class: 'bars' },
+          h('div', { class: 'bar hp' }, hpFill, icon('heart'), hpText),
+          h('div', { class: 'bar energy' }, enFill, icon('bolt'), enText)),
+        h('div', { class: 'slots' }, slotMain, slotOff),
         boons),
       h('div', { class: 'middle' }, room, boss),
-      h('div', { class: 'tools' }, gold, h('button', { class: 'btn small', 'data-hud': 'pause', onclick: () => on.pause() }, 'Ⅱ'), side)),
+      h('div', { class: 'tools' },
+        h('div', { class: 'purse' }, icon('coin'), gold),
+        h('button', { class: 'btn icon-only', 'data-hud': 'pause', 'aria-label': '일시정지', onclick: () => on.pause() }, icon('pause')),
+        side)),
     banner);
   root.append(hud, toasts);
   const minimap = createMinimap(side);
@@ -92,16 +105,30 @@ export function createHud({ root, on }) {
         setText(enText, v);
       });
       changed('gold', state.run.gold, (v) => setText(gold, `${v}`));
-      changed('weapons', `${kit.weapons.join(',')}|${kit.slot}|${kit.dualUntil > state.tick}`, () => {
+      changed('slots', `${kit.weapons.join(',')}|${kit.forms.join(',')}|${kit.character}|${kit.slot}|${kit.dualUntil > state.tick}`, () => {
         const main = kit.weapons[kit.slot];
         const off = kit.weapons[1 - kit.slot];
-        weaponMain.replaceChildren(h('b', { text: weaponName(main) }), h('small', { text: main ? (WEAPONS[main].kind === 'melee' ? '근접' : `⚡${WEAPONS[main].energy}`) : '' }));
-        weaponOff.replaceChildren(h('b', { text: off ? weaponName(off) : '—' }), h('small', { text: off ? '눌러서 교체' : '' }));
-        weaponOff.classList.toggle('empty', !off);
+        const offForm = kit.forms[1 - kit.slot];
+        const cost = main && WEAPONS[main].kind !== 'melee' ? WEAPONS[main].energy : null;
+        slotMain.replaceChildren(
+          maskPortrait(kit.character),
+          h('div', { class: 'names' },
+            h('b', { text: characterName(kit.character) }),
+            h('span', { class: 'weapon' }, icon(cost === null ? 'blade' : 'bolt'), h('span', { text: cost === null ? weaponName(main) : `${weaponName(main)} ${cost}` }))));
+        slotOffBody.replaceChildren(
+          offForm && offForm !== kit.character ? maskPortrait(offForm) : icon('swap'),
+          h('span', { class: 'weapon', text: off ? weaponName(off) : '빈 칸' }));
+        slotOff.classList.toggle('empty', !off);
+        slotOff.classList.toggle('has-mask', Boolean(offForm && offForm !== kit.character));
         hud.classList.toggle('dual', kit.dualUntil > state.tick);
       });
+      // 교체 기술의 대기: 바꿀 칸에 탈이 있을 때만 보인다.
+      const swapLeft = Math.max(0, (player.cooldowns.swap ?? 0) - state.tick);
+      changed('swapCool', Math.round((20 * swapLeft) / ticksOf(PLAYER.swap.cooldown)), (v) => {
+        swapCool.style.height = `${v * 5}%`;
+      });
       changed('boons', state.run.boons.join(','), () => {
-        boons.replaceChildren(...state.run.boons.map((id) => h('span', { class: 'boon-chip', style: `--c:${boonColor(id)}`, text: boonName(id) })));
+        boons.replaceChildren(...state.run.boons.map((id) => h('span', { class: 'boon-chip', style: `--c:${boonColor(id)}`, title: boonName(id) }, icon(familyIcon(BOONS[id].family, BOONS[id].duo)))));
       });
 
       // 방과 웨이브.
@@ -111,11 +138,14 @@ export function createHud({ root, on }) {
       if (enc) {
         const r = state.world.rooms[enc.room];
         const alive = Object.values(state.entities.byId).filter((a) => a.faction === 'enemy' && !a.dead).length + enc.pending.length;
-        info = r.kind === 'boss' ? '보스' : `웨이브 ${r.wave + 1}/${r.waves.length} · 남은 적 ${alive}`;
+        info = r.kind === 'boss' ? '보스' : `${r.wave + 1}/${r.waves.length} 물결 · 적 ${alive}`;
       } else if (here) {
-        info = { start: '시작 방', shop: '상점', reward: '보상 방', exit: '출구', bonus: '숨은 방' }[here.kind] ?? (here.state === 'cleared' ? '깬 방' : '');
+        info = { start: '첫 방', shop: '상점', reward: '보상 방', exit: '출구', bonus: '숨은 방' }[here.kind] ?? (here.state === 'cleared' ? '정리한 방' : '');
       }
-      changed('room', info, (v) => setText(room, v));
+      changed('room', info, (v) => {
+        setText(room, v);
+        room.classList.toggle('hidden', v === '');
+      });
 
       // 보스 체력.
       const bossActor = Object.values(state.entities.byId).find((a) => a.kind === 'boss' && !a.dead) ?? null;
@@ -130,11 +160,11 @@ export function createHud({ root, on }) {
 
       // 조작부 표시.
       const skill = CHARACTERS[kit.character].skill;
-      const skillLeft = Math.max(0, (player.cooldowns.skill ?? 0) - state.tick);
+      const skillLeft = Math.max(0, (player.cooldowns[skillKey(kit.character)] ?? 0) - state.tick);
       const skillTotal = cooldownTicks(player, skill.cooldown);
       const target = interactTarget(state);
       let interact = null;
-      if (target) interact = target.type === 'weapon' ? weaponName(target.weapon) : target.type === 'shop' ? '상점' : '포털';
+      if (target) interact = target.type === 'weapon' ? weaponName(target.weapon) : target.type === 'form' ? `${characterName(target.form)}의 탈` : target.type === 'shop' ? '상점' : '포털';
       const recharge = kit.chargeAt > 0 ? Math.max(0, kit.chargeAt - state.tick) / kit.rechargeTicks : 0;
       return {
         cooling: { skill: skillTotal > 0 ? skillLeft / skillTotal : 0, dash: kit.charges === 0 ? recharge : 0 },
@@ -143,6 +173,7 @@ export function createHud({ root, on }) {
         interact,
         swap: kit.weapons[1 - kit.slot] !== null,
         skill: skill.name,
+        form: kit.character,
       };
     },
   };

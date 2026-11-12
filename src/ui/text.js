@@ -47,25 +47,26 @@ export function upgradeText(id, level) {
 }
 
 const REASONS = {
-  'not-playing': '지금은 할 수 없습니다',
-  nothing: '가까이에 아무것도 없습니다',
-  'no-weapon': '바꿀 무기가 없습니다',
-  'too-far': '조금 더 가까이 가세요',
-  'no-choice': '고를 것이 없습니다',
-  'bad-index': '고를 수 없습니다',
-  'no-gold': '금화가 모자랍니다',
-  'no-shop': '상점에서만 살 수 있습니다',
-  sold: '이미 팔린 물건입니다',
-  owned: '이미 가진 축복입니다',
-  'full-hp': '체력이 가득 찼습니다',
-  'no-souls': '영혼석이 모자랍니다',
-  maxed: '더 올릴 수 없습니다',
-  unknown: '알 수 없는 항목입니다',
-  quota: '저장 공간이 모자랍니다',
+  'not-playing': '지금은 안 된다',
+  nothing: '가까이에 아무것도 없다',
+  'no-weapon': '바꿀 무기가 없다',
+  'owned-form': '이미 들고 있는 탈이다',
+  'too-far': '조금 더 가까이',
+  'no-choice': '고를 것이 없다',
+  'bad-index': '고를 수 없다',
+  'no-gold': '금화가 모자라다',
+  'no-shop': '상점에서만 살 수 있다',
+  sold: '이미 팔렸다',
+  owned: '이미 가진 축복이다',
+  'full-hp': '체력이 가득하다',
+  'no-souls': '영혼석이 모자라다',
+  maxed: '끝까지 올렸다',
+  unknown: '모르는 항목이다',
+  quota: '저장할 자리가 모자라다',
 };
 
 export function reasonText(reason) {
-  return REASONS[reason] ?? '할 수 없습니다';
+  return REASONS[reason] ?? '안 된다';
 }
 
 /** 방 종류의 이름(미니맵·알림). */

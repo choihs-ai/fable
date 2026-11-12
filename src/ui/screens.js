@@ -12,10 +12,11 @@ import {
 import { upgradeLevel } from '../logic/items/meta.js';
 import { shopRerollCost } from '../logic/items/shop.js';
 import { h } from './dom.js';
-import { boonColor, boonFamily, boonName, characterName, reasonText, weaponMeta, weaponName } from './text.js';
+import { familyIcon, icon, maskPortrait } from './icons.js';
+import { boonColor, boonFamily, boonName, reasonText, weaponMeta, weaponName } from './text.js';
 
 const SETTING_LABELS = {
-  masterVolume: '전체 음량', musicVolume: '배경음', sfxVolume: '효과음', vibration: '진동', quality: '그래픽 품질', leftHanded: '왼손 조작', sensitivity: '조이스틱 감도',
+  masterVolume: '소리 전체', musicVolume: '배경음', sfxVolume: '효과음', vibration: '진동', quality: '그림 품질', leftHanded: '왼손잡이', sensitivity: '스틱 감도',
 };
 const QUALITY_LABELS = { low: '낮음', medium: '보통', high: '높음' };
 
@@ -43,51 +44,69 @@ export function createScreens({ layer, ctx }) {
     render();
     return result;
   }
+  /** 버튼. label 은 글자이거나 요소들(아이콘 + 글자). */
   const button = (label, onclick, extra = {}) => h('button', { class: `btn ${extra.class ?? ''}`, disabled: extra.disabled, 'data-action': extra.action, onclick: () => onclick() }, label);
-  const panel = (title, ...children) => h('div', { class: 'panel' }, h('h2', { text: title }), ...children);
-  const souls = () => h('div', { class: 'souls', text: `영혼석 ${state().meta.souls}` });
+  /** 판: 머리띠(제목) + 내용. */
+  const panel = (title, ...children) => h('div', { class: 'panel' }, h('h2', { class: 'ribbon', text: title }), ...children);
+  const souls = () => h('div', { class: 'souls' }, icon('soul'), h('span', { class: 'num', text: String(state().meta.souls) }));
+  /** 값 버튼: 아이콘 + 숫자. */
+  const price = (name, amount) => [icon(name), h('span', { class: 'num', text: String(amount) })];
+  /** 다섯 칸 눈금(탈의 능력치 비교). */
+  const gauge = (label, value, values) => {
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const filled = max === min ? 3 : 1 + Math.round((4 * (value - min)) / (max - min));
+    return h('div', { class: 'gauge' }, h('span', { text: label }), h('span', { class: 'ticks' }, Array.from({ length: 5 }, (_, i) => h('i', { class: i < filled ? 'on' : '' }))));
+  };
 
   // ── 타이틀 ──
   function title() {
     const session = ctx.getSession();
     const cont = session.canContinue;
-    return h('div', { class: 'panel title' },
-      h('h1', { text: 'FABLE' }),
-      h('p', { class: 'subtitle', text: '지하 묘지 — 맛보기 판' }),
+    return h('div', { class: 'title' },
+      h('div', { class: 'parade' }, CHARACTER_ORDER.map((id) => maskPortrait(id, state().meta.characters[id] === true ? '' : 'locked'))),
+      h('h1', { class: 'logo', text: 'FABLE' }),
+      h('p', { class: 'strip', text: '탈을 바꿔 쓰고, 방을 하나씩 부순다' }),
       ...session.notices.map((n) => h('p', { class: 'notice', text: n })),
-      cont ? button(`이어하기 · ${characterName(cont.character)} · 깬 방 ${cont.rooms}`, () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
-      button(cont && !confirmNew ? '새 게임' : cont ? '정말 새로 시작(진행 중인 판은 사라짐)' : '새 게임', () => {
-        if (cont && !confirmNew) {
-          confirmNew = true;
-          render();
-          return;
-        }
-        open('characters', 'title');
-      }, { class: cont ? '' : 'primary', action: 'new' }),
-      button('거점(영구 강화)', () => open('hub', 'title'), { action: 'hub' }),
-      button('설정', () => open('settings', 'title'), { action: 'settings' }),
+      h('div', { class: 'menu' },
+        cont ? button([maskPortrait(cont.character), h('span', { text: `이어하기 · 방 ${cont.rooms}개째` })], () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
+        button(cont && !confirmNew ? '새 판' : cont ? '하던 판을 버리고 새 판' : '새 판', () => {
+          if (cont && !confirmNew) {
+            confirmNew = true;
+            render();
+            return;
+          }
+          open('characters', 'title');
+        }, { class: cont ? (confirmNew ? 'danger' : '') : 'primary', action: 'new' }),
+        button('거점', () => open('hub', 'title'), { action: 'hub' }),
+        button('설정', () => open('settings', 'title'), { action: 'settings' })),
       souls());
   }
 
-  // ── 캐릭터 고르기 ──
+  // ── 탈 고르기 ──
   function characters() {
     const meta = state().meta;
+    const all = CHARACTER_ORDER.map((id) => CHARACTERS[id]);
     const cards = CHARACTER_ORDER.map((id) => {
       const c = CHARACTERS[id];
       const owned = meta.characters[id] === true;
-      return h('div', { class: `card character ${owned ? '' : 'locked'}`, 'data-character': id },
-        h('h3', { text: c.name }),
-        h('p', { text: c.desc }),
-        h('p', { class: 'meta', text: `체력 ${c.hp} · 에너지 ${c.energy} · ${c.weapons.map(weaponName).join(' + ')}` }),
-        h('p', { class: 'skill', text: `스킬: ${c.skill.name} — ${c.skill.desc}` }),
+      return h('div', { class: `card mask-card ${owned ? '' : 'locked'}`, 'data-character': id },
+        h('div', { class: 'head' }, maskPortrait(id), h('div', {}, h('h3', { text: c.name }), h('p', { text: c.desc }))),
+        h('div', { class: 'gauges' },
+          gauge('체력', c.hp, all.map((x) => x.hp)), gauge('속도', c.speed, all.map((x) => x.speed)), gauge('에너지', c.energy, all.map((x) => x.energy))),
+        h('p', { class: 'line' }, icon('blade'), h('span', { text: c.weapons.map(weaponName).join(' · ') })),
+        h('p', { class: 'line' }, icon(`skill-${id}`), h('span', {}, h('b', { text: c.skill.name }), ` ${c.skill.desc}`)),
+        h('p', { class: 'line' }, icon('swap'), h('span', {}, h('b', { text: c.swap.name }), ` ${c.swap.desc}`)),
         owned
-          ? button('이 캐릭터로 시작', () => ctx.actions.newGame(id), { class: 'primary', action: `start-${id}` })
-          : button(`영혼석 ${c.cost}으로 해금`, () => {
+          ? button('이 탈로 시작', () => ctx.actions.newGame(id), { class: 'primary', action: `start-${id}` })
+          : button([icon('lock'), ...price('soul', c.cost)], () => {
             const result = run(unlockMetaCharacter(game(), id));
             if (result.ok) ctx.actions.metaChanged();
-          }, { action: `unlock-${id}` }));
+          }, { class: 'buy', disabled: meta.souls < c.cost, action: `unlock-${id}` }));
     });
-    return panel('캐릭터', h('div', { class: 'cards' }, cards), souls(), button('돌아가기', () => close(), { action: 'back' }));
+    return panel('탈 고르기',
+      h('p', { class: 'meta', text: '판 중에 다른 탈을 주우면 둘을 번갈아 쓸 수 있다. 바꾸는 순간 교체 기술이 나간다.' }),
+      h('div', { class: 'cards scroll' }, cards), souls(), button('돌아가기', () => close(), { action: 'back' }));
   }
 
   // ── 거점: 영구 강화 ──
@@ -99,8 +118,10 @@ export function createScreens({ layer, ctx }) {
       const maxed = level >= u.cost.length;
       const cost = maxed ? null : u.cost[level];
       return h('div', { class: `row upgrade ${u.kind}`, 'data-upgrade': id },
-        h('div', { class: 'grow' }, h('b', { text: `${u.name} ${'●'.repeat(level)}${'○'.repeat(u.cost.length - level)}` }), h('small', { text: u.desc })),
-        button(maxed ? '최대' : `${cost}`, () => {
+        h('div', { class: 'grow' },
+          h('b', {}, u.name, h('span', { class: 'ticks' }, u.cost.map((_, i) => h('i', { class: i < level ? 'on' : '' })))),
+          h('small', { text: u.desc })),
+        button(maxed ? icon('check') : price('soul', cost), () => {
           const result = run(buyMetaUpgrade(game(), id));
           if (result.ok) ctx.actions.metaChanged();
         }, { disabled: maxed || meta.souls < cost, class: 'buy', action: `buy-${id}` }));
@@ -108,13 +129,14 @@ export function createScreens({ layer, ctx }) {
     // 싸우는 방식이 달라지는 강화를 위에, 수치를 더하는 강화를 아래에 묶는다.
     const ids = Object.keys(UPGRADES);
     const rows = [
-      h('h4', { class: 'group', text: '싸우는 방식이 달라진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'rule').map(row),
-      h('h4', { class: 'group', text: '능력치' }), ...ids.filter((id) => UPGRADES[id].kind === 'stat').map(row),
+      h('h4', { class: 'group', text: '싸우는 법이 달라진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'rule').map(row),
+      h('h4', { class: 'group', text: '몸이 좋아진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'stat').map(row),
     ];
-    const stats = h('p', { class: 'meta', text: `판 ${meta.runs} · 승리 ${meta.victories} · 가장 많이 깬 방 ${meta.bestRooms} · 처치 ${meta.totalKills}` });
+    const stats = h('p', { class: 'meta', text: `${meta.runs}판 · ${meta.victories}번 탈출 · 한 판에 방 ${meta.bestRooms}개까지 · ${meta.totalKills}마리 처치` });
     return panel('거점', souls(), h('div', { class: 'list scroll' }, rows), stats,
-      button('캐릭터', () => open('characters', 'hub'), { action: 'characters' }),
-      button('돌아가기', () => close(), { class: 'primary', action: 'back' }));
+      h('div', { class: 'pair' },
+        button('탈 고르기', () => open('characters', 'hub'), { action: 'characters' }),
+        button('돌아가기', () => close(), { class: 'primary', action: 'back' })));
   }
 
   // ── 축복 3택1 ──
@@ -128,13 +150,16 @@ export function createScreens({ layer, ctx }) {
         const result = run(chooseBoon(game(), i));
         if (result.ok) close();
       } },
-      h('small', { class: 'family', text: boonFamily(id) || '무계열' }),
+      h('div', { class: 'band' }, icon(familyIcon(b.family, b.duo)), h('small', { text: boonFamily(id) || '무계열' })),
       h('h3', { text: boonName(id) }),
       h('p', { text: b.desc }));
     });
-    return panel('축복을 고르세요', h('div', { class: 'cards' }, cards),
-      button(cost === 0 ? `다시 뽑기(무료 ${state().run.freeRerolls}회)` : `다시 뽑기 · 금화 ${cost}`, () => run(rerollBoons(game())), { disabled: state().run.gold < cost, action: 'reroll' }),
-      h('p', { class: 'meta', text: `금화 ${state().run.gold} · 가진 축복 ${state().run.boons.length}개 · 계열 둘을 가지면 합성 축복이 나옵니다` }));
+    return panel('축복 하나',
+      h('div', { class: 'cards' }, cards),
+      h('div', { class: 'pair' },
+        button(cost === 0 ? `다시 뽑기 · 공짜 ${state().run.freeRerolls}번` : ['다시 뽑기', ...price('coin', cost)], () => run(rerollBoons(game())), { disabled: state().run.gold < cost, action: 'reroll' }),
+        h('div', { class: 'purse' }, icon('coin'), h('span', { class: 'num', text: String(state().run.gold) }))),
+      h('p', { class: 'meta', text: '계열 둘을 가지면 합성 축복이 섞여 나온다' }));
   }
 
   // ── 상점 ──
@@ -142,37 +167,46 @@ export function createScreens({ layer, ctx }) {
     const s = state();
     if (!s.shop) return null;
     const rows = s.shop.stock.map((item, i) => {
-      const price = shopPrice(s, item);
+      const cost = shopPrice(s, item);
       let name;
       let desc;
+      let glyph;
       if (item.kind === 'weapon') {
         name = weaponName(item.weapon);
         desc = `${weaponMeta(item.weapon)} — ${WEAPONS[item.weapon].desc}`;
+        glyph = WEAPONS[item.weapon].kind === 'melee' ? 'blade' : 'bolt';
       } else if (item.kind === 'boon') {
-        name = `축복: ${boonName(item.boon)}`;
+        name = boonName(item.boon);
         desc = `${boonFamily(item.boon) || '무계열'} — ${BOONS[item.boon].desc}`;
+        glyph = familyIcon(BOONS[item.boon].family, BOONS[item.boon].duo);
       } else {
-        name = '회복';
-        desc = '체력을 회복합니다. 살 때마다 비싸집니다.';
+        name = '붕대';
+        desc = '체력을 채운다. 살 때마다 비싸진다.';
+        glyph = 'heart';
       }
       return h('div', { class: `row shop-item ${item.sold ? 'sold' : ''}`, 'data-item': i },
+        h('span', { class: `tile kind-${item.kind}`, style: item.kind === 'boon' ? `--c:${boonColor(item.boon)}` : null }, icon(glyph)),
         h('div', { class: 'grow' }, h('b', { text: name }), h('small', { text: desc })),
-        button(item.sold ? '팔림' : `${price}`, () => run(buyShopItem(game(), i)), { disabled: item.sold || s.run.gold < price, class: 'buy', action: `buy-${i}` }));
+        button(item.sold ? icon('check') : price('coin', cost), () => run(buyShopItem(game(), i)), { disabled: item.sold || s.run.gold < cost, class: 'buy', action: `buy-${i}` }));
     });
-    return panel('상점', h('div', { class: 'meta', text: `금화 ${s.run.gold}` }), h('div', { class: 'list scroll' }, rows),
-      button(`진열품 다시 뽑기 · ${shopRerollCost(s.shop.rerolls)}`, () => run(rerollShop(game())), { disabled: s.run.gold < shopRerollCost(s.shop.rerolls), action: 'reroll' }),
-      button('나가기', () => close(), { class: 'primary', action: 'back' }));
+    return panel('상점', h('div', { class: 'purse' }, icon('coin'), h('span', { class: 'num', text: String(s.run.gold) })), h('div', { class: 'list scroll' }, rows),
+      h('div', { class: 'pair' },
+        button(['물건 갈기', ...price('coin', shopRerollCost(s.shop.rerolls))], () => run(rerollShop(game())), { disabled: s.run.gold < shopRerollCost(s.shop.rerolls), action: 'reroll' }),
+        button('나가기', () => close(), { class: 'primary', action: 'back' })));
   }
 
   // ── 일시정지 ──
   function pause() {
     const s = state();
-    const boons = s.run.boons.map((id) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('b', { text: boonName(id), style: `color:${boonColor(id)}` }), h('small', { text: BOONS[id].desc }))));
-    return panel('일시정지',
-      button('계속하기', () => close(), { class: 'primary', action: 'resume' }),
-      button('설정', () => open('settings', 'pause'), { action: 'settings' }),
-      button('저장하고 타이틀로', () => ctx.actions.toTitle(), { action: 'title' }),
-      boons.length ? h('h3', { text: '가진 축복' }) : null,
+    const boons = s.run.boons.map((id) => h('div', { class: 'row' },
+      h('span', { class: 'tile kind-boon', style: `--c:${boonColor(id)}` }, icon(familyIcon(BOONS[id].family, BOONS[id].duo))),
+      h('div', { class: 'grow' }, h('b', { text: boonName(id) }), h('small', { text: BOONS[id].desc }))));
+    return panel('잠깐 멈춤',
+      button('계속', () => close(), { class: 'primary', action: 'resume' }),
+      h('div', { class: 'pair' },
+        button('설정', () => open('settings', 'pause'), { action: 'settings' }),
+        button('저장하고 나가기', () => ctx.actions.toTitle(), { action: 'title' })),
+      boons.length ? h('h4', { class: 'group', text: `가진 축복 ${boons.length}` }) : null,
       boons.length ? h('div', { class: 'list scroll' }, boons) : null);
   }
 
@@ -183,7 +217,7 @@ export function createScreens({ layer, ctx }) {
       const rule = SETTINGS[key];
       let control;
       if (rule.type === 'int') {
-        const out = h('span', { class: 'value', text: String(values[key]) });
+        const out = h('span', { class: 'value num', text: String(values[key]) });
         control = h('span', { class: 'range' }, h('input', {
           type: 'range', min: rule.min, max: rule.max, step: key === 'sensitivity' ? 10 : 5, value: values[key], 'data-setting': key,
           oninput: (e) => {
@@ -195,12 +229,12 @@ export function createScreens({ layer, ctx }) {
         control = button(values[key] ? '켬' : '끔', () => {
           ctx.actions.setSetting(key, !values[key]);
           render();
-        }, { class: values[key] ? 'on' : '', action: `toggle-${key}` });
+        }, { class: `toggle ${values[key] ? 'on' : ''}`, action: `toggle-${key}` });
       } else {
         control = h('span', { class: 'choices' }, rule.values.map((v) => button(QUALITY_LABELS[v] ?? v, () => {
           ctx.actions.setSetting(key, v);
           render();
-        }, { class: values[key] === v ? 'on' : '', action: `${key}-${v}` })));
+        }, { class: `toggle ${values[key] === v ? 'on' : ''}`, action: `${key}-${v}` })));
       }
       return h('div', { class: 'row', 'data-row': key }, h('label', { text: SETTING_LABELS[key] ?? key }), control);
     });
@@ -212,13 +246,17 @@ export function createScreens({ layer, ctx }) {
     const last = ctx.getSession().lastRun;
     if (!last) return null;
     const s = state();
-    return panel(last.victory ? '탈출 성공!' : '쓰러졌다',
-      h('p', { class: 'meta', text: `깬 방 ${last.roomsCleared} · 처치 ${last.kills} · 정예 ${last.eliteKills} · 보스 ${last.bossKills}` }),
-      h('p', { class: 'reward', text: `영혼석 +${last.souls}` }),
-      h('p', { class: 'meta', text: `가진 영혼석 ${s.meta.souls} — 거점에서 영구 강화를 사거나 캐릭터를 해금할 수 있습니다` }),
-      button('바로 다시 하기', () => ctx.actions.retry(), { class: 'primary', action: 'retry' }),
-      button('거점으로', () => ctx.actions.toHub(), { action: 'hub' }),
-      button('타이틀로', () => ctx.actions.toTitle(), { action: 'title' }));
+    const tally = (glyph, label, value) => h('div', { class: 'tally' }, icon(glyph), h('span', { text: label }), h('b', { class: 'num', text: String(value) }));
+    return h('div', { class: `panel result ${last.victory ? 'win' : 'lose'}` },
+      h('h2', { class: 'stamp', text: last.victory ? '탈출!' : '쓰러졌다' }),
+      h('div', { class: 'tallies' },
+        tally('door', '정리한 방', last.roomsCleared), tally('blade', '처치', last.kills), tally('skull', '정예 · 보스', last.eliteKills + last.bossKills)),
+      h('div', { class: 'reward' }, icon('soul'), h('span', { class: 'num', text: `+${last.souls}` })),
+      h('p', { class: 'meta', text: `영혼석 ${s.meta.souls}개. 거점에서 강화를 사거나 새 탈을 푼다.` }),
+      button('한 판 더', () => ctx.actions.retry(), { class: 'primary', action: 'retry' }),
+      h('div', { class: 'pair' },
+        button('거점', () => ctx.actions.toHub(), { action: 'hub' }),
+        button('처음으로', () => ctx.actions.toTitle(), { action: 'title' })));
   }
 
   const BUILDERS = { title, characters, hub, boon, shop, pause, settings, result };

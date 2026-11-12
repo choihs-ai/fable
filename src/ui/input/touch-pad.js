@@ -4,14 +4,16 @@
 // 버튼: 공격(크게, 끌면 수동 조준), 대시(충전 표시), 스킬(재사용 대기 표시), 무기 교체, 상호작용(할 것이 있을 때만 보인다).
 
 import { h } from '../dom.js';
+import { icon } from '../icons.js';
 import { createControls } from './controls.js';
 
+/** 버튼마다 아이콘 하나. 글자는 이름이 바뀌는 것(스킬 이름, 주울 것)에만 작게 붙인다. */
 const BUTTONS = [
-  { name: 'attack', label: '공격' },
-  { name: 'dash', label: '대시' },
-  { name: 'skill', label: '스킬' },
-  { name: 'swap', label: '교체' },
-  { name: 'interact', label: '줍기' },
+  { name: 'attack', icon: 'attack', label: '' },
+  { name: 'dash', icon: 'dash', label: '' },
+  { name: 'skill', icon: 'skill-knight', label: '' },
+  { name: 'swap', icon: 'swap', label: '' },
+  { name: 'interact', icon: 'interact', label: '' },
 ];
 
 /**
@@ -29,12 +31,13 @@ export function createTouchPad({ root, sensitivity }) {
   const aimArrow = h('div', { class: 'aim-arrow' });
   const buttons = {};
   const cluster = h('div', { class: 'pad-buttons' });
-  for (const { name, label } of BUTTONS) {
+  for (const { name, icon: glyph, label } of BUTTONS) {
     const cool = h('div', { class: 'cool' });
+    const face = h('span', { class: 'glyph' }, icon(glyph));
     const text = h('span', { class: 'label', text: label });
     const pips = h('div', { class: 'pips' });
-    const el = h('div', { class: `pad-button pad-${name}`, 'data-button': name }, cool, text, pips);
-    buttons[name] = { el, cool, text, pips, last: -1, pipsShown: '' };
+    const el = h('div', { class: `pad-button pad-${name}`, 'data-button': name }, cool, face, text, pips);
+    buttons[name] = { el, cool, face, text, pips, last: -1, pipsShown: '', form: '' };
     cluster.append(el);
   }
   buttons.attack.el.append(aimArrow);
@@ -160,6 +163,11 @@ export function createTouchPad({ root, sensitivity }) {
       if (interact !== null && buttons.interact.text.textContent !== interact) buttons.interact.text.textContent = interact;
       buttons.swap.el.classList.toggle('disabled', !view.swap);
       if (view.skill && buttons.skill.text.textContent !== view.skill) buttons.skill.text.textContent = view.skill;
+      // 스킬 버튼의 그림은 쓰고 있는 탈에 따라 바뀐다.
+      if (view.form && buttons.skill.form !== view.form) {
+        buttons.skill.form = view.form;
+        buttons.skill.face.replaceChildren(icon(`skill-${view.form}`));
+      }
     },
     dispose() {
       window.removeEventListener('keydown', onKeyDown);

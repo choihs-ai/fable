@@ -5,6 +5,7 @@
 //   - 축복 3택1 이 제시돼 있으면 그 화면을 띄운다(세이브에서 이어한 경우에도 — 이벤트가 아니라 상태를 본다).
 //   - 런이 끝나면 결과 화면을 띄운다.
 
+import { CHARACTERS } from '../../data/characters.js';
 import { EVENTS } from '../logic/core/events.js';
 import { PHASE } from '../logic/core/state.js';
 import { h } from './dom.js';
@@ -13,7 +14,7 @@ import { createHud } from './hud.js';
 import { guardGestures } from './input/gesture-guard.js';
 import { createTouchPad } from './input/touch-pad.js';
 import { createScreens } from './screens.js';
-import { REWARD_NAMES, boonName, weaponName } from './text.js';
+import { REWARD_NAMES, boonName, characterName, weaponName } from './text.js';
 
 /**
  * @param {object} options
@@ -102,7 +103,7 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
         bus.on(EVENTS.RUN_ENDED, ({ victory }) => {
           haptics.pulse('death');
           screens.open('result');
-          hud.toast(victory ? '탈출 성공!' : '쓰러졌다');
+          hud.toast(victory ? '탈출!' : '쓰러졌다');
         }),
         bus.on(EVENTS.DAMAGE_DEALT, ({ targetId, sourceId, amount, crit }) => {
           if (amount <= 0) return;
@@ -116,27 +117,32 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
         bus.on(EVENTS.SKILL_USED, () => haptics.pulse('skill')),
         bus.on(EVENTS.DOORS_LOCKED, () => {
           haptics.pulse('door');
-          hud.banner('문이 잠겼다!', 'lock');
+          hud.banner('문이 잠겼다', 'lock');
         }),
         bus.on(EVENTS.WAVE_STARTED, ({ wave, waves }) => {
-          if (wave > 0) hud.banner(`웨이브 ${wave + 1}/${waves}`, 'wave');
+          if (wave > 0) hud.banner(`${wave + 1}/${waves} 물결`, 'wave');
         }),
         bus.on(EVENTS.ROOM_CLEARED, ({ kind, reward }) => {
           haptics.pulse('clear');
-          hud.banner(kind === 'boss' ? '보스 처치!' : `방 정리 — ${REWARD_NAMES[reward] ?? ''}`, 'clear');
+          hud.banner(kind === 'boss' ? '보스를 쓰러뜨렸다' : `방 정리${REWARD_NAMES[reward] ? ` · ${REWARD_NAMES[reward]}` : ''}`, 'clear');
         }),
         bus.on(EVENTS.BOON_CHOSEN, ({ boon }) => {
           haptics.pulse('boon');
-          hud.toast(`축복: ${boonName(boon)}`);
+          hud.toast(boonName(boon));
         }),
-        bus.on(EVENTS.WEAPON_PICKED, ({ weapon }) => hud.toast(`${weaponName(weapon)} 장착`)),
-        bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 모자랍니다 — 근접 무기로 바꾸거나 구슬을 주우세요')),
-        bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길을 찾았다!', 'clear')),
+        bus.on(EVENTS.WEAPON_PICKED, ({ weapon }) => hud.toast(`${weaponName(weapon)}을(를) 들었다`)),
+        bus.on(EVENTS.FORM_CHANGED, ({ to, picked, burst }) => {
+          haptics.pulse(burst ? 'skill' : 'dash');
+          if (picked) hud.toast(`${characterName(to)}의 탈을 썼다`);
+          else if (burst) hud.banner(CHARACTERS[to].swap.name, 'swap');
+        }),
+        bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 없다 — 바꿔 들거나 구슬을 주워라')),
+        bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길', 'clear')),
         bus.on(EVENTS.BOSS_PHASE_CHANGED, () => haptics.pulse('bossPhase')),
         bus.on(EVENTS.DROP_COLLECTED, ({ kind }) => {
           if (kind === 'gold' || kind === 'energy' || kind === 'health') haptics.pulse('pickup');
         }),
-        bus.on(EVENTS.PLAYER_REVIVED, () => hud.toast('두 번째 바람이 불었다')),
+        bus.on(EVENTS.PLAYER_REVIVED, () => hud.banner('다시 일어섰다', 'clear')),
       ];
       return () => offs.forEach((off) => off());
     },
