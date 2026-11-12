@@ -1,24 +1,18 @@
-// 화면들: 타이틀, 일시정지, 설정, 가방, 상점, 제단, 강화 3택1, 결과(사망·승리), 영구 해금.
+// 화면들: 타이틀, 캐릭터 고르기, 거점(영구 강화·캐릭터 해금), 축복 3택1, 상점, 일시정지, 설정, 결과(사망·승리).
 // 화면은 상태를 읽어 그리고, 바꾸는 일은 명령(logic/commands.js)과 main.js 가 준 actions 로만 한다.
 
-import { CONSUMABLES } from '../../data/consumables.js';
-import { RARITY, SLOTS, SLOT_NAMES, STATS } from '../../data/items.js';
-import { UNLOCKS } from '../../data/meta.js';
+import { BOONS, BOON_RULES } from '../../data/boons.js';
+import { CHARACTERS, CHARACTER_ORDER } from '../../data/characters.js';
+import { UPGRADES } from '../../data/meta.js';
 import { SETTINGS } from '../../data/settings.js';
-import { ZONES } from '../../data/zones.js';
+import { WEAPONS } from '../../data/weapons.js';
 import {
-  acceptAltar, buyItem, buyUnlock, chooseUpgrade, compareItem, discardItem, equipItem, sellItem, unequipItem, useConsumable,
+  boonRerollCost, buyMetaUpgrade, buyShopItem, chooseBoon, rerollBoons, rerollShop, shopPrice, unlockMetaCharacter,
 } from '../logic/commands.js';
-import { PHASE } from '../logic/core/state.js';
-import { getPlayer } from '../logic/entities/actors.js';
-import { canAccept } from '../logic/items/altar.js';
-import { sellPrice } from '../logic/items/equipment.js';
-import { xpToNext } from '../logic/items/levelup.js';
-import { canUnlock } from '../logic/items/meta.js';
+import { upgradeLevel } from '../logic/items/meta.js';
+import { shopRerollCost } from '../logic/items/shop.js';
 import { h } from './dom.js';
-import {
-  altarCostText, altarRewardText, choiceText, consumableText, itemLines, itemMeta, itemName, reasonText, relicText, statText, unlockText,
-} from './text.js';
+import { boonColor, boonFamily, boonName, characterName, reasonText, weaponMeta, weaponName } from './text.js';
 
 const SETTING_LABELS = {
   masterVolume: '전체 음량', musicVolume: '배경음', sfxVolume: '효과음', vibration: '진동', quality: '그래픽 품질', leftHanded: '왼손 조작', sensitivity: '조이스틱 감도',
@@ -34,8 +28,6 @@ export function createScreens({ layer, ctx }) {
   /** 지금 열린 화면 이름(없으면 null)과, 닫으면 돌아갈 화면. */
   let current = null;
   let returnTo = null;
-  /** 가방에서 고른 것: { where:'bag'|'slot', key } */
-  let picked = null;
   /** 진행 중인 런이 있을 때 "새 게임"은 두 번 눌러야 한다. */
   let confirmNew = false;
 
@@ -51,10 +43,9 @@ export function createScreens({ layer, ctx }) {
     render();
     return result;
   }
-  const button = (label, onclick, extra = {}) => h('button', { class: `btn ${extra.class ?? ''}`, disabled: extra.disabled, onclick: () => onclick() }, label);
+  const button = (label, onclick, extra = {}) => h('button', { class: `btn ${extra.class ?? ''}`, disabled: extra.disabled, 'data-action': extra.action, onclick: () => onclick() }, label);
   const panel = (title, ...children) => h('div', { class: 'panel' }, h('h2', { text: title }), ...children);
-  const itemCard = (item, attrs = {}) => h('div', { class: `item rarity-${item.rarity} ${attrs.class ?? ''}`, onclick: attrs.onclick },
-    h('div', { class: 'item-name', text: itemName(item) }), h('div', { class: 'item-meta', text: itemMeta(item) }));
+  const souls = () => h('div', { class: 'souls', text: `영혼석 ${state().meta.souls}` });
 
   // ── 타이틀 ──
   function title() {
@@ -62,29 +53,121 @@ export function createScreens({ layer, ctx }) {
     const cont = session.canContinue;
     return h('div', { class: 'panel title' },
       h('h1', { text: 'FABLE' }),
-      h('p', { class: 'sub', text: '30층 아래의 군주를 쓰러뜨려라' }),
-      button(cont ? `이어하기 — ${cont.floor}층 · 레벨 ${cont.level}` : '이어하기', () => ctx.actions.continueGame(), { class: 'primary', disabled: !cont }),
-      button('새 게임', () => {
+      h('p', { class: 'subtitle', text: '지하 묘지 — 맛보기 판' }),
+      ...session.notices.map((n) => h('p', { class: 'notice', text: n })),
+      cont ? button(`이어하기 · ${characterName(cont.character)} · 깬 방 ${cont.rooms}`, () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
+      button(cont && !confirmNew ? '새 게임' : cont ? '정말 새로 시작(진행 중인 판은 사라짐)' : '새 게임', () => {
         if (cont && !confirmNew) {
           confirmNew = true;
-          ctx.toast('진행 중인 런이 사라집니다. 한 번 더 누르면 새로 시작합니다');
+          render();
           return;
         }
-        confirmNew = false;
-        ctx.actions.newGame();
-      }),
-      button(`영구 해금 (영혼석 ${state().meta.souls})`, () => open('unlocks', 'title')),
-      button('설정', () => open('settings', 'title')),
-      ...session.notices.map((text) => h('p', { class: 'notice', text })));
+        open('characters', 'title');
+      }, { class: cont ? '' : 'primary', action: 'new' }),
+      button('거점(영구 강화)', () => open('hub', 'title'), { action: 'hub' }),
+      button('설정', () => open('settings', 'title'), { action: 'settings' }),
+      souls());
+  }
+
+  // ── 캐릭터 고르기 ──
+  function characters() {
+    const meta = state().meta;
+    const cards = CHARACTER_ORDER.map((id) => {
+      const c = CHARACTERS[id];
+      const owned = meta.characters[id] === true;
+      return h('div', { class: `card character ${owned ? '' : 'locked'}`, 'data-character': id },
+        h('h3', { text: c.name }),
+        h('p', { text: c.desc }),
+        h('p', { class: 'meta', text: `체력 ${c.hp} · 에너지 ${c.energy} · ${c.weapons.map(weaponName).join(' + ')}` }),
+        h('p', { class: 'skill', text: `스킬: ${c.skill.name} — ${c.skill.desc}` }),
+        owned
+          ? button('이 캐릭터로 시작', () => ctx.actions.newGame(id), { class: 'primary', action: `start-${id}` })
+          : button(`영혼석 ${c.cost}으로 해금`, () => {
+            const result = run(unlockMetaCharacter(game(), id));
+            if (result.ok) ctx.actions.metaChanged();
+          }, { action: `unlock-${id}` }));
+    });
+    return panel('캐릭터', h('div', { class: 'cards' }, cards), souls(), button('돌아가기', () => close(), { action: 'back' }));
+  }
+
+  // ── 거점: 영구 강화 ──
+  function hub() {
+    const meta = state().meta;
+    const rows = Object.keys(UPGRADES).map((id) => {
+      const u = UPGRADES[id];
+      const level = upgradeLevel(meta, id);
+      const maxed = level >= u.cost.length;
+      const cost = maxed ? null : u.cost[level];
+      return h('div', { class: 'row upgrade', 'data-upgrade': id },
+        h('div', { class: 'grow' }, h('b', { text: `${u.name} ${'●'.repeat(level)}${'○'.repeat(u.cost.length - level)}` }), h('small', { text: u.desc })),
+        button(maxed ? '최대' : `${cost}`, () => {
+          const result = run(buyMetaUpgrade(game(), id));
+          if (result.ok) ctx.actions.metaChanged();
+        }, { disabled: maxed || meta.souls < cost, class: 'buy', action: `buy-${id}` }));
+    });
+    const stats = h('p', { class: 'meta', text: `판 ${meta.runs} · 승리 ${meta.victories} · 가장 많이 깬 방 ${meta.bestRooms} · 처치 ${meta.totalKills}` });
+    return panel('거점', souls(), h('div', { class: 'list scroll' }, rows), stats,
+      button('캐릭터', () => open('characters', 'hub'), { action: 'characters' }),
+      button('돌아가기', () => close(), { class: 'primary', action: 'back' }));
+  }
+
+  // ── 축복 3택1 ──
+  function boon() {
+    const { choice } = state().run;
+    if (!choice) return null;
+    const cost = boonRerollCost(state());
+    const cards = choice.options.map((id, i) => {
+      const b = BOONS[id];
+      return h('div', { class: `card boon ${b.duo ? 'duo' : ''}`, style: `--c:${boonColor(id)}`, 'data-tap': '', 'data-boon': id, onclick: () => {
+        const result = run(chooseBoon(game(), i));
+        if (result.ok) close();
+      } },
+      h('small', { class: 'family', text: boonFamily(id) || '무계열' }),
+      h('h3', { text: boonName(id) }),
+      h('p', { text: b.desc }));
+    });
+    return panel('축복을 고르세요', h('div', { class: 'cards' }, cards),
+      button(cost === 0 ? `다시 뽑기(무료 ${state().run.freeRerolls}회)` : `다시 뽑기 · 금화 ${cost}`, () => run(rerollBoons(game())), { disabled: state().run.gold < cost, action: 'reroll' }),
+      h('p', { class: 'meta', text: `금화 ${state().run.gold} · 가진 축복 ${state().run.boons.length}개 · 계열 둘을 가지면 합성 축복이 나옵니다` }));
+  }
+
+  // ── 상점 ──
+  function shop() {
+    const s = state();
+    if (!s.shop) return null;
+    const rows = s.shop.stock.map((item, i) => {
+      const price = shopPrice(s, item);
+      let name;
+      let desc;
+      if (item.kind === 'weapon') {
+        name = weaponName(item.weapon);
+        desc = `${weaponMeta(item.weapon)} — ${WEAPONS[item.weapon].desc}`;
+      } else if (item.kind === 'boon') {
+        name = `축복: ${boonName(item.boon)}`;
+        desc = `${boonFamily(item.boon) || '무계열'} — ${BOONS[item.boon].desc}`;
+      } else {
+        name = '회복';
+        desc = '체력을 회복합니다. 살 때마다 비싸집니다.';
+      }
+      return h('div', { class: `row shop-item ${item.sold ? 'sold' : ''}`, 'data-item': i },
+        h('div', { class: 'grow' }, h('b', { text: name }), h('small', { text: desc })),
+        button(item.sold ? '팔림' : `${price}`, () => run(buyShopItem(game(), i)), { disabled: item.sold || s.run.gold < price, class: 'buy', action: `buy-${i}` }));
+    });
+    return panel('상점', h('div', { class: 'meta', text: `금화 ${s.run.gold}` }), h('div', { class: 'list scroll' }, rows),
+      button(`진열품 다시 뽑기 · ${shopRerollCost(s.shop.rerolls)}`, () => run(rerollShop(game())), { disabled: s.run.gold < shopRerollCost(s.shop.rerolls), action: 'reroll' }),
+      button('나가기', () => close(), { class: 'primary', action: 'back' }));
   }
 
   // ── 일시정지 ──
   function pause() {
+    const s = state();
+    const boons = s.run.boons.map((id) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('b', { text: boonName(id), style: `color:${boonColor(id)}` }), h('small', { text: BOONS[id].desc }))));
     return panel('일시정지',
-      button('계속하기', () => close(), { class: 'primary' }),
-      button('가방', () => open('inventory', 'pause')),
-      button('설정', () => open('settings', 'pause')),
-      button('저장하고 타이틀로', () => ctx.actions.toTitle()));
+      button('계속하기', () => close(), { class: 'primary', action: 'resume' }),
+      button('설정', () => open('settings', 'pause'), { action: 'settings' }),
+      button('저장하고 타이틀로', () => ctx.actions.toTitle(), { action: 'title' }),
+      boons.length ? h('h3', { text: '가진 축복' }) : null,
+      boons.length ? h('div', { class: 'list scroll' }, boons) : null);
   }
 
   // ── 설정 ──
@@ -106,174 +189,33 @@ export function createScreens({ layer, ctx }) {
         control = button(values[key] ? '켬' : '끔', () => {
           ctx.actions.setSetting(key, !values[key]);
           render();
-        }, { class: values[key] ? 'on' : '' });
+        }, { class: values[key] ? 'on' : '', action: `toggle-${key}` });
       } else {
         control = h('span', { class: 'choices' }, rule.values.map((v) => button(QUALITY_LABELS[v] ?? v, () => {
           ctx.actions.setSetting(key, v);
           render();
-        }, { class: values[key] === v ? 'on' : '' })));
+        }, { class: values[key] === v ? 'on' : '', action: `${key}-${v}` })));
       }
       return h('div', { class: 'row', 'data-row': key }, h('label', { text: SETTING_LABELS[key] ?? key }), control);
     });
-    return panel('설정', ...rows, button('닫기', () => close(), { class: 'primary' }));
-  }
-
-  // ── 가방 ──
-  function inventory() {
-    const { inventory: inv, run: runState } = state();
-    const player = getPlayer(state());
-    const sheet = runState.sheet ?? {};
-    const pick = (where, key) => () => {
-      picked = picked && picked.where === where && picked.key === key ? null : { where, key };
-      render();
-    };
-    const slots = h('div', { class: 'slots' }, SLOTS.map((slot) => {
-      const item = inv.equipped[slot];
-      const on = picked && picked.where === 'slot' && picked.key === slot ? 'picked' : '';
-      return item
-        ? itemCard(item, { class: `slot ${on}`, onclick: pick('slot', slot) })
-        : h('div', { class: 'item empty slot' }, h('div', { class: 'item-meta', text: SLOT_NAMES[slot] }));
-    }));
-    const bag = h('div', { class: 'bag' },
-      inv.bag.map((item, i) => itemCard(item, { class: picked && picked.where === 'bag' && picked.key === i ? 'picked' : '', onclick: pick('bag', i) })),
-      Array.from({ length: Math.max(0, inv.capacity - inv.bag.length) }, () => h('div', { class: 'item empty' })));
-
-    let detail = h('p', { class: 'hint', text: '장비를 누르면 자세히 봅니다' });
-    const item = picked ? (picked.where === 'bag' ? inv.bag[picked.key] : inv.equipped[picked.key]) : null;
-    if (!item) picked = null;
-    else {
-      const lines = itemLines(item).map((text) => h('li', { text }));
-      const actions = [];
-      if (picked.where === 'bag') {
-        const cmp = compareItem(game(), picked.key);
-        const delta = cmp.ok ? Object.keys(cmp.delta).map((key) => h('li', { class: cmp.delta[key] > 0 ? 'up' : 'down', text: statText(key, cmp.delta[key]) })) : [];
-        if (delta.length > 0) lines.push(h('li', { class: 'compare-title', text: '착용하면' }), ...delta);
-        const index = picked.key;
-        actions.push(button('착용', () => {
-          picked = null;
-          run(equipItem(game(), index));
-        }, { class: 'primary' }), button('버리기', () => {
-          picked = null;
-          run(discardItem(game(), index));
-        }));
-      } else {
-        const slot = picked.key;
-        actions.push(button('해제', () => {
-          picked = null;
-          run(unequipItem(game(), slot));
-        }));
-      }
-      detail = h('div', { class: `detail rarity-${item.rarity}` }, h('div', { class: 'item-name', text: itemName(item) }), h('div', { class: 'item-meta', text: itemMeta(item) }),
-        h('ul', {}, lines), h('div', { class: 'actions' }, actions));
-    }
-
-    const potions = Object.keys(inv.consumables).map((id) => {
-      const t = consumableText(id);
-      return h('div', { class: 'row' }, h('label', {}, `${t.name} ×${inv.consumables[id]}`, h('small', { text: t.desc })), button('사용', () => run(useConsumable(game(), id))));
-    });
-    const relics = inv.relics.map((id) => {
-      const t = relicText(id);
-      return h('div', { class: 'row' }, h('label', {}, t.name, h('small', { text: t.desc })));
-    });
-    const stats = Object.keys(STATS).filter((key) => sheet[key]).map((key) => h('li', { text: statText(key, sheet[key]) }));
-    return panel(`가방 (${inv.bag.length}/${inv.capacity})`,
-      h('div', { class: 'summary', text: `체력 ${player ? player.hp : 0}/${player ? player.maxHp : 0} · 레벨 ${runState.level} (${runState.xp}/${xpToNext(runState.level)}) · 금화 ${inv.gold}` }),
-      slots, bag, detail,
-      potions.length > 0 ? h('h3', { text: '소비 아이템' }) : null, ...potions,
-      relics.length > 0 ? h('h3', { text: '유물' }) : null, ...relics,
-      stats.length > 0 ? h('h3', { text: '능력치' }) : null, h('ul', { class: 'stats' }, stats),
-      button('닫기', () => close(), { class: 'primary' }));
-  }
-
-  // ── 상점 ──
-  function shop() {
-    const { shop: shopState, inventory: inv } = state();
-    if (!shopState) return panel('상점', h('p', { text: '이 층에는 상점이 없습니다' }), button('닫기', () => close()));
-    const stock = shopState.stock.map((entry, i) => {
-      let name;
-      let desc;
-      if (entry.kind === 'equipment') {
-        name = `${itemName(entry.item)} (${RARITY[entry.item.rarity].name})`;
-        desc = itemLines(entry.item).join(', ');
-      } else {
-        const t = entry.kind === 'consumable' ? consumableText(entry.id) : relicText(entry.id);
-        name = entry.kind === 'relic' ? `유물: ${t.name}` : t.name;
-        desc = t.desc;
-      }
-      return h('div', { class: `row ${entry.sold ? 'sold' : ''}` }, h('label', {}, name, h('small', { text: desc })),
-        button(entry.sold ? '팔림' : `${entry.price} 금화`, () => run(buyItem(game(), i)), { disabled: entry.sold || inv.gold < entry.price }));
-    });
-    const sell = inv.bag.map((item, i) => h('div', { class: 'row' }, h('label', {}, `${itemName(item)} (${RARITY[item.rarity].name})`, h('small', { text: itemLines(item).join(', ') })),
-      button(`+${sellPrice(item)} 금화`, () => run(sellItem(game(), i)))));
-    return panel(`상점 — 금화 ${inv.gold}`, h('h3', { text: '사기' }), ...stock,
-      h('h3', { text: '팔기' }), ...(sell.length > 0 ? sell : [h('p', { class: 'hint', text: '가방에 팔 장비가 없습니다' })]),
-      button('닫기', () => close(), { class: 'primary' }));
-  }
-
-  // ── 제단 ──
-  function altar() {
-    const { altar: altarState, inventory: inv } = state();
-    const player = getPlayer(state());
-    if (!altarState) return panel('제단', h('p', { text: '이 층에는 제단이 없습니다' }), button('닫기', () => close()));
-    if (altarState.used) return panel('제단', h('p', { text: '제단의 힘이 다했습니다' }), button('닫기', () => close(), { class: 'primary' }));
-    const offers = altarState.offers.map((offer, i) => {
-      const can = canAccept(altarState, i, { hp: player.hp, maxHp: player.maxHp, gold: inv.gold });
-      return h('div', { class: 'card' }, h('div', { class: 'cost', text: `대가: ${altarCostText(offer.cost)}` }), h('div', { class: 'reward', text: `보상: ${altarRewardText(offer.reward)}` }),
-        button(can.ok ? '바친다' : reasonText(can.reason), () => {
-          const result = run(acceptAltar(game(), i));
-          // 강화를 받았으면 3택1 로 넘어간다.
-          if (result.ok && state().run.choice) open('levelup', null);
-        }, { disabled: !can.ok }));
-    });
-    return panel('제단 — 하나만 고를 수 있다', h('div', { class: 'cards' }, offers), button('그냥 간다', () => close()));
-  }
-
-  // ── 강화 3택1 ──
-  function levelup() {
-    const { run: runState } = state();
-    if (!runState.choice) return null;
-    const cards = runState.choice.options.map((option, i) => {
-      const t = choiceText(option, runState.upgrades);
-      return h('button', { class: `card choice ${option.kind}`, onclick: () => {
-        run(chooseUpgrade(game(), i));
-        if (!state().run.choice) close();
-      } }, h('div', { class: 'item-name', text: t.name }), h('div', { class: 'desc', text: t.desc }), h('div', { class: 'item-meta', text: t.note }));
-    });
-    const more = runState.pendingChoices > 0 ? ` (뒤에 ${runState.pendingChoices}번 더)` : '';
-    return panel(`레벨 ${runState.level} — 강화를 하나 고른다${more}`, h('div', { class: 'cards' }, cards));
+    return panel('설정', h('div', { class: 'list scroll' }, rows), button('닫기', () => close(), { class: 'primary', action: 'back' }));
   }
 
   // ── 결과 ──
   function result() {
-    const { run: runState, meta, phase } = state();
-    const info = ctx.getSession().lastRun;
-    const win = phase === PHASE.VICTORY;
-    const zone = ZONES[Math.min(ZONES.length - 1, Math.floor((runState.floor - 1) / 5))];
-    return panel(win ? '심연의 군주를 쓰러뜨렸다' : '쓰러졌다',
-      h('p', { text: `${runState.floor}층 (${zone.name}) · 레벨 ${runState.level} · 처치 ${runState.kills} · 보스 ${runState.bossKills}` }),
-      h('p', { class: 'souls', text: `영혼석 +${info ? info.souls : 0} (보유 ${meta.souls})` }),
-      button('영구 해금', () => open('unlocks', 'result'), { class: 'primary' }),
-      button('타이틀로', () => ctx.actions.toTitle()));
+    const last = ctx.getSession().lastRun;
+    if (!last) return null;
+    const s = state();
+    return panel(last.victory ? '탈출 성공!' : '쓰러졌다',
+      h('p', { class: 'meta', text: `깬 방 ${last.roomsCleared} · 처치 ${last.kills} · 정예 ${last.eliteKills} · 보스 ${last.bossKills}` }),
+      h('p', { class: 'reward', text: `영혼석 +${last.souls}` }),
+      h('p', { class: 'meta', text: `가진 영혼석 ${s.meta.souls} — 거점에서 영구 강화를 사거나 캐릭터를 해금할 수 있습니다` }),
+      button('바로 다시 하기', () => ctx.actions.retry(), { class: 'primary', action: 'retry' }),
+      button('거점으로', () => ctx.actions.toHub(), { action: 'hub' }),
+      button('타이틀로', () => ctx.actions.toTitle(), { action: 'title' }));
   }
 
-  // ── 영구 해금 ──
-  function unlocks() {
-    const { meta } = state();
-    const rows = Object.keys(UNLOCKS).map((id) => {
-      const t = unlockText(id);
-      const owned = meta.unlocked[id] === true;
-      const can = canUnlock(meta, id);
-      const label = owned ? '해금됨' : can.ok ? `${t.cost} 영혼석` : can.reason === 'locked' ? `먼저: ${t.requires}` : `${t.cost} 영혼석`;
-      return h('div', { class: `row ${owned ? 'owned' : ''}`, 'data-unlock': id }, h('label', {}, t.name, h('small', { text: t.desc })),
-        button(label, () => {
-          const bought = run(buyUnlock(game(), id));
-          if (bought.ok) ctx.actions.metaChanged();
-        }, { disabled: owned || !can.ok }));
-    });
-    return panel(`영구 해금 — 영혼석 ${meta.souls}`, h('p', { class: 'hint', text: `런 ${meta.runs}회 · 승리 ${meta.victories}회 · 최고 ${meta.bestFloor}층` }), ...rows, button('닫기', () => close(), { class: 'primary' }));
-  }
-
-  const BUILDERS = { title, pause, settings, inventory, shop, altar, levelup, result, unlocks };
+  const BUILDERS = { title, characters, hub, boon, shop, pause, settings, result };
 
   function render() {
     layer.replaceChildren();
@@ -295,8 +237,7 @@ export function createScreens({ layer, ctx }) {
     if (!BUILDERS[name]) throw new RangeError(`open: 알 수 없는 화면 "${name}"`);
     current = name;
     returnTo = back;
-    picked = null;
-    confirmNew = false;
+    if (name !== 'title') confirmNew = false;
     render();
     ctx.actions.screenChanged(name);
   }
@@ -315,12 +256,17 @@ export function createScreens({ layer, ctx }) {
   return {
     open,
     close,
-    /** 지금 화면을 다시 그린다(인벤토리가 바뀌었을 때 등). */
+    /** 돌아갈 화면을 무시하고 모두 닫는다(게임을 시작할 때). */
+    closeAll() {
+      returnTo = null;
+      close();
+    },
+    /** 지금 화면을 다시 그린다(금화가 바뀌었을 때 등). */
     refresh: render,
     get current() {
       return current;
     },
-    /** 소비 아이템 이름표(HUD 의 물약 버튼용). */
-    consumableName: (id) => CONSUMABLES[id].name,
   };
 }
+
+export { BOON_RULES };

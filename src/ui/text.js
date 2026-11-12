@@ -1,123 +1,77 @@
-// 화면에 보일 문구를 데이터에서 만든다(이름, 능력치 줄, 효과 설명).
+// 화면에 보일 문구를 데이터에서 만든다(이름, 설명, 거절 사유).
 
-import { CONSUMABLES } from '../../data/consumables.js';
-import { BASES, RARITY, SETS, SLOT_NAMES, STATS } from '../../data/items.js';
-import { UNLOCKS } from '../../data/meta.js';
-import { RELICS } from '../../data/relics.js';
-import { STATUSES } from '../../data/statuses.js';
-import { FILLERS, UPGRADES } from '../../data/upgrades.js';
+import { BOONS, FAMILIES } from '../../data/boons.js';
+import { CHARACTERS } from '../../data/characters.js';
+import { UPGRADES } from '../../data/meta.js';
+import { WEAPONS } from '../../data/weapons.js';
 
-/** "공격력 +10%" */
-export function statText(stat, value) {
-  const info = STATS[stat];
-  return `${info ? info.name : stat} ${value > 0 ? '+' : ''}${value}${info ? info.unit : ''}`;
+export function boonName(id) {
+  return Object.hasOwn(BOONS, id) ? BOONS[id].name : id;
 }
 
-export function statsText(stats) {
-  return Object.keys(stats).map((key) => statText(key, stats[key])).join(', ');
+/** 축복의 계열 표시: "불", "번개 + 얼음"(합성), ""(무계열). */
+export function boonFamily(id) {
+  if (!Object.hasOwn(BOONS, id)) return '';
+  const b = BOONS[id];
+  if (b.duo) return `${FAMILIES[b.duo[0]].name} + ${FAMILIES[b.duo[1]].name} 합성`;
+  return b.family ? FAMILIES[b.family].name : '';
 }
 
-export function itemName(item) {
-  const set = item.setId ? `${SETS[item.setId].name}의 ` : '';
-  return `${set}${BASES[item.base].name}`;
+/** 축복의 계열 색(CSS). */
+export function boonColor(id) {
+  if (!Object.hasOwn(BOONS, id)) return '#e8d8ff';
+  const b = BOONS[id];
+  const family = b.duo ? null : b.family;
+  const hex = family ? FAMILIES[family].color : b.duo ? 0xffffff : 0xe8d8ff;
+  return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
-export function itemMeta(item) {
-  return `${RARITY[item.rarity].name} · ${SLOT_NAMES[item.slot]} · Lv.${item.ilvl}`;
+export function weaponName(id) {
+  return id && Object.hasOwn(WEAPONS, id) ? WEAPONS[id].name : '없음';
 }
 
-/** 장비의 옵션 줄(고유 옵션 먼저). 세트 장비면 세트 효과도 덧붙인다. */
-export function itemLines(item) {
-  const lines = [...item.implicit, ...item.affixes].map((o) => statText(o.stat, o.value));
-  if (item.setId) {
-    const set = SETS[item.setId];
-    for (const count of Object.keys(set.bonus)) lines.push(`[${set.name} ${count}세트] ${statsText(set.bonus[count])}`);
-  }
-  return lines;
+/** "권총 · 원거리 · 에너지 2" */
+export function weaponMeta(id) {
+  if (!id || !Object.hasOwn(WEAPONS, id)) return '';
+  const w = WEAPONS[id];
+  return w.kind === 'melee' ? `근접 · 등급 ${w.tier}` : `원거리 · 에너지 ${w.energy} · 등급 ${w.tier}`;
 }
 
-function statusName(id) {
-  return STATUSES[id] ? STATUSES[id].name : id;
+export function characterName(id) {
+  return Object.hasOwn(CHARACTERS, id) ? CHARACTERS[id].name : id;
 }
 
-export function consumableText(id) {
-  const def = CONSUMABLES[id];
-  const e = def.effect;
-  let desc = '';
-  if (e.type === 'heal') desc = `최대 체력의 ${e.pct}% 회복`;
-  else if (e.type === 'cleanse') desc = '상태이상을 모두 지운다';
-  else if (e.type === 'buff') desc = `${e.seconds}초 동안 ${statsText(e.stats)}`;
-  else if (e.type === 'blast') desc = `주변 ${e.radius}칸에 피해 ${e.damage}${e.status ? `, ${statusName(e.status.id)}` : ''}`;
-  return { name: def.name, desc };
+export function upgradeText(id, level) {
+  const u = UPGRADES[id];
+  return `${u.name} ${level}/${u.cost.length} — ${u.desc}`;
 }
 
-export function relicText(id) {
-  const def = RELICS[id];
-  const parts = [];
-  if (def.stats) parts.push(statsText(def.stats));
-  if (def.onKill) parts.push(`처치할 때마다 ${def.onKill.heal ? `체력 ${def.onKill.heal} 회복` : `금화 ${def.onKill.gold}`}`);
-  if (def.onFloor) parts.push(`층을 내려갈 때 체력 ${def.onFloor.healPct}% 회복`);
-  if (def.revive) parts.push(`한 번 죽음을 피하고 체력 ${def.revive.hpPct}% 로 되살아난다`);
-  return { name: def.name, desc: parts.join(', ') };
-}
-
-/** 강화 3택1 의 후보. owned 는 지금 가진 단계. */
-export function choiceText(option, owned) {
-  if (option.kind === 'upgrade') {
-    const def = UPGRADES[option.id];
-    const rank = owned[option.id] ?? 0;
-    return { name: def.name, desc: statsText(def.stats), note: `${rank} → ${rank + 1} / ${def.maxRank}단계` };
-  }
-  const def = FILLERS[option.id];
-  const e = def.effect;
-  const desc = e.type === 'heal' ? `최대 체력의 ${e.pct}% 회복` : e.type === 'gold' ? `금화 ${e.base} + 레벨당 ${e.perLevel}` : statsText(e.stats);
-  return { name: def.name, desc, note: '보상' };
-}
-
-export function altarCostText(cost) {
-  if (cost.type === 'hpPct') return `지금 체력의 ${cost.pct}%`;
-  if (cost.type === 'gold') return `금화 ${cost.amount}`;
-  if (cost.type === 'maxHp') return `최대 체력 -${cost.amount} (영구)`;
-  return `저주: ${statsText(cost.stats)} (영구)`;
-}
-
-export function altarRewardText(reward) {
-  if (reward.type === 'stats') return statsText(reward.stats);
-  if (reward.type === 'gold') return `금화 ${reward.amount}`;
-  if (reward.type === 'heal') return '체력을 모두 회복';
-  if (reward.type === 'upgrade') return '강화 하나 선택';
-  return '유물 하나';
-}
-
-export function unlockText(id) {
-  const def = UNLOCKS[id];
-  const e = def.effect;
-  const parts = [];
-  if (e.stats) parts.push(statsText(e.stats));
-  if (e.gold) parts.push(`시작 금화 +${e.gold}`);
-  if (e.capacity) parts.push(`가방 +${e.capacity}칸`);
-  if (e.consumables) parts.push(Object.keys(e.consumables).map((key) => `${CONSUMABLES[key].name} ${e.consumables[key]}개로 시작`).join(', '));
-  if (e.pool) parts.push('새 아이템이 나오기 시작한다');
-  return { name: def.name, desc: parts.join(', '), cost: def.cost, requires: def.requires ? UNLOCKS[def.requires].name : null };
-}
-
-/** 명령이 거절된 이유를 사람 말로. */
 const REASONS = {
+  'not-playing': '지금은 할 수 없습니다',
+  nothing: '가까이에 아무것도 없습니다',
+  'no-weapon': '바꿀 무기가 없습니다',
+  'too-far': '조금 더 가까이 가세요',
+  'no-choice': '고를 것이 없습니다',
+  'bad-index': '고를 수 없습니다',
   'no-gold': '금화가 모자랍니다',
-  'bag-full': '가방이 가득 찼습니다',
-  'stack-full': '더 가질 수 없습니다',
-  'already-owned': '이미 가진 유물입니다',
-  'sold-out': '이미 팔렸습니다',
-  'too-far': '너무 멉니다',
-  'full-hp': '체력이 가득합니다',
-  'nothing-to-cleanse': '지울 상태이상이 없습니다',
-  'none-left': '남은 것이 없습니다',
-  'too-weak': '감당할 수 없습니다',
-  'boss-alive': '보스를 쓰러뜨려야 계단이 열립니다',
+  'no-shop': '상점에서만 살 수 있습니다',
+  sold: '이미 팔린 물건입니다',
+  owned: '이미 가진 축복입니다',
+  'full-hp': '체력이 가득 찼습니다',
   'no-souls': '영혼석이 모자랍니다',
-  locked: '앞 단계를 먼저 해금해야 합니다',
-  used: '이미 제단을 썼습니다',
+  maxed: '더 올릴 수 없습니다',
+  unknown: '알 수 없는 항목입니다',
+  quota: '저장 공간이 모자랍니다',
 };
+
 export function reasonText(reason) {
-  return REASONS[reason] ?? `할 수 없습니다 (${reason})`;
+  return REASONS[reason] ?? '할 수 없습니다';
 }
+
+/** 방 종류의 이름(미니맵·알림). */
+export const ROOM_NAMES = Object.freeze({
+  start: '시작', combat: '전투', elite: '정예', reward: '보상', shop: '상점', boss: '보스', exit: '출구', bonus: '숨은 방',
+});
+
+/** 보상의 이름. */
+export const REWARD_NAMES = Object.freeze({ boon: '축복', weapon: '무기', gold: '금화', health: '체력' });

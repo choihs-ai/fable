@@ -3,9 +3,10 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cutawayCells, distanceScale, followStep } from '../../src/render/camera-rig.js';
+import { addShake, cutawayCells, decayShake, distanceScale, followStep, shakeOffset } from '../../src/render/camera-rig.js';
+import { corpseAt, poseOf } from '../../src/render/entities/pose.js';
 import { createPool, createSlots } from '../../src/render/pool.js';
-import { FOG, floorLevel, updateLevels, wallLevel } from '../../src/render/world/fog.js';
+import { approach, regionTargets, stepToward, wallBrightness, wallNeighbors } from '../../src/render/world/reveal.js';
 
 test('풀: 돌려놓은 것을 다시 꺼내고, 최대 수를 넘겨 만들지 않는다', () => {
   let made = 0;
@@ -112,29 +113,81 @@ test('카메라 거리: 가로 화면은 1, 세로로 길수록 멀어지되 상
   assert.equal(distanceScale(Number.NaN, 1.35), 1);
 });
 
-test('안개: 보이는 곳·탐험한 곳·가 보지 않은 곳을 구분하고, 벽은 맞닿은 바닥의 밝기를 따른다', () => {
-  // 3×3: 가운데만 바닥. visible 은 가운데만, explored 는 가운데만.
-  const vision = { visible: [0, 0, 0, 0, 1, 0, 0, 0, 0], explored: [0, 0, 0, 0, 1, 0, 0, 0, 0] };
-  assert.equal(floorLevel(vision, 4), FOG.VISIBLE);
-  assert.equal(floorLevel(vision, 0), FOG.HIDDEN);
-  assert.equal(wallLevel(vision, 3, 3, 0), FOG.VISIBLE, '보이는 바닥에 맞닿은 벽');
-  vision.visible[4] = 0;
-  assert.equal(floorLevel(vision, 4), FOG.EXPLORED);
-  assert.equal(wallLevel(vision, 3, 3, 8), FOG.EXPLORED);
-  vision.explored[4] = 0;
-  assert.equal(wallLevel(vision, 3, 3, 8), FOG.HIDDEN);
+test('방 공개: 드러난 구역만 목표 밝기 1, 페이드는 구역 전체가 같은 빠르기로 0.3초 만에 끝난다', () => {
+  const world = { rooms: [{ seen: true }, { seen: false }, { seen: true }], links: [{ seen: true }, { seen: false }] };
+  const target = regionTargets(world);
+  assert.deepEqual(Array.from(target), [1, 0, 1, 1, 0]);
+  const current = new Float32Array([1, 0, 0, 1, 0]);
+  // 0.1초씩 세 번이면 다 밝아진다. 중간에는 1/3, 2/3 — 칸마다 끊기지 않고 한 값으로 바뀐다.
+  assert.deepEqual(stepToward(current, target, 0.3, 0.1), [2]);
+  assert.ok(Math.abs(current[2] - 1 / 3) < 1e-6);
+  stepToward(current, target, 0.3, 0.1);
+  assert.ok(Math.abs(current[2] - 2 / 3) < 1e-6);
+  stepToward(current, target, 0.3, 0.1);
+  assert.equal(current[2], 1);
+  assert.deepEqual(stepToward(current, target, 0.3, 0.1), [], '다 바뀌면 고칠 것이 없다');
+  // 프레임을 잘게 나눠도 같은 시간 뒤에는 같은 값이다.
+  const a = new Float32Array([0]);
+  const b = new Float32Array([0]);
+  for (let i = 0; i < 10; i++) stepToward(a, [1], 0.3, 0.015);
+  stepToward(b, [1], 0.3, 0.15);
+  assert.ok(Math.abs(a[0] - b[0]) < 1e-6);
 });
 
-test('안개 갱신: 단계가 바뀐 인스턴스만 다시 칠한다', () => {
-  const levels = new Uint8Array(4);
-  const cells = [10, 11, 12, 13];
-  const painted = [];
-  const now = { 10: 2, 11: 1, 12: 0, 13: 2 };
-  assert.equal(updateLevels(levels, cells, (c) => now[c], (i, level) => painted.push([i, level])), 3);
-  assert.deepEqual(painted, [[0, 2], [1, 1], [3, 2]]);
-  painted.length = 0;
-  now[10] = 1;
-  assert.equal(updateLevels(levels, cells, (c) => now[c], (i, level) => painted.push([i, level])), 1);
-  assert.deepEqual(painted, [[0, 1]]);
-  assert.equal(updateLevels(levels, cells, (c) => now[c], () => assert.fail('바뀐 것이 없다')), 0);
+test('방 공개: 벽은 맞닿은 구역 가운데 가장 밝은 것을 따른다', () => {
+  // 3x3 의 가운데가 벽, 왼쪽 열이 구역 0, 오른쪽 열이 구역 1.
+  const regionAt = new Int16Array([0, -1, 1, 0, -1, 1, 0, -1, 1]);
+  const neighbors = wallNeighbors(regionAt, 3, 3, [4, 1]);
+  assert.deepEqual(neighbors[0].sort(), [0, 1]);
+  assert.equal(wallBrightness(neighbors[0], new Float32Array([0, 0.5])), 0.5);
+  assert.equal(wallBrightness([], new Float32Array([1])), 0);
+});
+
+test('벽 낮추기 보간: 칸을 넘는 순간 튀지 않고 부드럽게 다가가며, 충분히 가까우면 목표에 맞춘다', () => {
+  let h = 1.6;
+  const seen = [];
+  for (let i = 0; i < 6; i++) {
+    h = approach(h, 0.25, 10, 1 / 60);
+    seen.push(h);
+  }
+  assert.ok(seen.every((v, i) => v < (i === 0 ? 1.6 : seen[i - 1])), '줄어들기만 한다');
+  assert.ok(1.6 - seen[0] < 0.3, `한 프레임에 크게 튀지 않는다(${(1.6 - seen[0]).toFixed(3)})`);
+  for (let i = 0; i < 200; i++) h = approach(h, 0.25, 10, 1 / 60);
+  assert.equal(h, 0.25);
+});
+
+test('카메라 흔들림: 세기가 0 이면 흔들리지 않고, 더하면 상한을 넘지 않고, 시간이 지나면 잦아든다', () => {
+  assert.deepEqual(shakeOffset(0, 1.3, 30), { x: 0, y: 0 });
+  const o = shakeOffset(0.5, 0.37, 30);
+  assert.ok(Math.abs(o.x) <= 0.5 + 1e-9 && Math.abs(o.y) <= 0.5 + 1e-9 && (o.x !== 0 || o.y !== 0));
+  assert.equal(addShake(0.8, 0.5, 0.9), 0.9);
+  let s = 0.9;
+  for (let i = 0; i < 120; i++) s = decayShake(s, 7, 1 / 60);
+  assert.equal(s, 0);
+});
+
+test('자세: 걷기는 다리가 엇갈리고, 대시·피격·공격은 몸을 기울인다', () => {
+  const walk = poseOf({ walk: Math.PI / 2, speed: 1, attack: -1, swing: 'slash', windup: -1, hurt: 0, dash: false, time: 0 });
+  assert.ok(walk.legL > 0.5 && walk.legR < -0.5);
+  const still = poseOf({ walk: Math.PI / 2, speed: 0, attack: -1, swing: 'slash', windup: -1, hurt: 0, dash: false, time: 0 });
+  assert.equal(still.legL, 0);
+  const dash = poseOf({ walk: 0, speed: 1, attack: -1, swing: 'slash', windup: -1, hurt: 0, dash: true, time: 0 });
+  assert.ok(dash.lean > 0.4);
+  const hurt = poseOf({ walk: 0, speed: 0, attack: -1, swing: 'slash', windup: -1, hurt: 1, dash: false, time: 0 });
+  assert.ok(hurt.lean < 0);
+  const windup = poseOf({ walk: 0, speed: 0, attack: -1, swing: 'slash', windup: 1, hurt: 0, dash: false, time: 0 });
+  assert.ok(windup.armR < -1, '준비하는 동안 무기를 크게 뒤로 당긴다(읽을 수 있게)');
+  for (const swing of ['slash', 'thrust', 'smash', 'shoot', 'spin']) {
+    const p = poseOf({ walk: 0, speed: 0, attack: 0.2, swing, windup: -1, hurt: 0, dash: false, time: 0 });
+    for (const v of Object.values(p)) assert.ok(Number.isFinite(v), swing);
+  }
+});
+
+test('처치된 몸: 맞은 방향으로 날아가며 솟았다가 바닥에 떨어지고, 바닥 아래로 내려가지 않는다', () => {
+  const c = { vx: 4, vy: -2, up: 4.5, gravity: 16, spin: 9 };
+  const mid = corpseAt(c, 0.14);
+  assert.ok(mid.h > 0.3 && mid.dx > 0 && mid.dz < 0);
+  const end = corpseAt(c, 0.6);
+  assert.equal(end.h, 0);
+  assert.ok(end.dx > mid.dx, '땅에 닿은 뒤에도 조금 미끄러진다');
 });

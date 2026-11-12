@@ -1,15 +1,17 @@
 // 가상 조이스틱과 버튼을 화면에 만들고, 포인터·키보드 이벤트를 조작 상태 기계(controls.js)에 넘긴다.
 // 포인터 이벤트를 쓴다: 손가락마다 pointerId 가 달라 멀티터치를 구분할 수 있고, 마우스도 같은 길로 들어온다.
+//
+// 버튼: 공격(크게, 끌면 수동 조준), 대시(충전 표시), 스킬(재사용 대기 표시), 무기 교체, 상호작용(할 것이 있을 때만 보인다).
 
 import { h } from '../dom.js';
 import { createControls } from './controls.js';
 
 const BUTTONS = [
   { name: 'attack', label: '공격' },
-  { name: 'skill0', label: '회전' },
-  { name: 'skill1', label: '화염' },
-  { name: 'skill2', label: '서리' },
-  { name: 'dodge', label: '회피' },
+  { name: 'dash', label: '대시' },
+  { name: 'skill', label: '스킬' },
+  { name: 'swap', label: '교체' },
+  { name: 'interact', label: '줍기' },
 ];
 
 /**
@@ -24,14 +26,18 @@ export function createTouchPad({ root, sensitivity }) {
   const base = h('div', { class: 'stick-base' });
   const knob = h('div', { class: 'stick-knob' });
   const zone = h('div', { class: 'pad-move' }, base, knob);
+  const aimArrow = h('div', { class: 'aim-arrow' });
   const buttons = {};
   const cluster = h('div', { class: 'pad-buttons' });
   for (const { name, label } of BUTTONS) {
     const cool = h('div', { class: 'cool' });
-    const el = h('div', { class: `pad-button pad-${name}`, 'data-button': name }, cool, h('span', { text: label }));
-    buttons[name] = { el, cool, last: -1 };
+    const text = h('span', { class: 'label', text: label });
+    const pips = h('div', { class: 'pips' });
+    const el = h('div', { class: `pad-button pad-${name}`, 'data-button': name }, cool, text, pips);
+    buttons[name] = { el, cool, text, pips, last: -1, pipsShown: '' };
     cluster.append(el);
   }
+  buttons.attack.el.append(aimArrow);
   const pad = h('div', { class: 'pad hidden' }, zone, cluster);
   root.append(pad);
 
@@ -45,23 +51,25 @@ export function createTouchPad({ root, sensitivity }) {
   };
   const release = (e) => controls.pointerUp(e.pointerId);
   const cancel = (e) => controls.pointerCancel(e.pointerId);
+  const move = (e) => controls.pointerMove(e.pointerId, e.clientX, e.clientY);
 
   zone.addEventListener('pointerdown', (e) => {
     if (!enabled) return;
     e.preventDefault();
     if (controls.stickDown(e.pointerId, e.clientX, e.clientY)) capture(zone, e.pointerId);
   });
-  zone.addEventListener('pointermove', (e) => controls.pointerMove(e.pointerId, e.clientX, e.clientY));
+  zone.addEventListener('pointermove', move);
   for (const { name } of BUTTONS) {
     const { el } = buttons[name];
     el.addEventListener('pointerdown', (e) => {
       if (!enabled) return;
       e.preventDefault();
-      if (controls.buttonDown(e.pointerId, name)) {
+      if (controls.buttonDown(e.pointerId, name, e.clientX, e.clientY)) {
         capture(el, e.pointerId);
         el.classList.add('down');
       }
     });
+    el.addEventListener('pointermove', move);
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
       el.addEventListener(type, (e) => {
         (type === 'pointerup' ? release : cancel)(e);
@@ -76,6 +84,7 @@ export function createTouchPad({ root, sensitivity }) {
 
   const onKeyDown = (e) => {
     if (!enabled || e.repeat) return;
+    if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
     controls.keyDown(e.code);
   };
   const onKeyUp = (e) => controls.keyUp(e.code);
@@ -87,6 +96,8 @@ export function createTouchPad({ root, sensitivity }) {
     for (const name of Object.keys(buttons)) buttons[name].el.classList.remove('down');
   }
 
+  const EMPTY = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false };
+
   return {
     controls,
     /** 조작을 켜고 끈다. 끌 때는 쥐고 있던 것을 모두 놓는다. */
@@ -95,6 +106,9 @@ export function createTouchPad({ root, sensitivity }) {
       enabled = value;
       pad.classList.toggle('hidden', !value);
       reset();
+    },
+    get enabled() {
+      return enabled;
     },
     reset,
     setSensitivity: (value) => controls.setSensitivity(value),
@@ -105,15 +119,15 @@ export function createTouchPad({ root, sensitivity }) {
     take() {
       if (!enabled) {
         controls.reset();
-        return { moveX: 0, moveY: 0, attack: false, skill: -1, dodge: false };
+        return { ...EMPTY };
       }
       return controls.take();
     },
     /**
-     * 스틱 그림과 재사용 대기 표시를 갱신한다.
-     * @param {Record<string, number>} cooling 버튼 이름 → 남은 재사용 대기 비율(0~1)
+     * 스틱·조준 그림과 버튼 표시를 갱신한다.
+     * @param {object} view { cooling:{ name → 0~1 }, charges, maxCharges, interact: 글자|null, swap: 무기 이름|null, skill: 이름 }
      */
-    draw(cooling) {
+    draw(view) {
       const shape = controls.stickShape();
       zone.classList.toggle('active', shape !== null);
       if (shape) {
@@ -122,15 +136,30 @@ export function createTouchPad({ root, sensitivity }) {
         knob.style.transform = `translate(${shape.knobX - rect.left}px, ${shape.knobY - rect.top}px)`;
         base.style.setProperty('--reach', `${shape.reach}px`);
       }
+      const aim = controls.aimShape();
+      aimArrow.classList.toggle('on', aim !== null);
+      if (aim) aimArrow.style.transform = `rotate(${Math.atan2(aim.y, aim.x)}rad)`;
       for (const name of Object.keys(buttons)) {
         const button = buttons[name];
-        const pct = Math.round((cooling[name] ?? 0) * 20) * 5;
+        const pct = Math.round(((view.cooling && view.cooling[name]) ?? 0) * 20) * 5;
         if (pct !== button.last) {
           button.last = pct;
           button.cool.style.height = `${pct}%`;
           button.el.classList.toggle('cooling', pct > 0);
         }
       }
+      // 대시 충전: 점으로.
+      const pips = `${view.charges ?? 0}/${view.maxCharges ?? 0}`;
+      if (pips !== buttons.dash.pipsShown) {
+        buttons.dash.pipsShown = pips;
+        buttons.dash.pips.replaceChildren(...Array.from({ length: view.maxCharges ?? 0 }, (_, i) => h('i', { class: i < (view.charges ?? 0) ? 'full' : '' })));
+        buttons.dash.el.classList.toggle('empty', (view.charges ?? 0) === 0);
+      }
+      const interact = view.interact ?? null;
+      buttons.interact.el.classList.toggle('hidden', interact === null);
+      if (interact !== null && buttons.interact.text.textContent !== interact) buttons.interact.text.textContent = interact;
+      buttons.swap.el.classList.toggle('disabled', !view.swap);
+      if (view.skill && buttons.skill.text.textContent !== view.skill) buttons.skill.text.textContent = view.skill;
     },
     dispose() {
       window.removeEventListener('keydown', onKeyDown);

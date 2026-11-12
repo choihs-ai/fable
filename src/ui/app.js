@@ -1,19 +1,19 @@
 // ui 의 조립: HUD, 조작부, 화면들을 만들고 서로 잇는다. main.js 는 이 파일만 상대한다.
 //
 // 흐름
-//   - 화면(가방·상점·설정 등)이 열리면 게임을 멈추고(actions.pause) 조작을 끈다. 닫히면 다시 켠다.
-//   - 강화 후보가 제시돼 있으면 3택1 화면을 띄운다(세이브에서 이어한 경우에도).
+//   - 화면(일시정지·상점·설정 등)이 열리면 게임을 멈추고(actions.pause) 조작을 끈다. 닫히면 다시 켠다.
+//   - 축복 3택1 이 제시돼 있으면 그 화면을 띄운다(세이브에서 이어한 경우에도 — 이벤트가 아니라 상태를 본다).
 //   - 런이 끝나면 결과 화면을 띄운다.
 
 import { EVENTS } from '../logic/core/events.js';
 import { PHASE } from '../logic/core/state.js';
-import { useConsumable } from '../logic/commands.js';
 import { h } from './dom.js';
 import { createHaptics } from './haptics.js';
 import { createHud } from './hud.js';
+import { guardGestures } from './input/gesture-guard.js';
 import { createTouchPad } from './input/touch-pad.js';
 import { createScreens } from './screens.js';
-import { itemName, reasonText } from './text.js';
+import { REWARD_NAMES, boonName, weaponName } from './text.js';
 
 /**
  * @param {object} options
@@ -21,27 +21,19 @@ import { itemName, reasonText } from './text.js';
  * @param {() => { state:object, bus:object }} options.getGame
  * @param {() => object} options.getSettings
  * @param {() => object} options.getSession { canContinue, notices, lastRun }
- * @param {object} options.actions main.js 가 해 주는 일: newGame, continueGame, toTitle, pause, resume, descend, setSetting, metaChanged, sound(name)
+ * @param {object} options.actions main.js 가 해 주는 일: newGame(character), continueGame, retry, toHub, toTitle, pause, resume,
+ *   interact, swap, setSetting, metaChanged, sound(name)
  */
 export function createUI({ root, getGame, getSettings, getSession, actions }) {
   const haptics = createHaptics();
+  const guard = guardGestures(document);
   const layer = h('div', { class: 'screens' });
   const pad = createTouchPad({ root, sensitivity: getSettings().sensitivity });
   const hud = createHud({
     root,
     on: {
       pause: () => screens.open('pause'),
-      bag: () => screens.open('inventory'),
-      potion: (id) => {
-        const result = useConsumable(getGame(), id);
-        if (!result.ok) hud.toast(reasonText(result.reason));
-        else actions.sound('potion');
-      },
-      context: (kind) => {
-        if (kind === 'stairs') actions.descend();
-        else if (kind === 'locked') hud.toast(reasonText('boss-alive'));
-        else if (kind === 'shop' || kind === 'altar') screens.open(kind);
-      },
+      swap: () => actions.swap(),
     },
   });
   root.append(layer);
@@ -91,6 +83,9 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
   return {
     screens,
     pad,
+    hud,
+    haptics,
+    guard,
     toast: (text) => hud.toast(text),
     applySettings,
     syncVisibility,
@@ -102,29 +97,46 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
      * 이벤트버스에 연결한다. @returns {() => void}
      */
     attach(bus) {
+      const isPlayer = (id) => id === getGame().state.playerId;
       const offs = [
-        bus.on(EVENTS.INVENTORY_CHANGED, () => {
-          if (screens.current === 'inventory' || screens.current === 'shop') screens.refresh();
-        }),
         bus.on(EVENTS.RUN_ENDED, ({ victory }) => {
           haptics.pulse('death');
           screens.open('result');
-          hud.toast(victory ? '승리!' : '쓰러졌다');
+          hud.toast(victory ? '탈출 성공!' : '쓰러졌다');
         }),
-        bus.on(EVENTS.DAMAGE_DEALT, ({ targetId, amount }) => {
-          if (targetId === getGame().state.playerId && amount > 0) haptics.pulse('hurt');
+        bus.on(EVENTS.DAMAGE_DEALT, ({ targetId, sourceId, amount, crit }) => {
+          if (amount <= 0) return;
+          if (isPlayer(targetId)) haptics.pulse('hurt');
+          else if (isPlayer(sourceId)) haptics.pulse(crit ? 'crit' : 'hit');
         }),
         bus.on(EVENTS.ENTITY_DIED, ({ kind }) => {
           if (kind !== 'player') haptics.pulse('kill');
         }),
-        bus.on(EVENTS.LEVEL_UP, () => haptics.pulse('levelUp')),
-        bus.on(EVENTS.DROP_COLLECTED, ({ kind, uid }) => {
-          if (kind !== 'equipment') return;
-          const item = getGame().state.inventory.bag.find((it) => it.uid === uid);
-          if (item) hud.toast(`${itemName(item)} 획득`);
+        bus.on(EVENTS.PLAYER_DASHED, () => haptics.pulse('dash')),
+        bus.on(EVENTS.SKILL_USED, () => haptics.pulse('skill')),
+        bus.on(EVENTS.DOORS_LOCKED, () => {
+          haptics.pulse('door');
+          hud.banner('문이 잠겼다!', 'lock');
         }),
-        bus.on(EVENTS.FLOOR_ENTERED, ({ floor }) => hud.toast(`${floor}층`)),
-        bus.on(EVENTS.PLAYER_REVIVED, () => hud.toast('불사조의 깃털이 타올랐다')),
+        bus.on(EVENTS.WAVE_STARTED, ({ wave, waves }) => {
+          if (wave > 0) hud.banner(`웨이브 ${wave + 1}/${waves}`, 'wave');
+        }),
+        bus.on(EVENTS.ROOM_CLEARED, ({ kind, reward }) => {
+          haptics.pulse('clear');
+          hud.banner(kind === 'boss' ? '보스 처치!' : `방 정리 — ${REWARD_NAMES[reward] ?? ''}`, 'clear');
+        }),
+        bus.on(EVENTS.BOON_CHOSEN, ({ boon }) => {
+          haptics.pulse('boon');
+          hud.toast(`축복: ${boonName(boon)}`);
+        }),
+        bus.on(EVENTS.WEAPON_PICKED, ({ weapon }) => hud.toast(`${weaponName(weapon)} 장착`)),
+        bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 모자랍니다 — 근접 무기로 바꾸거나 구슬을 주우세요')),
+        bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길을 찾았다!', 'clear')),
+        bus.on(EVENTS.BOSS_PHASE_CHANGED, () => haptics.pulse('bossPhase')),
+        bus.on(EVENTS.DROP_COLLECTED, ({ kind }) => {
+          if (kind === 'gold' || kind === 'energy' || kind === 'health') haptics.pulse('pickup');
+        }),
+        bus.on(EVENTS.PLAYER_REVIVED, () => hud.toast('두 번째 바람이 불었다')),
       ];
       return () => offs.forEach((off) => off());
     },
@@ -132,7 +144,7 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
     update() {
       const game = getGame();
       const { state } = game;
-      if (state.world && state.phase === PHASE.PLAYING && state.run.choice && screens.current === null) screens.open('levelup');
+      if (state.world && state.phase === PHASE.PLAYING && state.run.choice && screens.current === null) screens.open('boon');
       pad.draw(hud.update(game));
     },
   };

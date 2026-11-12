@@ -375,6 +375,9 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
 
   let lastPlayerCell = -1;
   let lowered = [];
+  /** 확인용: 한 프레임에 벽 높이가 가장 크게 바뀐 양, 구역이 중간 밝기로 그려진 프레임 수. */
+  let maxWallStep = 0;
+  let fadeFrames = 0;
   /** 높이가 목표와 다른 벽(보간 중). */
   const moving = new Set();
   let lightCell = -1;
@@ -409,6 +412,9 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
       // 방 단위 공개.
       const next = regionTargets(world);
       const changed = stepToward(brightness, next, FEEL.reveal.roomSec, dtSec);
+      for (const r of changed) {
+        if (brightness[r] > 0 && brightness[r] < 1) fadeFrames++;
+      }
       if (changed.length > 0) {
         for (const r of changed) paintRegion(r);
         floor.instanceColor.needsUpdate = true;
@@ -446,7 +452,9 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
       }
       if (moving.size > 0) {
         for (const i of moving) {
+          const before = wallHeight[i];
           wallHeight[i] = approach(wallHeight[i], wallTarget[i], FEEL.reveal.wallRate, dtSec);
+          maxWallStep = Math.max(maxWallStep, Math.abs(wallHeight[i] - before));
           setWall(i);
           if (wallHeight[i] === wallTarget[i]) moving.delete(i);
         }
@@ -534,6 +542,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
         lights: lights.length, lowered: lowered.filter((c) => wallIndex[c] >= 0).length, movingWalls: moving.size,
         regions: { total: regionCount, seen, fading },
         icons: icons.filter((i) => i.group.visible).length,
+        maxWallStep, fadeFrames,
       };
     },
     /** 구역의 지금 밝기(확인용). */

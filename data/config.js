@@ -22,7 +22,7 @@ export const RENDER = deepFreeze({
    * portraitScale: 세로 화면에서는 좌우가 좁으므로 카메라를 이만큼 더 멀리 둔다.
    * lead: 조준·이동 방향으로 카메라를 조금 앞세운다(칸).
    */
-  camera: { height: 13.5, back: 9.5, followRate: 7, snapDistance: 12, portraitScale: 1.32, lead: 1.1 },
+  camera: { height: 15, back: 10.5, followRate: 7, snapDistance: 12, portraitScale: 1.75, lead: 1.1 },
 
   /** 벽. cut*: 플레이어 앞(카메라 쪽)을 가리는 벽을 낮춘다 — 플레이어 남쪽 cutDepth 줄, 좌우 cutHalfWidth 칸. 높이는 보간한다. */
   wall: { height: 1.6, cutHeight: 0.25, cutDepth: 3, cutHalfWidth: 3 },
