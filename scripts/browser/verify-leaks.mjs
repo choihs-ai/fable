@@ -1,11 +1,11 @@
-// 누수 검증: 층을 100번 옮기며 GPU 자원(renderer.info 의 geometries·textures·programs 와, WebGL 호출을 직접 세어 얻은
+// 누수 검증: 새 층(매번 다른 시드의 맵)에 100번 들어가며 GPU 자원(renderer.info 의 geometries·textures·programs 와, WebGL 호출을 직접 세어 얻은
 // 살아 있는 버퍼·텍스처·VAO 수), 씬의 객체 수, 풀 크기, DOM 노드 수, JS 힙(가비지 컬렉션 뒤)을 기록한다.
-// 층을 옮길 때마다 늘어나는 것이 있으면 누수다.
+// 층에 들어갈 때마다 늘어나는 것이 있으면 누수다.
 //
 //   node scripts/browser/verify-leaks.mjs --three <three 패키지 폴더> [--moves 100] [--quality high]
 //
-// 층마다: 적 넷을 플레이어 곁으로 불러 깨우고, 키보드로 돌아다니며 공격·기술을 써서 투사체·장판·피해 숫자·입자 풀이 실제로 돌게 하고,
-// 계단과 이벤트방까지 가서 표식이 그려지게 한 뒤 다음 층으로 간다.
+// 층마다: 봇(scripts/lib/bot.js)이 몇 초 동안 방에 들어가 싸워 문·웨이브·투사체·장판·피해 숫자·입자·탄피·쓰러진 몸 풀이 실제로 돌게 한다.
+// 플레이어는 무적으로 둔다(여기서 보는 것은 자원이지 승패가 아니다).
 //
 // 판정
 //   - 풀(행동체 뷰, 투사체·원·전리품·피해 숫자)은 필요할 때 만들어 상한까지만 는다. 그래서 30층을 한 바퀴 도는 동안은
@@ -50,23 +50,39 @@ try {
   };
   const t = await open({ viewport: { width: 900, height: 600 } }, `${server.base}?debug=1&seed=leak-check`, { init: countGl });
   const { page, cdp } = t;
-  await page.getByText('새 게임').click();
   await page.evaluate((q) => window.__fable.renderer.setQuality(q), QUALITY);
-  await frames(page, 30);
+  await page.evaluate(async () => {
+    const { botStep, createBot } = await import('/scripts/lib/bot.js');
+    window.__startBot = () => {
+      const bot = createBot();
+      window.__fable.setAutopilot((g) => {
+        const { state } = g;
+        const player = state.entities.byId[state.playerId];
+        if (player) player.invulnUntil = state.tick + 600;
+        botStep(g, bot);
+      });
+    };
+    // 축복 3택1·상점이 뜨면 닫는다(실제 클릭).
+    setInterval(() => {
+      const scr = window.__fable.ui.screens.current;
+      if (scr === 'boon') document.querySelector('[data-boon]').click();
+      else if (scr === 'shop') document.querySelector('[data-action="back"]').click();
+    }, 200);
+  });
 
   const sample = () => page.evaluate(() => {
     const f = window.__fable;
     const info = f.renderer.info();
     const fx = info.effects;
     return {
-      floor: f.game().state.run.floor,
+      run: f.game().state.seed,
       geometries: info.geometries,
       textures: info.textures,
       programs: info.programs,
       scene: info.sceneChildren,
       actorViews: info.actors.created,
-      pooled: fx.projectiles.created + fx.rings.created + fx.drops.created + fx.numbers.created,
-      pools: { actors: info.actors, projectiles: fx.projectiles, rings: fx.rings, drops: fx.drops, numbers: fx.numbers },
+      pooled: fx.projectiles.created + fx.ground.created + fx.drops.created + fx.numbers.created + fx.flashes.created + fx.chains.created + fx.casings.created,
+      pools: { actors: info.actors, projectiles: fx.projectiles, ground: fx.ground, drops: fx.drops, numbers: fx.numbers, flashes: fx.flashes, chains: fx.chains, casings: fx.casings },
       dom: document.getElementsByTagName('*').length,
       voices: f.audio.status().voices,
       floorsBuilt: info.floorsBuilt,
@@ -75,6 +91,7 @@ try {
       glVaos: window.__gl.vaos,
       phase: f.game().state.phase,
       tick: f.game().state.tick,
+      kills: f.game().state.run.kills,
     };
   });
 
@@ -104,102 +121,35 @@ try {
   const HEAP_DIFF = process.argv.includes('--heap-diff');
   let heapBefore = null;
 
-  /** 화면이 열렸으면(레벨 업의 3택1 — 여러 번 이어질 수 있다) 닫는다. */
-  async function closeScreens() {
-    for (let i = 0; i < 12; i++) {
-      const open = await page.evaluate(() => {
-        const card = document.querySelector('.card.choice');
-        if (card) card.click();
-        return card !== null;
-      });
-      if (!open) return;
-      await frames(page, 2);
-    }
-  }
-
   const rows = [];
+  let totalKills = 0;
   for (let move = 0; move <= MOVES; move++) {
-    if (move > 0) {
-      // 다음 층으로(30층 다음은 1층). 죽었으면 되살려 계속한다 — 여기서 보는 것은 자원이지 전투가 아니다.
-      await page.evaluate(() => {
-        const f = window.__fable;
-        const { state } = f.game();
-        const player = state.entities.byId[state.playerId];
-        player.hp = player.maxHp;
-        f.enterFloor((state.run.floor % 30) + 1);
-      });
-      // 적 넷을 플레이어 곁의 빈자리로 불러 깨운다(로직의 자리 찾기를 그대로 쓴다).
-      await page.evaluate(async () => {
-        const { findFreeSpot } = await import('./src/logic/entities/actors.js');
-        const { state } = window.__fable.game();
-        const player = state.entities.byId[state.playerId];
-        // 측정 중에 죽으면 런이 끝나 틱이 멈춘다. 오래 무적으로 둔다(여기서 보는 것은 자원이지 전투의 승패가 아니다).
-        player.invulnUntil = state.tick + 100000;
-        let moved = 0;
-        for (const actor of Object.values(state.entities.byId)) {
-          if (!actor.ai || moved >= 4) continue;
-          const spot = findFreeSpot(state, player.x, player.y, actor.radius, 3);
-          if (!spot) continue;
-          actor.x = spot.x;
-          actor.y = spot.y;
-          actor.ai.homeX = spot.x;
-          actor.ai.homeY = spot.y;
-          actor.ai.provoked = true;
-          moved++;
-        }
-      });
-    }
-    // 돌아다니며 싸운다.
-    for (const [key, ms] of [['KeyD', 350], ['KeyS', 350], ['KeyA', 350], ['KeyW', 350]]) {
-      await page.keyboard.down(key);
-      await page.keyboard.down('Space');
-      await page.keyboard.press(['Digit1', 'Digit2', 'Digit3'][move % 3]);
-      await page.waitForTimeout(ms);
-      await page.keyboard.up(key);
-    }
-    await page.keyboard.up('Space');
-    await closeScreens();
-    await frames(page, 4);
-    // 계단과 이벤트방(상점·제단)까지 가 본다: 표식은 탐험한 칸에서만 그려지고, 한 번도 그려지지 않은 자원은 GPU 에 올라가지 않아
-    // 버리지 않아도 누수로 드러나지 않는다.
-    const spots = await page.evaluate(() => {
-      const { world } = window.__fable.game().state;
-      const list = world.eventRooms.map((room) => ({ x: room.feature.x + 0.5, y: room.feature.y + 1.5 }));
-      if (world.stairs) list.push({ x: world.stairs.x + 0.5, y: world.stairs.y + 0.5 });
-      return list;
-    });
-    for (const spot of spots) {
-      await page.evaluate(({ x, y }) => {
-        const { state } = window.__fable.game();
-        const player = state.entities.byId[state.playerId];
-        const { width, tiles } = state.world;
-        if (tiles[Math.floor(y) * width + Math.floor(x)] !== 1) return;
-        player.x = x;
-        player.y = y;
-        player.hp = player.maxHp;
-      }, spot);
-      await frames(page, 4);
-    }
-    // 도는 사이에 레벨 업 화면이 떴을 수 있다. 닫고 몇 틱 흐른 뒤에 기록한다.
-    await closeScreens();
+    // 새 판을 시작한다(시드가 매번 달라 맵도 매번 다르다).
+    await page.evaluate((m) => {
+      window.__fable.startRun('knight', `leak-${m}`);
+      window.__startBot();
+    }, move);
+    await page.waitForTimeout(2600);
+    await page.evaluate(() => window.__fable.setAutopilot(null));
     await frames(page, 3);
     const row = await sample();
     row.move = move;
+    totalKills += row.kills;
     row.heapMB = +((await heapUsed(cdp)) / 1048576).toFixed(2);
     rows.push(row);
     if (HEAP_DIFF && move === Math.min(30, MOVES >> 1) + 1) heapBefore = await heapByType();
   }
 
-  // 씬에서 풀이 아닌 것: 조명, 입자, 그 층의 바닥·벽·표식.
-  for (const row of rows) row.sceneOther = row.scene - row.actorViews - row.pooled;
+  // 씬에서 풀이 아닌 것: 조명, 입자, 그 층의 바닥·벽·문·소품·빛·표식. 행동체 모델은 몸과 체력 막대가 하나씩 씬에 붙는다.
+  for (const row of rows) row.sceneOther = row.scene - row.actorViews * 2 - row.pooled;
   // 피해 숫자는 스프라이트마다 캔버스 텍스처를 하나씩 갖고 풀에 남는다. 텍스처 수에서 풀의 몫을 빼야 층 자원만 남는다.
   for (const row of rows) {
     row.texOther = row.textures - row.pools.numbers.created;
     row.glTexOther = row.glTextures - row.pools.numbers.created;
   }
-  const cols = ['move', 'floor', 'geometries', 'textures', 'texOther', 'programs', 'glBuffers', 'glTextures', 'glVaos', 'scene', 'actorViews', 'pooled', 'dom', 'heapMB'];
+  const cols = ['move', 'kills', 'geometries', 'textures', 'texOther', 'programs', 'glBuffers', 'glTextures', 'glVaos', 'scene', 'actorViews', 'pooled', 'dom', 'heapMB'];
   if (option('json')) (await import('node:fs')).writeFileSync(option('json'), JSON.stringify(rows.map(({ pools, ...r }) => r)));
-  console.log(`품질 ${QUALITY}, 층 이동 ${MOVES}회 (10회마다 표시)`);
+  console.log(`품질 ${QUALITY}, 새 층 ${MOVES}회 (10회마다 표시)`);
   console.log(cols.map((c) => c.padStart(11)).join(''));
   for (const row of rows) {
     if (row.move % 10 === 0) console.log(cols.map((c) => String(row[c]).padStart(11)).join(''));
@@ -231,11 +181,14 @@ try {
   const heapOk = h2 <= h1 * 1.1;
   if (!heapOk) failed++;
   console.log(`  ${heapOk ? '✔' : '✖'} heapMB      평균 ${h1.toFixed(2)} → ${h2.toFixed(2)} (${((h2 / h1 - 1) * 100).toFixed(1)}%), 처음 ${rows[0].heapMB}, 최소 ${Math.min(...steady.map((r) => r.heapMB))}, 최대 ${max(steady, 'heapMB')}`);
-  // 측정이 실제로 플레이 중인 게임을 본 것인가: 매번 플레이 중이었고 틱이 흘렀어야 한다.
+  // 측정이 실제로 싸우는 게임을 본 것인가: 매번 플레이 중이었고 틱이 흘렀고, 전체로 적을 잡았어야 한다.
   let idle = 0;
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i].phase !== 'playing' || rows[i].tick <= rows[i - 1].tick) idle++;
+    if (rows[i].phase !== 'playing' || rows[i].tick < 60) idle++;
   }
+  const fought = rows.filter((r) => r.kills > 0).length;
+  console.log(`  ${fought >= rows.length * 0.6 ? '✔' : '✖'} 적을 잡은 층 ${fought}/${rows.length} (처치 합계 ${totalKills})`);
+  if (fought < rows.length * 0.6) failed++;
   if (idle > 0) failed++;
   console.log(`  ${idle === 0 ? '✔' : '✖'} 측정한 ${rows.length - 1}번 모두 플레이 중이었고 틱이 흘렀다${idle === 0 ? '' : ` — 아닌 경우 ${idle}번(그 층들은 제대로 측정되지 않았다)`}`);
   if (HEAP_DIFF && heapBefore) {
@@ -250,7 +203,7 @@ try {
     for (const g of growth.slice(0, 14)) console.log(`    ${g.kb.toFixed(1).padStart(8)} KB  ${String(g.count).padStart(7)}개  ${g.name.slice(0, 60)}`);
   }
   const built = rows.at(-1).floorsBuilt;
-  console.log(`  만든 층 뷰 ${built}개 (층 이동 ${MOVES}회 + 처음 1개)`);
+  console.log(`  만든 층 뷰 ${built}개 (새 층 ${MOVES + 1}회)`);
   if (built !== MOVES + 1) failed++;
   if (t.problems.length > 0) {
     failed++;

@@ -92,9 +92,9 @@ function startMusic() {
   audio.setMusic(world ? world.zoneId : null, false);
 }
 
-function startRun(character) {
+function startRun(character, seed = null) {
   lastCharacter = character;
-  game = createGame({ seed: params.get('seed') || newSeed(), meta: game.state.meta, character, bus });
+  game = createGame({ seed: seed ?? (params.get('seed') || newSeed()), meta: game.state.meta, character, bus });
   enterFloor(game, 1);
   setPhase(game, PHASE.PLAYING);
   hitstop = 0;
@@ -166,10 +166,11 @@ const ui = createUI({
     sound: (name) => audio.play(name),
   },
 });
-ui.attach(bus);
+// 결과 화면이 읽을 기록은 ui 가 결과 화면을 열기 전에 적어 둔다(같은 이벤트를 먼저 구독한다).
 bus.on(EVENTS.RUN_ENDED, (e) => {
   session.lastRun = e;
 });
+ui.attach(bus);
 ui.screens.open('title');
 
 function doInteract() {
@@ -209,9 +210,14 @@ resize();
 
 // 화면이 가려지면: 게임을 멈추고(일시정지 화면), 입력을 놓고, 소리를 끈다. 그다음에 저장된다(아래 bindLifecycle).
 let lastTime = null;
+/** 계속 누르는 입력(이동·조준·공격)을 로직에서도 놓는다. 멈춘 동안 상태(와 세이브)에 지난 입력이 남지 않도록. */
+function releaseHeld() {
+  setInput(game.state, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false });
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     ui.resetInput();
+    releaseHeld();
     if (game.state.phase === PHASE.PLAYING && ui.screens.current === null) ui.screens.open('pause');
     audio.suspend();
   } else {
@@ -281,6 +287,8 @@ function frame(now) {
     setInput(game.state, next);
     if (input.swap) ui.screens.current === null && swapWeapons(game);
     if (input.interact) doInteract();
+  } else if (!autopilot) {
+    releaseHeld();
   }
   if (hitstop > 0) {
     // 멈춘 동안에는 로직을 돌리지 않는다. 쌓인 시간은 버린다(멈춤이 끝나면 그 자리에서 이어진다).

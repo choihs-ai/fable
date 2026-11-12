@@ -377,6 +377,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
   let lowered = [];
   /** 확인용: 한 프레임에 벽 높이가 가장 크게 바뀐 양, 구역이 중간 밝기로 그려진 프레임 수. */
   let maxWallStep = 0;
+  let maxWallFraction = 0;
   let fadeFrames = 0;
   /** 높이가 목표와 다른 벽(보간 중). */
   const moving = new Set();
@@ -455,6 +456,9 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
           const before = wallHeight[i];
           wallHeight[i] = approach(wallHeight[i], wallTarget[i], FEEL.reveal.wallRate, dtSec);
           maxWallStep = Math.max(maxWallStep, Math.abs(wallHeight[i] - before));
+          // 남은 거리 가운데 한 프레임에 움직인 비율(1 이면 한 번에 튄 것이다).
+          const gap = Math.abs(wallTarget[i] - before);
+          if (gap > 0.05) maxWallFraction = Math.max(maxWallFraction, Math.abs(wallHeight[i] - before) / gap);
           setWall(i);
           if (wallHeight[i] === wallTarget[i]) moving.delete(i);
         }
@@ -526,6 +530,30 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
         merchant.fig.body.position.y = 0.5 + Math.sin(time * 2) * 0.01;
       }
     },
+    /**
+     * 미리 컴파일용: 처음에는 숨어 있는 것(문 위 아이콘의 모든 모양, 포털, 상인)을 잠깐 모두 보이게 한다.
+     * `renderer.compile` 은 보이는 것만 컴파일하므로, 숨겨 두면 처음 드러나는 순간 셰이더가 새로 생긴다.
+     * @returns {() => void} 원래대로 되돌리는 함수
+     */
+    prewarm() {
+      const saved = [];
+      const show = (o) => {
+        saved.push([o, o.visible]);
+        o.visible = true;
+      };
+      for (const icon of icons) {
+        show(icon.group);
+        for (const shape of Object.values(icon.shapes)) show(shape);
+      }
+      if (portal) show(portal);
+      if (merchant) {
+        show(merchant.fig.root);
+        show(merchant.stall);
+      }
+      return () => {
+        for (let i = saved.length - 1; i >= 0; i--) saved[i][0].visible = saved[i][1];
+      };
+    },
     /** 문 위 아이콘이 쓸 보상 이름(테스트·확인용). */
     rewardIcons() {
       return icons.filter((i) => i.group.visible).map((i) => i.shown);
@@ -542,7 +570,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
         lights: lights.length, lowered: lowered.filter((c) => wallIndex[c] >= 0).length, movingWalls: moving.size,
         regions: { total: regionCount, seen, fading },
         icons: icons.filter((i) => i.group.visible).length,
-        maxWallStep, fadeFrames,
+        maxWallStep, maxWallFraction, fadeFrames,
       };
     },
     /** 구역의 지금 밝기(확인용). */

@@ -106,7 +106,9 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     const started = performance.now();
     const restoreActors = actors.prewarm();
     const restoreEffects = effects.prewarm();
+    const restoreFloor = floorView ? floorView.prewarm() : () => {};
     renderer.compile(scene, camera);
+    restoreFloor();
     restoreEffects();
     restoreActors();
     lastCompileMs = performance.now() - started;
@@ -288,6 +290,8 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
         geometries: renderer.info.memory.geometries,
         textures: renderer.info.memory.textures,
         programs: renderer.info.programs ? renderer.info.programs.length : 0,
+        programNames: renderer.info.programs ? renderer.info.programs.map((p) => `#${p.id}`) : [],
+        programKeys: renderer.info.programs ? renderer.info.programs.map((p) => p.cacheKey) : [],
         calls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
         sceneChildren: scene.children.length,
@@ -306,6 +310,11 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
         floor: floorView ? floorView.stats() : null,
         icons: floorView ? floorView.rewardIcons() : [],
       };
+    },
+
+    /** 씬(브라우저 검증·디버그용. 읽기만 한다). */
+    get debugScene() {
+      return scene;
     },
 
     /** 구역의 지금 밝기(방 공개 확인용). */

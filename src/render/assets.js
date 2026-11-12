@@ -29,6 +29,12 @@ const hanging = () => new THREE.BoxGeometry(1, 1, 1).translate(0, -0.5, 0);
 /** 아래쪽 끝이 원점인 상자(몸통·소품). */
 const standing = () => new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 
+/** 법선을 계산해 그 지오메트리를 돌려준다(`computeVertexNormals` 는 아무것도 돌려주지 않는다). */
+function withNormals(geometry) {
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 /** 바닥에 눕힌 부채꼴(가운데가 +z 방향). */
 function sector(cosHalf) {
   const half = Math.acos(Math.max(-1, Math.min(1, cosHalf)));
@@ -54,10 +60,10 @@ export function createAssets() {
     tube: new THREE.CylinderGeometry(1, 1, 1, 7).translate(0, 0.5, 0),
     arc: new THREE.TorusGeometry(1, 0.06, 4, 10, Math.PI),
     /** 날개: 삼각형 하나를 앞뒤 두 면으로(공유 머티리얼의 side 를 바꾸지 않으려고). */
-    wing: new THREE.BufferGeometry().setFromPoints([
+    wing: withNormals(new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0.15, -0.2), new THREE.Vector3(0.7, -0.05, 0.45),
       new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.7, -0.05, 0.45), new THREE.Vector3(1, 0.15, -0.2),
-    ]).computeVertexNormals(),
+    ])),
     // ── 효과 ──
     /** 체력 막대(왼쪽 끝이 원점). */
     bar: new THREE.PlaneGeometry(1, 0.09).translate(0.5, 0, 0),
@@ -74,6 +80,10 @@ export function createAssets() {
     coin: new THREE.CylinderGeometry(1, 1, 0.25, 10).rotateX(Math.PI / 2),
     portal: new THREE.TorusGeometry(1, 0.12, 6, 24),
   };
+  // 빈 지오메트리는 그려지지 않고 조용히 지나간다(박쥐 날개가 그랬다) — 만들 때 바로 잡는다.
+  for (const [name, geometry] of Object.entries(geometries)) {
+    if (!geometry || !geometry.isBufferGeometry || !geometry.attributes.position) throw new Error(`createAssets: 지오메트리 "${name}" 가 비어 있다`);
+  }
   /** 부채꼴: cosHalf → 지오메트리(종류가 몇 개뿐이라 처음 쓸 때 만든다). */
   const sectors = new Map();
   /** 색 → 머티리얼. 같은 색은 한 번만 만든다. */

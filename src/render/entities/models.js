@@ -36,6 +36,7 @@ export function lookOf(type) {
 
 /** 메시 하나: 지오메트리·머티리얼은 공유, 크기·자리만 이 메시의 것이다. */
 function part(assets, geometry, material, sx, sy, sz, x = 0, y = 0, z = 0) {
+  if (!assets.geometries[geometry]) throw new RangeError(`part: 알 수 없는 지오메트리 "${geometry}"`);
   const mesh = new THREE.Mesh(assets.geometries[geometry], material);
   mesh.scale.set(sx, sy, sz);
   mesh.position.set(x, y, z);

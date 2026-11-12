@@ -591,13 +591,12 @@ export function createEffects({ scene, assets, rng }) {
         item.material.opacity = 1 - t * t;
       }
     },
-    /** 미리 컴파일용: 모든 종류를 한 번씩 보이게 한다(층에 들어갈 때 셰이더가 처음 쓰이며 멈칫하지 않도록). */
+    /**
+     * 미리 컴파일용: 모든 종류를 한 번씩 보이게 한다(층에 들어갈 때 셰이더가 처음 쓰이며 멈칫하지 않도록).
+     * 풀이 아직 비어 있으면 하나씩 만들어 둔다 — 피해 숫자·섬광·번개·탄피가 처음 나오는 순간에 컴파일되지 않게.
+     */
     prewarm() {
-      const restore = [];
-      const show = (o) => {
-        restore.push([o, o.visible]);
-        o.visible = true;
-      };
+      const g = assets.geometries;
       projectiles.begin();
       for (let i = 0; i < 2; i++) {
         const item = projectiles.next();
@@ -608,22 +607,39 @@ export function createEffects({ scene, assets, rng }) {
       }
       projectiles.end();
       drops.begin();
-      const kinds = ['gold', 'energy', 'health', 'boon', 'weapon'];
-      for (const kind of kinds) {
+      for (const kind of ['gold', 'energy', 'health', 'boon', 'weapon']) {
         const item = drops.next();
         if (item) showDrop(item, kind, 'sword');
       }
       drops.end();
-      flashes.forEach((item) => show(item.mesh));
-      chains.forEach((item) => show(item.line));
-      casings.forEach((item) => show(item.mesh));
-      numbers.forEach((item) => show(item.sprite));
+      ground.begin();
+      mark(g.disc, assets.flat(C.telegraph, 0.3), 0, 0, 0.02, 1);
+      mark(g.ring, assets.glow(C.spawnWarn, 0.8), 0, 0, 0.03, 1);
+      mark(assets.sector(0.5), assets.flat(C.hazardWarn, 0.45), 0, 0, 0.02, 1);
+      mark(g.strip, assets.flat(C.telegraph, 0.4), 0, 0, 0.03, 1, 1);
+      ground.end();
+      const items = [];
+      for (const [kind, geometry, material] of [['beam', g.beam, assets.glow(0x7af0ff, 0.9)], ['ring', g.ring, assets.glow(0xffa23a, 0.8)], ['orb', g.orb, assets.glow(0xffa23a, 0.6)], ['muzzle', g.star, assets.glow(0xffe08a, 1)]]) {
+        items.push(flash(kind, 1, (mesh) => {
+          mesh.geometry = geometry;
+          mesh.material = material;
+          mesh.position.set(0, -50, 0);
+        }));
+      }
+      const chain = chains.acquire();
+      while (casings.active.length < 1) casings.acquire();
+      if (numbers.active.length === 0) showNumber(0, 0, -50, '0', '#ffffff', false);
       return () => {
-        for (const [o, v] of restore) o.visible = v;
+        for (const item of items) flashes.release(item);
+        chains.release(chain);
+        casings.releaseAll();
+        numbers.releaseAll();
         projectiles.begin();
         projectiles.end();
         drops.begin();
         drops.end();
+        ground.begin();
+        ground.end();
       };
     },
     /** 층을 옮길 때: 떠 있는 것을 모두 거둔다(풀은 그대로 둔다). */

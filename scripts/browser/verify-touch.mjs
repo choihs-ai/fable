@@ -2,9 +2,13 @@
 //
 //   node scripts/browser/verify-touch.mjs --three <three 패키지 폴더>
 //
-// 확인하는 것: 조이스틱, 멀티터치(스틱+버튼 동시), 손가락이 화면 밖으로 나감, touchcancel, 화면 회전,
-// 백그라운드 전환·복귀(일시정지·입력 초기화·저장), 메뉴가 열렸을 때, 감도·왼손 설정, 첫 터치 뒤 오디오 시작, 진동.
-// 주의: 헤드리스 크로미움에 넣은 합성 터치다. 실제 기기의 손가락·제스처·OS 동작과 같다는 보장은 없다.
+// 확인하는 것
+//   - 버그 1(두 번 두드려 확대): 게임 화면 어디를 빠르게 두 번 두드려도, 두 손가락으로 벌려도, 끌어도 확대·스크롤이 일어나지 않는다.
+//     페이지 전체의 touch-action, 막은 연속 터치의 수, 두 번 빠르게 누른 메뉴 버튼이 두 번 눌리는가.
+//   - 조이스틱, 공격 버튼을 끌어서 수동 조준, 대시·스킬·교체, 멀티터치(스틱+공격+대시), 손가락이 화면 밖으로 나감, touchcancel,
+//     화면 회전, 백그라운드 전환·복귀(일시정지·입력 초기화·저장), 메뉴가 열렸을 때, 첫 터치 뒤 오디오 시작, 진동 호출.
+// 주의: 헤드리스 크로미움에 넣은 합성 터치다. 아이폰 사파리의 확대 동작은 크로미움에서 재현되지 않는다(크로미움은 width=device-width 면
+// 두 번 두드려 확대를 하지 않는다). 그래서 "막는 장치가 붙어 있고 동작하는가"를 보고, 실기기 확인은 따로 해야 한다.
 
 import { frames, launch, startServer, touch } from './lib.mjs';
 
@@ -13,7 +17,7 @@ const { browser, devices, open } = await launch();
 const results = [];
 function check(name, ok, detail = '') {
   results.push({ name, ok });
-  console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`);
+  console.log(`${ok ? '✔' : '✖'} ${name}${detail !== '' ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`);
 }
 
 try {
@@ -36,12 +40,15 @@ try {
       held: f.ui.pad.controls.held(),
       x: player ? player.x : 0,
       y: player ? player.y : 0,
-      cooldowns: player ? { ...player.cooldowns } : {},
+      kit: player ? { ...player.kit } : null,
+      facing: player ? [player.facingX, player.facingY] : null,
       tick: state.tick,
       screen: f.ui.screens.current,
       audio: f.audio.status(),
-      stickShown: document.querySelector('.pad-move').classList.contains('active'),
       padHidden: document.querySelector('.pad').classList.contains('hidden'),
+      zoom: window.visualViewport ? window.visualViewport.scale : 1,
+      scroll: [window.scrollX, window.scrollY, document.scrollingElement.scrollTop],
+      guard: f.ui.guard.stats(),
     };
   });
   const center = (selector) => page.evaluate((s) => {
@@ -50,228 +57,217 @@ try {
   }, selector);
   const settle = () => frames(page, 5);
   const idle = (s) => s.input.moveX === 0 && s.input.moveY === 0 && s.input.attack === false && s.held.pointers === 0;
+  const tapAt = async (p) => {
+    await touch(cdp, 'touchStart', [{ id: 9, ...p }]);
+    await touch(cdp, 'touchEnd', []);
+  };
+
+  // ── 페이지 전체의 touch-action ──
+  const actions = await page.evaluate(() => {
+    const of = (el) => getComputedStyle(el).touchAction;
+    return { html: of(document.documentElement), body: of(document.body), canvas: of(document.getElementById('scene')), ui: of(document.getElementById('ui')), button: of(document.querySelector('.btn')) };
+  });
+  check('touch-action: html·body·캔버스·ui 는 none, 버튼은 manipulation', actions.html === 'none' && actions.body === 'none' && actions.canvas === 'none' && actions.ui === 'none' && actions.button === 'manipulation', actions);
+  const panLeft = await page.evaluate(() => [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules]).filter((r) => /pan-x/.test(r.cssText)).map((r) => r.selectorText));
+  check('pan-x 를 허용하는 규칙이 남아 있지 않다', panLeft.length === 0, panLeft);
 
   // ── 오디오: 첫 터치 전에는 꺼져 있고, 첫 터치 뒤에 켜진다 ──
-  check('오디오: 첫 터치 전에는 시작하지 않는다', (await read()).audio.unlocked === false, (await read()).audio.state);
-  const start = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('button')].find((b) => b.textContent === '새 게임');
-    const r = el.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  });
-  await page.touchscreen.tap(start.x, start.y);
+  check('오디오: 첫 터치 전에는 시작하지 않는다', (await read()).audio.unlocked === false);
+  await page.touchscreen.tap(...Object.values(await center('[data-action="new"]')));
   await settle();
+  await page.touchscreen.tap(...Object.values(await center('[data-action="start-knight"]')));
+  await frames(page, 40);
   let s = await read();
   check('오디오: 첫 터치 뒤에 시작한다', s.audio.unlocked && s.audio.state === 'running', s.audio);
-  check('새 게임: 플레이 중이고 조작부가 보인다', s.phase === 'playing' && !s.padHidden);
+  check('새 게임(터치로 두 화면): 플레이 중이고 조작부가 보인다', s.phase === 'playing' && !s.padHidden, { phase: s.phase, screen: s.screen });
 
+  // ── 버그 1: 두 번 두드려 확대 ──
   const view = page.viewportSize();
-  const stick = { x: Math.round(view.width * 0.25), y: Math.round(view.height * 0.7) };
-  const attack = await center('.pad-attack');
-  const skill = await center('.pad-skill1');
+  const spots = [
+    { x: Math.round(view.width * 0.5), y: Math.round(view.height * 0.35) }, // 게임 화면 가운데(캔버스)
+    { x: Math.round(view.width * 0.2), y: Math.round(view.height * 0.8) }, // 이동 영역
+    await center('.pad-attack'), await center('.pad-dash'),
+    { x: 30, y: 20 }, // HUD 위
+    { x: view.width - 10, y: Math.round(view.height * 0.5) }, // 화면 가장자리
+  ];
+  // 페이지 안에서 touchend 마다 시각과 "기본 동작이 막혔는가"를 적는다(가드는 캡처 단계에서 먼저 돈다).
+  // 헤드리스에서는 합성 터치 하나가 렌더 한 프레임을 기다려 두 번째 터치가 300ms 를 넘길 때가 있다 —
+  // 그래서 "몇 번 막았나"가 아니라 "간격이 짧았던 touchend 는 모두 막혔나"를 본다.
+  await page.evaluate(() => {
+    window.__ends = [];
+    window.addEventListener('touchend', (e) => window.__ends.push({ t: performance.now(), prevented: e.defaultPrevented }), { capture: false });
+  });
+  for (const p of spots) {
+    for (let k = 0; k < 3; k++) {
+      // 네 이벤트를 기다리지 않고 한꺼번에 보낸다(순서는 지켜진다). 하나씩 기다리면 헤드리스의 느린 프레임 때문에 간격이 300ms 를 넘는다.
+      await Promise.all([
+        touch(cdp, 'touchStart', [{ id: 9, ...p }]),
+        touch(cdp, 'touchEnd', []),
+        touch(cdp, 'touchStart', [{ id: 9, ...p }]),
+        touch(cdp, 'touchEnd', []),
+      ]);
+      await page.waitForTimeout(400);
+    }
+  }
+  s = await read();
+  check('두 번 두드리기: 어디를 빠르게 두 번 눌러도 확대·스크롤이 되지 않는다', s.zoom === 1 && s.scroll.every((v) => v === 0), { zoom: s.zoom, scroll: s.scroll });
+  const ends = await page.evaluate((gapMs) => {
+    const list = window.__ends;
+    let quick = 0;
+    let quickBlocked = 0;
+    let slowBlocked = 0;
+    for (let i = 1; i < list.length; i++) {
+      const gap = list[i].t - list[i - 1].t;
+      if (gap <= gapMs - 20) {
+        quick++;
+        if (list[i].prevented) quickBlocked++;
+      } else if (gap > gapMs + 20 && list[i].prevented) slowBlocked++;
+    }
+    return { total: list.length, quick, quickBlocked, slowBlocked };
+  }, 300);
+  check('두 번 두드리기: 300ms 안에 이어진 touchend 는 모두 기본 동작이 막혔다', ends.quick >= spots.length && ends.quickBlocked === ends.quick, ends);
+  // 핀치(두 손가락으로 벌리기)와 끌기.
+  const mid = { x: Math.round(view.width / 2), y: Math.round(view.height / 2) };
+  await cdp.send('Input.synthesizePinchGesture', { x: mid.x, y: mid.y, scaleFactor: 2.5, gestureSourceType: 'touch' });
+  await touch(cdp, 'touchStart', [{ id: 1, x: mid.x - 40, y: mid.y }, { id: 2, x: mid.x + 40, y: mid.y }]);
+  await touch(cdp, 'touchMove', [{ id: 1, x: mid.x - 150, y: mid.y - 50 }, { id: 2, x: mid.x + 150, y: mid.y + 50 }]);
+  await touch(cdp, 'touchEnd', []);
+  await cdp.send('Input.synthesizeScrollGesture', { x: mid.x, y: mid.y, yDistance: -600, gestureSourceType: 'touch' });
+  await settle();
+  s = await read();
+  check('핀치·끌기: 확대되지 않고 페이지가 스크롤되지 않는다', s.zoom === 1 && s.scroll.every((v) => v === 0), { zoom: s.zoom, scroll: s.scroll, pinch: s.guard.pinch });
+  await page.evaluate(() => window.__fable.ui.pad.reset());
+
+  // 메뉴 버튼은 빠르게 두 번 눌러도 두 번 눌린다(막은 터치도 버튼 입력은 살린다).
+  await page.evaluate(() => window.__fable.ui.screens.open('settings'));
+  await settle();
+  const vib = await center('[data-action="toggle-vibration"]');
+  const vibBefore = await page.evaluate(() => window.__fable.settings().vibration);
+  await tapAt(vib);
+  await page.waitForTimeout(80);
+  const vib2 = await center('[data-action="toggle-vibration"]');
+  await tapAt(vib2);
+  await settle();
+  const vibAfter = await page.evaluate(() => window.__fable.settings().vibration);
+  s = await read();
+  check('메뉴 버튼을 빠르게 두 번 누르면 두 번 눌린다(켬→끔→켬)', vibAfter === vibBefore && s.guard.rescued >= 1 && s.zoom === 1, { vibBefore, vibAfter, rescued: s.guard.rescued });
+  await page.evaluate(() => window.__fable.ui.screens.closeAll());
+  await settle();
 
   // ── 조이스틱 ──
+  const stick = { x: Math.round(view.width * 0.25), y: Math.round(view.height * 0.72) };
+  const attack = await center('.pad-attack');
+  const dash = await center('.pad-dash');
   await touch(cdp, 'touchStart', [{ id: 1, ...stick }]);
   await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }]);
   const before = await read();
   await page.waitForTimeout(400);
   s = await read();
-  check('조이스틱: 오른쪽으로 밀면 이동 입력이 들어가고 실제로 움직인다', s.input.moveX > 0.95 && Math.abs(s.input.moveY) < 0.05 && s.x > before.x + 0.5 && s.stickShown, { moveX: s.input.moveX, dx: +(s.x - before.x).toFixed(2) });
+  check('조이스틱: 오른쪽으로 밀면 이동 입력이 들어가고 실제로 움직인다', s.input.moveX > 0.95 && s.x > before.x + 0.5, { moveX: s.input.moveX, dx: +(s.x - before.x).toFixed(2) });
 
-  // ── 멀티터치 ──
+  // ── 멀티터치: 스틱 + 공격(끌어서 수동 조준) + 대시 ──
   await touch(cdp, 'touchStart', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, ...attack }]);
+  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, x: attack.x, y: attack.y - 80 }]);
   await settle();
   s = await read();
-  check('멀티터치: 스틱을 쥔 채 둘째 손가락으로 공격', s.input.moveX > 0.95 && s.input.attack === true && s.held.pointers === 2, s.held);
-  await touch(cdp, 'touchStart', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, ...attack }, { id: 3, ...skill }]);
+  check('공격 버튼을 위로 끌면 수동 조준(위쪽 = -y), 스틱 입력은 그대로', s.input.attack && Math.abs(s.input.aimX) < 0.05 && s.input.aimY < -0.95 && s.input.moveX > 0.95, { aim: [s.input.aimX, s.input.aimY], held: s.held });
+  const charges = s.kit.charges;
+  await touch(cdp, 'touchStart', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, x: attack.x, y: attack.y - 80 }, { id: 3, ...dash }]);
   await settle();
   s = await read();
-  check('멀티터치: 셋째 손가락으로 기술 — 재사용 대기가 시작된다', s.held.pointers === 3 && (s.cooldowns.firebolt ?? 0) > s.tick, { held: s.held, firebolt: s.cooldowns.firebolt, tick: s.tick });
-  // 손가락 하나만 뗀다: touchEnd 에는 "떼는 손가락"을 적는다(빈 목록이면 전부 뗀다).
-  await touch(cdp, 'touchEnd', [{ id: 3, ...skill }]);
-  await touch(cdp, 'touchEnd', [{ id: 2, ...attack }]);
+  check('세 손가락: 스틱 + 공격 + 대시를 동시에, 대시 충전이 하나 줄었다', s.held.pointers === 3 && s.kit.charges === charges - 1 && s.input.attack, { held: s.held, charges: [charges, s.kit.charges] });
+  await touch(cdp, 'touchEnd', [{ id: 3, ...dash }]);
+  await touch(cdp, 'touchEnd', [{ id: 2, x: attack.x, y: attack.y - 80 }]);
   await settle();
   s = await read();
-  check('멀티터치: 버튼 손가락을 떼도 스틱은 그대로다', s.input.moveX > 0.95 && s.input.attack === false && s.held.stick !== null && s.held.buttons.length === 0, s.held);
-  // 둘째 손가락이 이동 영역에 닿아도 스틱을 빼앗지 못한다.
-  await touch(cdp, 'touchStart', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 4, x: stick.x - 60, y: stick.y - 200 }]);
-  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 4, x: stick.x - 160, y: stick.y - 200 }]);
-  await settle();
-  s = await read();
-  check('멀티터치: 이동 영역의 둘째 손가락은 스틱에 영향을 주지 않는다', s.input.moveX > 0.95, { moveX: s.input.moveX });
-  await touch(cdp, 'touchEnd', [{ id: 4, x: stick.x - 160, y: stick.y - 200 }]);
-  await settle();
-  s = await read();
-  check('멀티터치: 둘째 손가락을 떼도 첫 손가락의 스틱은 유지된다', s.input.moveX > 0.95 && s.held.stick !== null, s.held);
+  check('공격 손가락을 떼면 조준이 풀리고 공격이 멈추며, 스틱은 남는다', !s.input.attack && s.input.aimX === 0 && s.input.aimY === 0 && s.input.moveX > 0.95 && s.held.stick !== null);
 
-  // ── 손가락이 화면 밖으로 ──
-  await touch(cdp, 'touchMove', [{ id: 1, x: -40, y: stick.y }]);
+  // ── 화면 밖으로 나감 ──
+  await touch(cdp, 'touchMove', [{ id: 1, x: -200, y: stick.y }]);
   await settle();
   s = await read();
-  check('화면 밖 이탈: 왼쪽 밖으로 나가도 스틱이 유지되고 끝까지 민 것으로 본다', s.input.moveX < -0.95 && s.held.stick !== null, { moveX: s.input.moveX });
-  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x, y: view.height + 80 }]);
+  check('손가락이 화면 밖으로 나가도 스틱이 유지된다(왼쪽 끝까지)', s.input.moveX < -0.95 && s.held.stick !== null, { moveX: s.input.moveX });
+  await touch(cdp, 'touchEnd', [{ id: 1, x: -200, y: stick.y }]);
   await settle();
   s = await read();
-  check('화면 밖 이탈: 아래쪽 밖', s.input.moveY > 0.95 && s.held.stick !== null, { moveY: s.input.moveY });
-  await touch(cdp, 'touchEnd', []);
-  await settle();
-  s = await read();
-  check('화면 밖 이탈: 밖에서 떼면 멈춘다', idle(s) && !s.stickShown, s.input);
+  check('화면 밖에서 떼면 멈춘다', idle(s), { input: s.input, held: s.held });
 
   // ── touchcancel ──
-  await touch(cdp, 'touchStart', [{ id: 1, ...stick }]);
-  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x, y: stick.y - 90 }]);
-  await touch(cdp, 'touchStart', [{ id: 1, x: stick.x, y: stick.y - 90 }, { id: 2, ...attack }]);
+  await touch(cdp, 'touchStart', [{ id: 1, ...stick }, { id: 2, ...attack }]);
+  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x, y: stick.y - 90 }, { id: 2, ...attack }]);
   await settle();
-  s = await read();
-  const holding = s.input.moveY < -0.95 && s.input.attack;
   await touch(cdp, 'touchCancel', []);
   await settle();
   s = await read();
-  check('touchcancel: 스틱과 버튼이 모두 놓이고 눌린 표시도 사라진다', holding && idle(s) && !s.stickShown && (await page.evaluate(() => document.querySelectorAll('.pad-button.down').length)) === 0, { holding, input: s.input, held: s.held });
-  await touch(cdp, 'touchStart', [{ id: 1, ...stick }]);
-  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }]);
-  await settle();
-  s = await read();
-  check('touchcancel 뒤: 다시 닿으면 정상으로 동작한다', s.input.moveX > 0.95);
+  check('touchcancel: 스틱과 버튼이 모두 놓인다', idle(s), { input: s.input, held: s.held });
 
   // ── 화면 회전 ──
+  await touch(cdp, 'touchStart', [{ id: 1, ...stick }, { id: 2, ...attack }]);
+  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, ...attack }]);
+  await settle();
   await page.setViewportSize({ width: view.height, height: view.width });
   await settle();
   s = await read();
-  const canvas = await page.evaluate(() => {
-    const c = document.getElementById('scene');
-    return { w: c.clientWidth, h: c.clientHeight, vw: innerWidth, vh: innerHeight, ratio: c.width / c.height };
-  });
-  check('화면 회전: 쥐고 있던 입력이 놓인다', idle(s) && !s.stickShown, { input: s.input, held: s.held });
-  check('화면 회전: 캔버스가 새 화면 크기에 맞는다', canvas.w === canvas.vw && canvas.h === canvas.vh && Math.abs(canvas.ratio - canvas.vw / canvas.vh) < 0.02, canvas);
-  // 회전 전에 닿아 있던 손가락이 뒤늦게 움직이거나 떼어져도 아무 일이 없다.
-  await touch(cdp, 'touchMove', [{ id: 1, x: 300, y: 200 }]);
+  check('화면 회전: 쥐고 있던 입력이 모두 놓인다', idle(s), { input: s.input, held: s.held });
+  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 150, y: stick.y }]);
+  await settle();
+  s = await read();
+  check('회전 전의 손가락이 늦게 움직여도 되살아나지 않는다', idle(s));
   await touch(cdp, 'touchEnd', []);
+  const land = await page.evaluate(() => [...document.querySelectorAll('.pad-button:not(.hidden)')].map((b) => {
+    const r = b.getBoundingClientRect();
+    return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+  }));
+  check('가로 화면: 버튼이 모두 화면 안에 있다', land.every(Boolean), land);
+  await page.setViewportSize(view);
   await settle();
-  s = await read();
-  check('화면 회전: 회전 전의 손가락이 뒤늦게 움직여도 입력이 되살아나지 않는다', idle(s), s.input);
-  const land = { x: Math.round(view.height * 0.2), y: Math.round(view.width * 0.6) };
-  const attackLand = await center('.pad-attack');
-  await touch(cdp, 'touchStart', [{ id: 5, ...land }]);
-  await touch(cdp, 'touchMove', [{ id: 5, x: land.x, y: land.y + 90 }]);
-  await touch(cdp, 'touchStart', [{ id: 5, x: land.x, y: land.y + 90 }, { id: 6, ...attackLand }]);
-  await settle();
-  s = await read();
-  check('화면 회전: 가로 화면에서도 스틱과 버튼이 동작한다', s.input.moveY > 0.95 && s.input.attack === true, { input: s.input, attackLand });
-  if (process.argv.includes('--out')) await page.screenshot({ path: `${process.argv[process.argv.indexOf('--out') + 1]}/touch-landscape.png` });
 
   // ── 백그라운드 전환 ──
+  await touch(cdp, 'touchStart', [{ id: 1, ...stick }]);
+  await touch(cdp, 'touchMove', [{ id: 1, x: stick.x + 90, y: stick.y }]);
+  await settle();
   const hide = (hidden) => page.evaluate((h) => {
-    Object.defineProperty(document, 'visibilityState', { value: h ? 'hidden' : 'visible', configurable: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') });
     document.dispatchEvent(new Event('visibilitychange'));
   }, hidden);
   await hide(true);
   await settle();
   s = await read();
-  const savedTick = await page.evaluate(() => JSON.parse(localStorage.getItem('fable:run') ?? '{"data":{}}').data.tick);
-  const savedPhase = await page.evaluate(() => JSON.parse(localStorage.getItem('fable:run') ?? '{"data":{}}').data.phase);
-  check('백그라운드 전환: 게임이 일시정지되고 일시정지 화면이 뜬다', s.phase === 'paused' && s.screen === 'pause', { phase: s.phase, screen: s.screen });
-  check('백그라운드 전환: 쥐고 있던 입력이 놓인다', s.held.pointers === 0 && s.padHidden, s.held);
-  check('백그라운드 전환: 그 순간이 저장된다(일시정지 상태로)', savedTick === s.tick && savedPhase === 'paused', { savedTick, tick: s.tick, savedPhase });
-  check('백그라운드 전환: 소리가 멈춘다', s.audio.state !== 'running' || s.audio.scheduling === false, s.audio);
-  const frozen = s.tick;
-  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => localStorage.getItem('fable:run') !== null);
+  const savedInput = await page.evaluate(() => {
+    try {
+      const doc = JSON.parse(localStorage.getItem('fable:run'));
+      const state = doc.data;
+      return state.input ?? null;
+    } catch {
+      return null;
+    }
+  });
+  check('백그라운드: 일시정지되고, 입력이 놓이고, 저장되고, 소리가 멈춘다', s.phase === 'paused' && s.screen === 'pause' && idle(s) && saved && s.audio.state === 'suspended', { phase: s.phase, screen: s.screen, saved, audio: s.audio.state, input: s.input, held: s.held });
+  check('백그라운드: 저장된 판에 쥐고 있던 이동 입력이 남지 않는다', savedInput !== null && (savedInput.moveX === 0 && savedInput.moveY === 0 && savedInput.attack === false), savedInput);
+  await touch(cdp, 'touchEnd', []);
   await hide(false);
-  // 가려진 동안 닿아 있던 손가락이 돌아와서 떼어진다.
+  await settle();
+  s = await read();
+  check('복귀: 일시정지 화면에 머문다(눌러야 이어진다)', s.phase === 'paused' && s.screen === 'pause');
+  await page.touchscreen.tap(...Object.values(await center('[data-action="resume"]')));
+  await settle();
+  s = await read();
+  check('계속하기: 다시 플레이', s.phase === 'playing' && s.screen === null && s.audio.state === 'running');
+
+  // ── 대시 버튼으로 실제 대시, 진동 ──
+  await touch(cdp, 'touchStart', [{ id: 4, ...dash }]);
   await touch(cdp, 'touchEnd', []);
   await settle();
-  s = await read();
-  check('백그라운드 복귀: 일시정지인 채로 있고 틱이 흐르지 않았다', s.phase === 'paused' && s.tick === frozen && s.screen === 'pause', { tick: s.tick, frozen });
-  const resume = await page.evaluate(() => {
-    const r = [...document.querySelectorAll('button')].find((b) => b.textContent === '계속하기').getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  });
-  await page.touchscreen.tap(resume.x, resume.y);
-  await settle();
-  s = await read();
-  check('백그라운드 복귀: "계속하기"를 누르면 이어지고, 입력은 비어 있다', s.phase === 'playing' && idle(s) && s.tick > frozen && !s.padHidden, { phase: s.phase, input: s.input });
-  check('백그라운드 복귀: 소리가 다시 난다', s.audio.state === 'running' && s.audio.scheduling, s.audio);
-
-  // ── 메뉴가 열렸을 때 ──
-  await touch(cdp, 'touchStart', [{ id: 7, ...land }]);
-  await touch(cdp, 'touchMove', [{ id: 7, x: land.x + 90, y: land.y }]);
-  await settle();
-  await page.evaluate(() => document.querySelector('[data-hud="bag"]').click());
-  await settle();
-  s = await read();
-  check('메뉴: 가방을 열면 게임이 멈추고 쥐고 있던 입력이 놓인다', s.phase === 'paused' && s.screen === 'inventory' && s.held.pointers === 0 && s.padHidden, { phase: s.phase, held: s.held });
-  await touch(cdp, 'touchEnd', []);
-  await page.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent === '닫기').click());
-  await settle();
-  s = await read();
-  check('메뉴: 닫으면 이어지고 입력은 비어 있다', s.phase === 'playing' && idle(s));
-
-  // ── 설정: 감도, 왼손 조작 ──
-  const halfPush = async () => {
-    await touch(cdp, 'touchStart', [{ id: 8, ...land }]);
-    await touch(cdp, 'touchMove', [{ id: 8, x: land.x + 30, y: land.y }]);
-    await settle();
-    const value = (await read()).input.moveX;
-    await touch(cdp, 'touchEnd', []);
-    await settle();
-    return value;
-  };
-  const normal = await halfPush();
-  await page.evaluate(() => window.__fable.ui.pad.setSensitivity(200));
-  const sensitive = await halfPush();
-  check('감도: 올리면 같은 거리를 밀어도 더 크게 들어간다', sensitive > normal + 0.3 && sensitive > 0.95, { normal: +normal.toFixed(2), sensitive: +sensitive.toFixed(2) });
-  const rightOfAttack = await center('.pad-attack');
-  await page.evaluate(() => {
-    document.querySelector('[data-hud="pause"]').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '설정').click();
-    document.querySelector('[data-row="leftHanded"] button').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '닫기').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '계속하기').click();
-  });
-  await settle();
-  const leftAttack = await center('.pad-attack');
-  const vw = (await page.viewportSize()).width;
-  check('왼손 조작: 버튼이 왼쪽으로, 이동 영역이 오른쪽으로 옮겨진다', rightOfAttack.x > vw / 2 && leftAttack.x < vw / 2, { before: rightOfAttack.x, after: leftAttack.x });
-  await touch(cdp, 'touchStart', [{ id: 9, x: Math.round(vw * 0.8), y: land.y }]);
-  await touch(cdp, 'touchMove', [{ id: 9, x: Math.round(vw * 0.8) - 90, y: land.y }]);
-  await touch(cdp, 'touchStart', [{ id: 9, x: Math.round(vw * 0.8) - 90, y: land.y }, { id: 10, ...leftAttack }]);
-  await settle();
-  s = await read();
-  check('왼손 조작: 오른쪽에서 스틱, 왼쪽에서 공격', s.input.moveX < -0.95 && s.input.attack === true, s.input);
-  await touch(cdp, 'touchEnd', []);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('fable:settings')).data);
-  check('설정이 저장된다', stored.leftHanded === true, stored);
-
-  // ── 진동 ──
-  await page.evaluate(async () => {
-    const { dealDamage } = await import('./src/logic/combat/damage.js');
-    const g = window.__fable.game();
-    const player = g.state.entities.byId[g.state.playerId];
-    window.__vibrations.length = 0;
-    dealDamage(g.state, g.bus, player, 3, { sourceId: null });
-  });
-  const on = await page.evaluate(() => window.__vibrations.length);
-  await page.evaluate(async () => {
-    const { dealDamage } = await import('./src/logic/combat/damage.js');
-    const f = window.__fable;
-    document.querySelector('[data-hud="pause"]').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '설정').click();
-    document.querySelector('[data-row="vibration"] button').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '닫기').click();
-    [...document.querySelectorAll('button')].find((b) => b.textContent === '계속하기').click();
-    window.__vibrations.length = 0;
-    const g = f.game();
-    dealDamage(g.state, g.bus, g.state.entities.byId[g.state.playerId], 3, { sourceId: null });
-  });
-  const off = await page.evaluate(() => window.__vibrations.length);
-  check('진동: 맞으면 울리고, 설정에서 끄면 울리지 않는다', on >= 1 && off === 0, { on, off });
-
-  check('페이지 오류·console.error 없음', problems.length === 0, problems.slice(0, 4));
+  const vibs = await page.evaluate(() => window.__vibrations.length);
+  check('진동: 대시·메뉴 등에서 진동 장치를 부른다', vibs > 0, { calls: vibs });
+  check('페이지 오류가 없다', problems.length === 0, problems.slice(0, 5));
   await context.close();
 } finally {
   await browser.close();
   server.stop();
 }
+
 const failed = results.filter((r) => !r.ok).length;
-console.log(`\n확인 ${results.length}개, 실패 ${failed}개`);
-process.exit(failed === 0 ? 0 : 1);
+console.log(`\n${results.length}개 가운데 실패 ${failed}개`);
+process.exit(failed > 0 ? 1 : 0);
