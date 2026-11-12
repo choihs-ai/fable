@@ -19,6 +19,8 @@
 import { frames, heapUsed, launch, option, startServer } from './lib.mjs';
 
 const MOVES = Number(option('moves', 100));
+/** 판마다 봇이 싸우는 시간(ms). 첫 전투방에 들어가 적을 잡을 만큼. */
+const PLAY_MS = Number(option('play-ms', 7000));
 const QUALITY = option('quality', 'high');
 const server = await startServer();
 const { browser, open } = await launch();
@@ -55,10 +57,22 @@ try {
     const { botStep, createBot } = await import('/scripts/lib/bot.js');
     window.__startBot = () => {
       const bot = createBot();
+      let placed = false;
       window.__fable.setAutopilot((g) => {
         const { state } = g;
         const player = state.entities.byId[state.playerId];
         if (player) player.invulnUntil = state.tick + 600;
+        // 헤드리스는 초당 40틱 안팎이라 걸어서는 몇 초 안에 첫 전투에 닿지 못한다.
+        // 검사 전용으로 플레이어를 시작 방에서 가장 가까운 전투방의 스폰 자리에 옮겨, 판마다 실제로 싸우게 한다.
+        if (player && !placed) {
+          placed = true;
+          const room = state.world.rooms.filter((r) => (r.kind === 'combat' || r.kind === 'elite') && r.spawnCells.length > 0).sort((a, b) => a.depth - b.depth || a.id - b.id)[0];
+          if (room) {
+            const cell = room.spawnCells[0];
+            player.x = (cell % state.world.width) + 0.5;
+            player.y = Math.floor(cell / state.world.width) + 0.5;
+          }
+        }
         botStep(g, bot);
       });
     };
@@ -129,7 +143,7 @@ try {
       window.__fable.startRun('knight', `leak-${m}`);
       window.__startBot();
     }, move);
-    await page.waitForTimeout(2600);
+    await page.waitForTimeout(PLAY_MS);
     await page.evaluate(() => window.__fable.setAutopilot(null));
     await frames(page, 3);
     const row = await sample();
@@ -147,7 +161,7 @@ try {
     row.texOther = row.textures - row.pools.numbers.created;
     row.glTexOther = row.glTextures - row.pools.numbers.created;
   }
-  const cols = ['move', 'kills', 'geometries', 'textures', 'texOther', 'programs', 'glBuffers', 'glTextures', 'glVaos', 'scene', 'actorViews', 'pooled', 'dom', 'heapMB'];
+  const cols = ['move', 'tick', 'kills', 'geometries', 'textures', 'texOther', 'programs', 'glBuffers', 'glTextures', 'glVaos', 'scene', 'actorViews', 'pooled', 'dom', 'heapMB'];
   if (option('json')) (await import('node:fs')).writeFileSync(option('json'), JSON.stringify(rows.map(({ pools, ...r }) => r)));
   console.log(`품질 ${QUALITY}, 새 층 ${MOVES}회 (10회마다 표시)`);
   console.log(cols.map((c) => c.padStart(11)).join(''));

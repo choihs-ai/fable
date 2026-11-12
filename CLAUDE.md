@@ -43,7 +43,7 @@ node scripts/verify-save.mjs --only fuzz     # 한 부분만: roundtrip | old | 
 # 브라우저 검증 — Playwright 가 설치된 환경에서만 돈다(프로젝트 의존성이 아니다). CDN 에 닿지 않으면 --three 로 three@0.186.1 패키지 폴더를 준다
 node scripts/browser/verify-play.mjs --three <폴더>     # 한 판 완주(화면 흐름) + 층 진입 페이드·셰이더 미리 컴파일·방 공개·벽 보간 (약 5분, --out <갈무리 폴더>)
 node scripts/browser/verify-touch.mjs --three <폴더>    # 터치: 두 번 두드려 확대·핀치·스크롤 막기, 멀티터치, 수동 조준, 화면 밖 이탈, touchcancel, 회전, 백그라운드
-node scripts/browser/verify-leaks.mjs --three <폴더>    # 새 층 100번: GPU 자원·풀·DOM·힙 추이 (약 6분, --moves N --quality low|medium|high)
+node scripts/browser/verify-leaks.mjs --three <폴더>    # 새 판 100번(판마다 첫 전투방에서 7초 싸움): GPU 자원·풀·DOM·힙 추이 (약 15분, --moves N --play-ms N --quality low|medium|high)
 ```
 
 `src/logic/world/**` 나 `data/world.js`·`data/zones.js`·`data/encounters.js` 를 바꾸면 `verify-maps.mjs` 를 다시 돌리고, 실패 0건을 확인한 뒤 결과를 `BUGS.md` 의 검증 기록에 덧붙인다. 실패한 시드는 시드 값과 함께 기록한다.
