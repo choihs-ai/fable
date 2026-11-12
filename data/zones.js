@@ -16,7 +16,7 @@ export const ZONES = deepFreeze([
     size: { w: 40, h: 40 },
     algorithms: { rooms: 0.9, cave: 0.1 },
     tileset: { floor: 'crypt_floor', wall: 'crypt_wall', stairs: 'crypt_stairs', props: ['coffin', 'urn', 'candle'] },
-    palette: { floor: 0x4a4a52, wall: 0x2b2b33, accent: 0x9fb4c8, fog: 0x12131a, ambient: 0x6f7a8c },
+    palette: { floor: 0x4a4256, wall: 0x2c2440, accent: 0x6fe0c0, fog: 0x0b0812, ambient: 0x8a78b8 },
     enemies: [
       { id: 'skeleton', weight: 5, cost: 2, minDepth: 0 },
       { id: 'bat', weight: 3, cost: 1, minDepth: 0 },

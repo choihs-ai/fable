@@ -3,8 +3,10 @@
 // 렌더러를 없앨 때 dispose() 로 한꺼번에 정리한다.
 //
 // 빛을 받는 것은 모두 툰 셰이딩(MeshToonMaterial + 명암 단계 텍스처 하나)이다. 색마다 머티리얼을 하나씩만 만든다.
+// 캐릭터·무기 부품에는 굵은 외곽선을 붙인다(뒷면만 그리는 껍데기를 법선 방향으로 부풀림 — materials.outline).
 
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RENDER } from '../../data/config.js';
 
 /** 명암 단계 텍스처: 픽셀 몇 개짜리 1차원 텍스처. 가장 가까운 픽셀을 쓰면 명암이 계단처럼 끊긴다. */
@@ -35,6 +37,63 @@ function withNormals(geometry) {
   return geometry;
 }
 
+/**
+ * 외곽선용 법선: 같은 자리의 꼭짓점들의 법선을 평균한다. 면마다 따로인 법선으로 부풀리면 모서리가 갈라지므로
+ * 껍데기는 이 매끈한 법선으로 부풀린다.
+ */
+function withOutlineNormals(geometry) {
+  const pos = geometry.attributes.position;
+  const nor = geometry.attributes.normal;
+  const sums = new Map();
+  const keyOf = (i) => `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+  for (let i = 0; i < pos.count; i++) {
+    const k = keyOf(i);
+    const v = sums.get(k) ?? [0, 0, 0];
+    v[0] += nor.getX(i);
+    v[1] += nor.getY(i);
+    v[2] += nor.getZ(i);
+    sums.set(k, v);
+  }
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const [x, y, z] = sums.get(keyOf(i));
+    const len = Math.hypot(x, y, z) || 1;
+    out[i * 3] = x / len;
+    out[i * 3 + 1] = y / len;
+    out[i * 3 + 2] = z / len;
+  }
+  geometry.setAttribute('outlineNormal', new THREE.BufferAttribute(out, 3));
+  return geometry;
+}
+
+/** 벽: 윗면은 밝게, 옆면은 어둡게(정점 색). 인스턴스 색과 곱해져 벽 덩어리의 윗면이 바닥과 구별된다. */
+function shadedWall(top, side) {
+  const geometry = standing();
+  const nor = geometry.attributes.normal;
+  const colors = new Float32Array(nor.count * 3);
+  for (let i = 0; i < nor.count; i++) {
+    const v = nor.getY(i) > 0.5 ? top : side;
+    colors[i * 3] = v;
+    colors[i * 3 + 1] = v;
+    colors[i * 3 + 2] = v;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+const OUTLINE_VERTEX = /* glsl */ `
+attribute vec3 outlineNormal;
+uniform float width;
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vec3 n = normalize(mat3(modelMatrix) * outlineNormal);
+  world.xyz += n * width;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+const OUTLINE_FRAGMENT = /* glsl */ `
+uniform vec3 color;
+void main() { gl_FragColor = vec4(color, 1.0); }`;
+
 /** 바닥에 눕힌 부채꼴(가운데가 +z 방향). */
 function sector(cosHalf) {
   const half = Math.acos(Math.max(-1, Math.min(1, cosHalf)));
@@ -47,7 +106,7 @@ export function createAssets() {
     /** 바닥 한 칸(XZ 평면, 가운데가 원점). */
     floor: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
     /** 벽 한 칸(높이 1, 바닥이 y = 0). 인스턴스 행렬로 높이를 정한다. */
-    wall: standing(),
+    wall: shadedWall(RENDER.wallShade.top, RENDER.wallShade.side),
     /** 벽 위의 덮개(높이 0.12). 벽 윗면이 바닥과 구별되게 한다. */
     cap: new THREE.BoxGeometry(1.04, 0.12, 1.04).translate(0, 0.06, 0),
     // ── 캐릭터 부품 ──
@@ -55,6 +114,8 @@ export function createAssets() {
     box: standing(),
     cube: new THREE.BoxGeometry(1, 1, 1),
     head: new THREE.IcosahedronGeometry(1, 0),
+    /** 둥근 상자(가운데가 원점): 머리·몸통·손발. 모서리를 둥글려 인형 같은 덩어리감을 낸다. */
+    rbox: new RoundedBoxGeometry(1, 1, 1, 2, 0.18),
     cone: new THREE.ConeGeometry(1, 1, 5).translate(0, 0.5, 0),
     spike: new THREE.ConeGeometry(1, 1, 4).translate(0, 0.5, 0),
     tube: new THREE.CylinderGeometry(1, 1, 1, 7).translate(0, 0.5, 0),
@@ -84,6 +145,7 @@ export function createAssets() {
   for (const [name, geometry] of Object.entries(geometries)) {
     if (!geometry || !geometry.isBufferGeometry || !geometry.attributes.position) throw new Error(`createAssets: 지오메트리 "${name}" 가 비어 있다`);
   }
+  for (const name of ['limb', 'box', 'cube', 'rbox', 'head', 'cone', 'spike', 'tube', 'arc', 'orb', 'star', 'coin']) withOutlineNormals(geometries[name]);
   /** 부채꼴: cosHalf → 지오메트리(종류가 몇 개뿐이라 처음 쓸 때 만든다). */
   const sectors = new Map();
   /** 색 → 머티리얼. 같은 색은 한 번만 만든다. */
@@ -92,7 +154,7 @@ export function createAssets() {
   const glow = new Map();
   const materials = {
     floor: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient }),
-    wall: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient }),
+    wall: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient, vertexColors: true }),
     cap: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient }),
     prop: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient }),
     door: new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient }),
@@ -102,6 +164,13 @@ export function createAssets() {
     /** 맞았을 때 잠깐 하얗게 번쩍이는 몸. */
     flash: new THREE.MeshBasicMaterial({ color: 0xffffff }),
     shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }),
+    /** 캐릭터·무기의 외곽선(뒷면 껍데기). 굵기는 세계 단위라 큰 보스도 작은 박쥐도 같은 굵기다. */
+    outline: new THREE.ShaderMaterial({
+      vertexShader: OUTLINE_VERTEX,
+      fragmentShader: OUTLINE_FRAGMENT,
+      uniforms: { color: { value: new THREE.Color(RENDER.outline.color) }, width: { value: RENDER.outline.width } },
+      side: THREE.BackSide,
+    }),
   };
 
   return {

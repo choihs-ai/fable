@@ -118,7 +118,6 @@ src/
     save/                  세이브 (아래 "세이브" 참고)
   render/                  ── Three.js. 로직 상태를 읽기만 함 (아래 "렌더" 참고)
     renderer.js            렌더러·씬·카메라(추적·앞세우기·흔들림)·조명·품질·화면 페이드·셰이더 미리 컴파일, 이벤트 연출
-    looks.js               그림체 시안(?look=ink|pixel|diorama): 장면을 렌더 타깃에 그린 뒤 후처리 셰이더(먹선·픽셀·틸트시프트). 수치는 RENDER.looks
     assets.js              공유 지오메트리·툰 머티리얼
     pool.js camera-rig.js  풀, 카메라 계산(흔들림 포함) — Three.js 를 모름
     world/floor-view.js    층의 바닥·벽·문·소품 InstancedMesh, 방 단위 공개, 벽 낮추기 보간, 횃불 빛, 포털·상인, 문 위 보상 아이콘
@@ -234,7 +233,8 @@ core(0) ◀ world(1), items(1) ◀ entities(2) ◀ combat(3) ◀ save(4) ◀ gam
 - **벽 낮추기**: 플레이어 남쪽(카메라 쪽) 벽의 목표 높이를 낮추고, 높이는 프레임마다 보간한다(칸을 넘는 순간 튀지 않는다).
 - **자원의 수명**: 공유 자원(`assets.js`)과 풀(행동체 모델, 투사체, 바닥 표시, 전리품, 섬광, 번개, 탄피, 입자, 피해 숫자)은 렌더러와 함께 산다. 층 자원(바닥·벽·문·소품 InstancedMesh, 바닥 텍스처, 횃불 빛, 포털·상인, 보상 아이콘)은 `state.world.tiles` 가 바뀌면 `dispose()` 하고 새로 만든다. 새 메시는 어느 쪽인지 정하고, 층 자원이면 `floor-view.js` 의 `dispose()` 에 넣는다.
 - **지오메트리·머티리얼을 그 자리에서 `new` 하지 않는다.** `assets.geometries`, `assets.toon(색)`, `assets.flat(색, 투명도)`, `assets.glow(색, 투명도)` 를 쓴다. 새 머티리얼 종류를 추가하면 미리 컴파일(`prewarm`)에도 넣는다.
-- **모델**(`entities/models.js`): 원기둥 몸통이 아니라 머리·몸통·팔다리·무기가 따로 움직이는 로우폴리 모델. 자세는 `pose.js` 가 계산(걷기·준비·공격·피격·대시). 맞으면 하얗게 번쩍이고, 쓰러진 적은 맞은 방향으로 튕겨 나가며 사라진다.
+- **그림체**: 하데스·소울나이트·스컬을 섞은 느낌 — 머리가 큰 땅딸막한 캐릭터(머리가 키의 40% 남짓, 짧은 팔다리, 과장해서 큰 무기), 굵은 검은 외곽선, 어두운 바탕에 따뜻한 주광 + 차가운 윤곽광(`RENDER.light`), 대비가 센 툰 명암. 세 게임의 캐릭터·그림을 그대로 따라 하지 않는다.
+- **모델**(`entities/models.js`): 머리·몸통·팔다리·무기가 따로 움직이는 로우폴리 모델(둥근 상자 `rbox` 위주). 얼굴 종류(`face`: 투구 틈·빛나는 눈·해골·점 눈)와 장식(`extras`)으로 생김새를 낸다. 부품마다 외곽선 껍데기(`assets.materials.outline`, 매끈한 법선 `outlineNormal` 으로 세계 단위 굵기만큼 부풀림)를 자식으로 붙이고, 번쩍임 목록에서는 뺀다. 몸의 높이는 모델이 알려 준다(`fig.hipY`, `fig.height`). 자세는 `pose.js` 가 계산(걷기·준비·공격·피격·대시). 맞으면 하얗게 번쩍이고, 쓰러진 적은 맞은 방향으로 튕겨 나가며 사라진다.
 - **손맛**(`data/feel.js`): 히트스톱(main.js), 카메라 흔들림(renderer), 넉백(로직), 번쩍임·총구 섬광·탄피·처치 연출(render), 진동(ui).
 - **꾸밈용 난수**(입자, 바닥 무늬, 소품)는 `Rng.fromSeed('render:cosmetic')`. `Math.random` 은 여기서도 쓰지 않는다.
 - Three.js 를 쓰는 파일은 Node 에서 불러올 수 없다. 계산은 Three.js 를 모르는 파일(`pool.js`, `camera-rig.js`, `world/reveal.js`, `entities/pose.js`)로 빼서 Node 테스트를 붙이고, 나머지는 `scripts/browser/` 로 확인한다.

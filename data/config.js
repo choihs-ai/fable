@@ -22,7 +22,7 @@ export const RENDER = deepFreeze({
    * portraitScale: 세로 화면에서는 좌우가 좁으므로 카메라를 이만큼 더 멀리 둔다.
    * lead: 조준·이동 방향으로 카메라를 조금 앞세운다(칸).
    */
-  camera: { height: 15, back: 10.5, followRate: 7, snapDistance: 12, portraitScale: 1.75, lead: 1.1 },
+  camera: { height: 10.5, back: 10, followRate: 7, snapDistance: 12, portraitScale: 1.55, lead: 1.1 },
 
   /** 벽. cut*: 플레이어 앞(카메라 쪽)을 가리는 벽을 낮춘다 — 플레이어 남쪽 cutDepth 줄, 좌우 cutHalfWidth 칸. 높이는 보간한다. */
   wall: { height: 1.6, cutHeight: 0.25, cutDepth: 3, cutHalfWidth: 3 },
@@ -53,7 +53,7 @@ export const RENDER = deepFreeze({
   particleSec: 0.45,
 
   /** 툰 셰이딩의 명암 단계(0~255). 적을수록 만화 같다. */
-  toonSteps: [70, 150, 255],
+  toonSteps: [55, 165, 255],
 
   /** 색. */
   colors: {
@@ -83,27 +83,12 @@ export const RENDER = deepFreeze({
     heal: '#7fe08a',
   },
   /**
-   * 그림체 시안(주소에 ?look=ink | pixel | diorama). base 는 지금 그림. 시안은 장면을 한 번 그린 뒤 화면 전체에 후처리 셰이더를 씌운다.
-   * light: 그 그림체에서 쓰는 빛의 세기(반구광 hemi, 해 sun)와 해의 색.
+   * 빛(하데스식 대비): 반구광은 낮게, 따뜻한 해(주광)와 뒤에서 오는 차가운 윤곽광으로 캐릭터를 바탕에서 띄운다.
+   * rim 은 화면 안쪽(북쪽) 위에서 비추는 빛 — 머리·어깨 윗선이 밝게 끊긴다.
    */
-  looks: {
-    base: { light: { hemi: 1.4, sun: 1.8, sunColor: 0xfff0dd } },
-    /** ① 먹선 판화: 외곽선, 종이색 4단 명암, 그늘의 빗금, 선명한 색(적의 공격 예고·탄)만 남긴다. */
-    ink: {
-      light: { hemi: 2.4, sun: 1.6, sunColor: 0xfff4e6 },
-      paper: 0xeee2c8, mid: 0xbfa582, shade: 0x77604c, ink: 0x1c1612, void: 0x1c1612,
-      exposure: 1.9, steps: [0.6, 0.36, 0.17], smooth: 2.5,
-      lineWidth: 1.6, lineDepth: 0.03, lineColor: 0.32, accent: 0.95, accentSat: [0.12, 0.3], hatch: 6, grain: 0.05,
-    },
-    /** ② 픽셀 3D: 낮은 해상도로 그려 크게 키우고, 색을 단계로 끊어 점묘(디더)로 잇는다. 1픽셀 외곽선. */
-    pixel: {
-      light: { hemi: 1.9, sun: 2.2, sunColor: 0xffe8c8 },
-      pixelSize: 3, levels: 7, dither: 0.35, saturation: 1.15, outline: 0.25, outlineDepth: 0.05, void: 0x0d0b16,
-    },
-    /** ③ 미니어처 디오라마: 화면 위아래를 흐리게(틸트시프트), 따뜻한 해와 진한 그림자, 채도·대비를 올리고 가장자리를 어둡게. */
-    diorama: {
-      light: { hemi: 1.3, sun: 3.2, sunColor: 0xffd2a0 }, shadows: true,
-      focusY: 0.5, band: 0.12, maxBlur: 11, saturation: 1.35, contrast: 0.35, warmth: 0.08, vignette: 0.6, bloom: 0.45,
-    },
-  },
+  light: { hemi: 0.85, sun: 2.2, sunColor: 0xffe2c0, rim: 1.8, rimColor: 0x7ab8ff },
+  /** 캐릭터·무기의 굵은 외곽선(세계 단위 굵기, 색). */
+  outline: { width: 0.042, color: 0x120b14 },
+  /** 벽의 윗면·옆면 밝기(정점 색). 윗면이 밝아야 벽 덩어리가 바닥과 구별된다. */
+  wallShade: { top: 1.25, side: 0.5 },
 });

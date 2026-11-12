@@ -145,7 +145,7 @@ export function createActorViews({ scene, assets }) {
       hurt, dash: actor.dash !== null, time: clock + view.id,
     });
     const { body } = fig;
-    body.position.y = (fig.form === 'biped' ? 0.5 : fig.form === 'bat' ? fig.hover + Math.sin(clock * 9 + view.id) * 0.08 : 0.22) + p.bob;
+    body.position.y = (fig.form === 'bat' ? fig.hover + Math.sin(clock * 9 + view.id) * 0.08 : fig.hipY) + p.bob;
     body.rotation.set(p.lean, p.twist, 0);
     body.scale.set(1, p.squash, 1);
     if (fig.form === 'biped') {
@@ -186,7 +186,7 @@ export function createActorViews({ scene, assets }) {
     const showBar = actor.kind === 'enemy' && actor.hp < actor.maxHp;
     fig.bar.visible = showBar;
     if (showBar) {
-      const height = (fig.form === 'bat' ? 1.5 : fig.form === 'quad' ? 0.8 : 1.45 * view.look.scale) * fig.root.scale.x;
+      const height = (fig.height * view.look.scale + 0.2) * fig.root.scale.x;
       fig.bar.position.set(x, height, y);
       fig.bar.scale.setScalar(Math.max(0.6, actor.radius * 2));
       fig.barFill.scale.x = Math.max(0, actor.hp / actor.maxHp);

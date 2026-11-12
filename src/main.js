@@ -71,8 +71,7 @@ autosave.attach(bus);
 bus.on(EVENTS.ROOM_CLEARED, () => autosave.request('room'));
 
 // ── 렌더·소리·ui ─────────────────────────────────────────────────────────────
-// ?look=ink | pixel | diorama — 그림체 시안(data/config.js 의 RENDER.looks). 없으면 지금 그림.
-const renderer = createRenderer({ canvas: document.getElementById('scene'), config: RENDER, quality: settings.quality, look: params.get('look') || 'base' });
+const renderer = createRenderer({ canvas: document.getElementById('scene'), config: RENDER, quality: settings.quality });
 renderer.attach(bus, () => game.state);
 
 const audio = createAudio();

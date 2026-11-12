@@ -527,7 +527,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
         const b = brightness[shopRoom.id];
         merchant.fig.root.visible = b > 0.5;
         merchant.stall.visible = b > 0.5;
-        merchant.fig.body.position.y = 0.5 + Math.sin(time * 2) * 0.01;
+        merchant.fig.body.position.y = merchant.fig.hipY + Math.sin(time * 2) * 0.01;
       }
     },
     /**
