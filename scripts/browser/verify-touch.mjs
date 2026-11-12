@@ -143,10 +143,13 @@ try {
   await settle();
   const vib = await center('[data-action="toggle-vibration"]');
   const vibBefore = await page.evaluate(() => window.__fable.settings().vibration);
-  await tapAt(vib);
-  await page.waitForTimeout(80);
-  const vib2 = await center('[data-action="toggle-vibration"]');
-  await tapAt(vib2);
+  // 네 이벤트를 한꺼번에 보낸다(하나씩 기다리면 헤드리스의 느린 프레임 때문에 간격이 300ms 를 넘어 "빠른 두 번"이 되지 않는다).
+  await Promise.all([
+    touch(cdp, 'touchStart', [{ id: 9, ...vib }]),
+    touch(cdp, 'touchEnd', []),
+    touch(cdp, 'touchStart', [{ id: 9, ...vib }]),
+    touch(cdp, 'touchEnd', []),
+  ]);
   await settle();
   const vibAfter = await page.evaluate(() => window.__fable.settings().vibration);
   s = await read();
