@@ -18,6 +18,7 @@ import { addShake, decayShake, distanceScale, followStep, shakeOffset } from './
 import { createAssets } from './assets.js';
 import { createEffects } from './effects/effects.js';
 import { createActorViews } from './entities/actor-views.js';
+import { createLooks } from './looks.js';
 import { createFloorView } from './world/floor-view.js';
 
 /**
@@ -25,8 +26,9 @@ import { createFloorView } from './world/floor-view.js';
  * @param {HTMLCanvasElement} options.canvas
  * @param {object} options.config data/config.js 의 RENDER
  * @param {string} [options.quality] 'low' | 'medium' | 'high'
+ * @param {string} [options.look] 그림체 시안: 'base' | 'ink' | 'pixel' | 'diorama' (data/config.js 의 RENDER.looks)
  */
-export function createRenderer({ canvas, config, quality = 'medium' }) {
+export function createRenderer({ canvas, config, quality = 'medium', look = 'base' }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setClearColor(config.clearColor);
   renderer.autoClear = false;
@@ -58,6 +60,16 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
   const assets = createAssets();
   const actors = createActorViews({ scene, assets });
   const effects = createEffects({ scene, assets, rng });
+  const looks = createLooks({ renderer, config: config.looks });
+  looks.set(look);
+  /** 그림체의 빛(세기·해의 색)을 적용한다. */
+  function applyLight() {
+    const light = looks.light();
+    hemi.intensity = light.hemi;
+    sun.intensity = light.sun;
+    sun.color.set(light.sunColor);
+  }
+  applyLight();
 
   let floorView = null;
   /** 지금 그리고 있는 맵의 타일 배열. 바뀌면 층이 바뀐 것이다(층 진입, 새 런, 이어하기). */
@@ -79,10 +91,12 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     const q = config.quality[level];
     renderer.setPixelRatio(Math.min(size.pixelRatio, q.pixelRatio) * q.scale);
     renderer.setSize(size.width, size.height, false);
-    if (renderer.shadowMap.enabled !== q.shadows) {
-      renderer.shadowMap.enabled = q.shadows;
-      sun.castShadow = q.shadows;
-      if (!q.shadows && sun.shadow.map) {
+    looks.resize(size.width, size.height);
+    const shadows = q.shadows || looks.wantsShadows();
+    if (renderer.shadowMap.enabled !== shadows) {
+      renderer.shadowMap.enabled = shadows;
+      sun.castShadow = shadows;
+      if (!shadows && sun.shadow.map) {
         sun.shadow.map.dispose();
         sun.shadow.map = null;
       }
@@ -108,6 +122,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     const restoreEffects = effects.prewarm();
     const restoreFloor = floorView ? floorView.prewarm() : () => {};
     renderer.compile(scene, camera);
+    looks.compile();
     restoreFloor();
     restoreEffects();
     restoreActors();
@@ -170,7 +185,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       camera.lookAt(focus.x + jolt.x, 0, focus.y + jolt.y);
       sun.position.set(focus.x - 7, 16, focus.y + 5);
       sun.target.position.set(focus.x, 0, focus.y);
-      renderer.render(scene, camera);
+      looks.render(scene, camera);
 
       if (hold > 0) hold--;
       else if (veil > 0) veil = Math.max(0, veil - dtSec / FEEL.reveal.screenFadeSec);
@@ -272,6 +287,14 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       camera.updateProjectionMatrix();
     },
 
+    /** 그림체 시안을 바꾼다: 'base' | 'ink' | 'pixel' | 'diorama'. 바꾼 이름을 돌려준다(모르는 이름이면 base). */
+    setLook(name) {
+      const now = looks.set(name);
+      applyLight();
+      applyQuality();
+      return now;
+    },
+
     /** 그래픽 품질을 바꾼다: 'low' | 'medium' | 'high'. 횃불 빛·소품 수는 다음 층부터 바뀐다. */
     setQuality(name) {
       if (!config.quality[name]) throw new RangeError(`setQuality: 알 수 없는 품질 "${name}"`);
@@ -297,6 +320,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
         sceneChildren: scene.children.length,
         floorsBuilt,
         quality: level,
+        look: looks.current,
         pixelRatio: renderer.getPixelRatio(),
         shadows: renderer.shadowMap.enabled,
         camera: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
@@ -327,6 +351,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       actors.dispose();
       effects.dispose();
       assets.dispose();
+      looks.dispose();
       veilGeometry.dispose();
       veilMaterial.dispose();
       if (sun.shadow.map) sun.shadow.map.dispose();

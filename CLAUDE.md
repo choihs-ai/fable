@@ -118,6 +118,7 @@ src/
     save/                  세이브 (아래 "세이브" 참고)
   render/                  ── Three.js. 로직 상태를 읽기만 함 (아래 "렌더" 참고)
     renderer.js            렌더러·씬·카메라(추적·앞세우기·흔들림)·조명·품질·화면 페이드·셰이더 미리 컴파일, 이벤트 연출
+    looks.js               그림체 시안(?look=ink|pixel|diorama): 장면을 렌더 타깃에 그린 뒤 후처리 셰이더(먹선·픽셀·틸트시프트). 수치는 RENDER.looks
     assets.js              공유 지오메트리·툰 머티리얼
     pool.js camera-rig.js  풀, 카메라 계산(흔들림 포함) — Three.js 를 모름
     world/floor-view.js    층의 바닥·벽·문·소품 InstancedMesh, 방 단위 공개, 벽 낮추기 보간, 횃불 빛, 포털·상인, 문 위 보상 아이콘

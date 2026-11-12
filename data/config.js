@@ -82,4 +82,28 @@ export const RENDER = deepFreeze({
     damageProc: '#9fe8ff',
     heal: '#7fe08a',
   },
+  /**
+   * 그림체 시안(주소에 ?look=ink | pixel | diorama). base 는 지금 그림. 시안은 장면을 한 번 그린 뒤 화면 전체에 후처리 셰이더를 씌운다.
+   * light: 그 그림체에서 쓰는 빛의 세기(반구광 hemi, 해 sun)와 해의 색.
+   */
+  looks: {
+    base: { light: { hemi: 1.4, sun: 1.8, sunColor: 0xfff0dd } },
+    /** ① 먹선 판화: 외곽선, 종이색 4단 명암, 그늘의 빗금, 선명한 색(적의 공격 예고·탄)만 남긴다. */
+    ink: {
+      light: { hemi: 2.4, sun: 1.6, sunColor: 0xfff4e6 },
+      paper: 0xeee2c8, mid: 0xbfa582, shade: 0x77604c, ink: 0x1c1612, void: 0x1c1612,
+      exposure: 1.9, steps: [0.6, 0.36, 0.17], smooth: 2.5,
+      lineWidth: 1.6, lineDepth: 0.03, lineColor: 0.32, accent: 0.95, accentSat: [0.12, 0.3], hatch: 6, grain: 0.05,
+    },
+    /** ② 픽셀 3D: 낮은 해상도로 그려 크게 키우고, 색을 단계로 끊어 점묘(디더)로 잇는다. 1픽셀 외곽선. */
+    pixel: {
+      light: { hemi: 1.9, sun: 2.2, sunColor: 0xffe8c8 },
+      pixelSize: 3, levels: 7, dither: 0.35, saturation: 1.15, outline: 0.25, outlineDepth: 0.05, void: 0x0d0b16,
+    },
+    /** ③ 미니어처 디오라마: 화면 위아래를 흐리게(틸트시프트), 따뜻한 해와 진한 그림자, 채도·대비를 올리고 가장자리를 어둡게. */
+    diorama: {
+      light: { hemi: 1.3, sun: 3.2, sunColor: 0xffd2a0 }, shadows: true,
+      focusY: 0.5, band: 0.12, maxBlur: 11, saturation: 1.35, contrast: 0.35, warmth: 0.08, vignette: 0.6, bloom: 0.45,
+    },
+  },
 });
