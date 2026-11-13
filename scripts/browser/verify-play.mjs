@@ -89,7 +89,7 @@ try {
     const f = window.__fable;
     const bot = createBot();
     f.setAutopilot((g) => botStep(g, bot));
-    window.__seen = { screens: {}, maxPrograms: 0, programsGrew: [], fadeMax: 0, regionSteps: [], boons: 0, shops: 0 };
+    window.__seen = { screens: {}, maxPrograms: 0, programsGrew: [], fadeMax: 0, regionSteps: [], boons: 0, shops: 0, floors: [], skipped: false };
     // 메뉴는 실제 클릭으로 처리한다.
     window.__menus = setInterval(() => {
       const scr = f.ui.screens.current;
@@ -130,6 +130,19 @@ try {
       }
       lastPrograms = info.programs;
       lastNames = info.programNames;
+      // 층이 바뀌는 순간: 화면이 가려져 있는가, 다시 미리 컴파일했는가.
+      const run = f.game().state.run;
+      const floors = window.__seen.floors;
+      if (floors.length === 0 || floors.at(-1).floor !== run.floor) {
+        floors.push({ floor: run.floor, tick: f.game().state.tick, veil: info.veil, compile: info.compile.count });
+        brightness.length = 0;
+      }
+      // 여섯 층을 헤드리스로 다 돌면 너무 오래 걸린다. 2층에 들어가 잠깐 싸운 뒤 마지막 층으로 건너뛴다
+      // (1층에서 얻은 것만 들고 가므로 대개 거기서 쓰러진다 — 판이 끝나기만 하면 된다).
+      if (run.floor === 2 && !window.__seen.skipped && f.game().state.tick - floors.at(-1).tick > 600 && f.game().state.encounter === null && f.ui.screens.current === null) {
+        window.__seen.skipped = true;
+        f.enterFloor(6);
+      }
       const world = f.game().state.world;
       if (world) {
         const n = world.rooms.length + world.links.length;
@@ -146,7 +159,7 @@ try {
   });
   const shots = [5, 30, 60, 90, 120];
   let elapsed = 0;
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 540; i++) {
     await page.waitForTimeout(2000);
     elapsed += 2;
     if (shots.includes(elapsed)) await shot(`play-04-t${elapsed}`);
@@ -158,6 +171,8 @@ try {
   const seen = await page.evaluate(() => window.__seen);
   check('한 판이 끝까지 돈다(승리 또는 사망)', ['gameOver', 'victory'].includes(s.phase), { phase: s.phase, rooms: s.run.roomsCleared, kills: s.run.kills, sec: (s.tick / 60).toFixed(0) });
   check('결과 화면이 뜬다', s.screen === 'result');
+  const second = seen.floors.find((fl) => fl.floor === 2);
+  check('포털로 2층에 넘어간다: 넘어가는 순간 화면이 가려져 있고 셰이더를 다시 준비한다', Boolean(second) && second.veil > 0.9 && second.compile >= 2, seen.floors);
   await shot('play-05-result');
   check('축복 3택1 화면을 실제로 거쳤다', seen.boons >= 1, seen.screens);
   const emptyMeshes = await page.evaluate(() => {

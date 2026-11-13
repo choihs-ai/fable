@@ -163,6 +163,8 @@ function checkWorld(r, state) {
   const floorAt = (c) => c.x < w && c.y < h && tiles[c.y * w + c.x] === TILE.FLOOR;
   if (!floorAt(map.start)) return r.fail('world.start', '바닥이 아님');
   if (isObject(state.run) && map.floor !== state.run.floor) r.fail('world.floor', `진행 중인 층(${show(state.run.floor)})과 다름 (${map.floor})`);
+  // 층마다 구역이 정해져 있다.
+  if (Number.isInteger(map.floor) && map.floor >= 1 && map.floor <= TOTAL_FLOORS && map.zoneId !== ZONES[map.floor - 1].id) r.fail('world.zoneId', `${map.floor}층의 구역(${ZONES[map.floor - 1].id})이 아님 (${show(map.zoneId)})`);
 
   // 방·문·복도는 서로를 번호로 가리킨다. 번호가 어긋나면 로직이 없는 것을 읽는다.
   let active = 0;
