@@ -122,12 +122,13 @@ test('거리 구간에 빈틈이 없다: 가까이 붙었을 때 쓸 기술이 �
   }
 });
 
-test('보스: 중간보스 3종과 최종보스 1종, 최종보스는 페이즈가 2개 이상', () => {
+test('보스: 구역마다 하나 — 중간보스 5종과 최종보스 1종, 최종보스는 페이즈가 2개 이상', () => {
   const mids = ZONES.filter((z) => z.boss?.kind === 'mid').map((z) => z.boss.id);
   const finals = ZONES.filter((z) => z.boss?.kind === 'final').map((z) => z.boss.id);
-  assert.equal(mids.length, 3);
+  assert.equal(mids.length, 5);
   assert.equal(finals.length, 1);
-  assert.equal(new Set([...mids, ...finals]).size, 4);
+  assert.equal(new Set([...mids, ...finals]).size, 6);
+  assert.equal(ZONES.at(-1).boss.kind, 'final', '마지막 구역의 보스가 최종보스');
   assert.deepEqual(Object.keys(BOSSES).sort(), [...mids, ...finals].sort());
   assert.ok(BOSSES[finals[0]].phases.length >= 2);
 });

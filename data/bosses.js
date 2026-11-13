@@ -69,6 +69,89 @@ export const BOSSES = deepFreeze({
     },
   },
 
+  // ── 지하 수로 보스: 큰 슬라임. 독을 뱉고, 몸으로 내리찍고, 2페이즈에 갈라지며 독 웅덩이를 깐다 ──
+  sludge_king: {
+    name: '수로의 왕', hp: 440, speed: 1.9, radius: 0.85, mass: 12, armor: 0, aggroRadius: 10,
+    immune: ['poison'], statusResist: { stun: 0.4, freeze: 0, slow: 0.5 },
+    transitionSec: 1.5,
+    phases: [
+      {
+        until: 0.5, move: 'chase', keepDist: 2.2, pauseSec: 0.9,
+        patterns: [
+          { ability: 'spit', weight: 4, minDist: 2.5 },
+          { ability: 'body_slam', weight: 4, maxDist: 3 },
+          { ability: 'lunge', weight: 2, minDist: 3 },
+        ],
+      },
+      {
+        until: 0, move: 'chase', keepDist: 2.2, pauseSec: 0.55, speedMul: 1.2,
+        patterns: [
+          { ability: 'spit_wide', weight: 4, minDist: 2.5 },
+          { ability: 'body_slam', weight: 4, maxDist: 3 },
+          { ability: 'lunge', weight: 2, minDist: 3 },
+          { ability: 'sludge_pools', weight: 3 },
+          { ability: 'split', weight: 3 },
+        ],
+      },
+    ],
+    abilities: {
+      spit: {
+        windup: 0.55, recovery: 0.3, cooldown: 2.6,
+        effects: [{ type: 'projectile', speed: 8.5, radius: 0.24, range: 12, damage: 9, status: { id: 'poison' }, spread: [R0, R15, R15N] }],
+      },
+      spit_wide: {
+        windup: 0.6, recovery: 0.3, cooldown: 3,
+        effects: [{ type: 'projectile', speed: 8.5, radius: 0.24, range: 12, damage: 9, status: { id: 'poison' }, spread: [R0, R15, R15N, R30, R30N] }],
+      },
+      body_slam: { windup: 0.8, recovery: 0.5, cooldown: 4, needsLos: false, effects: [{ type: 'circle', radius: 2.9, damage: 15, status: { id: 'slow' } }] },
+      lunge: {
+        windup: 0.6, recovery: 0.5, cooldown: 6, needsClearPath: true,
+        effects: [{ type: 'dash', speed: 11, distance: 7, damage: 14, stopOnWall: true }],
+      },
+      sludge_pools: {
+        windup: 0.6, recovery: 0.3, cooldown: 7, needsLos: false,
+        effects: [{ type: 'hazard', offsets: AROUND4, delay: 0.9, duration: 4, interval: 0.5, radius: 1.3, damage: 3, status: { id: 'poison' } }],
+      },
+      split: { windup: 0.9, recovery: 0.3, cooldown: 11, needsLos: false, effects: [{ type: 'summon', enemy: 'slimelet', count: 3, max: 6 }] },
+    },
+  },
+
+  // ── 버려진 광산 보스: 곡괭이를 휘두르고, 들이받고, 화약을 던지며, 2페이즈에 일꾼을 부른다 ──
+  foreman: {
+    name: '갱도 감독', hp: 480, speed: 2.8, radius: 0.7, mass: 10, armor: 3, aggroRadius: 10,
+    statusResist: { stun: 0.4, freeze: 0, slow: 0.5 },
+    transitionSec: 1.5,
+    phases: [
+      {
+        until: 0.5, move: 'chase', keepDist: 1.6, pauseSec: 0.8,
+        patterns: [
+          { ability: 'pick_swing', weight: 4, maxDist: 2.5 },
+          { ability: 'rush', weight: 3, minDist: 3 },
+          { ability: 'dynamite', weight: 3, minDist: 2.5 },
+        ],
+      },
+      {
+        until: 0, move: 'chase', keepDist: 1.6, pauseSec: 0.5, speedMul: 1.25,
+        patterns: [
+          { ability: 'pick_swing', weight: 4, maxDist: 2.5 },
+          { ability: 'rush', weight: 3, minDist: 3 },
+          { ability: 'dynamite_many', weight: 4 },
+          { ability: 'call_crew', weight: 3 },
+        ],
+      },
+    ],
+    abilities: {
+      pick_swing: { windup: 0.5, recovery: 0.4, cooldown: 1.5, effects: [{ type: 'arc', range: 2.5, cosHalf: 0.1, damage: 15 }] },
+      rush: {
+        windup: 0.55, recovery: 0.5, cooldown: 5, needsClearPath: true,
+        effects: [{ type: 'dash', speed: 13, distance: 9, damage: 17, stopOnWall: true, stunOnWall: 0.8 }],
+      },
+      dynamite: { windup: 0.5, recovery: 0.3, cooldown: 4, needsLos: false, effects: [{ type: 'hazard', offsets: TRIANGLE, delay: 1.0, radius: 1.5, damage: 16 }] },
+      dynamite_many: { windup: 0.5, recovery: 0.3, cooldown: 4.5, needsLos: false, effects: [{ type: 'hazard', offsets: AROUND6, delay: 1.0, radius: 1.3, damage: 16 }] },
+      call_crew: { windup: 0.9, recovery: 0.3, cooldown: 12, needsLos: false, effects: [{ type: 'summon', enemy: 'kobold', count: 2, max: 4 }] },
+    },
+  },
+
   // ── 버섯 동굴 중간보스: 느리다. 독 구름 장판, 포자 덩이 소환, 뿌리 폭발 ──
   spore_mother: {
     name: '포자의 어머니', hp: 380, speed: 1.3, radius: 0.8, mass: 12, armor: 0, aggroRadius: 10,

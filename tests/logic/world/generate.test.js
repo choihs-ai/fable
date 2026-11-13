@@ -16,7 +16,7 @@ import { TILE } from '../../../src/logic/world/tiles.js';
 import { validateFloor } from '../../../src/logic/world/validate.js';
 
 const worldRng = (seed) => Rng.fromSeed(seed).fork('world');
-const FABLE_SUMMARY = 'rooms 62x65 open=1628 start=12,31 rooms=srscecccebe rewards=-w-wbbbbbb- doors=24';
+const FABLE_SUMMARY = 'rooms 62x65 open=1628 start=12,31 rooms=srscecccebe rewards=-w-hbwbbbb- doors=24';
 const SAMPLE = Array.from({ length: 150 }, (_, i) => generateFloor({ seed: `sample-${i}`, floor: 1 }));
 
 /** 맵을 한 줄로 요약한다(고정값 비교용). */

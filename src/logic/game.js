@@ -2,11 +2,13 @@
 // 로직 모듈(world/entities/combat/items)은 서로를 이 파일을 통해서만 조율한다.
 
 import { CHARACTERS } from '../../data/characters.js';
+import { ENCOUNTERS } from '../../data/encounters.js';
 import { EventBus } from './core/event-bus.js';
 import { EVENTS } from './core/events.js';
 import { PHASE, createInitialState, rngOf } from './core/state.js';
 import { resolveDashes, updateActions } from './combat/abilities.js';
 import { runAI } from './combat/ai/brain.js';
+import { heal } from './combat/damage.js';
 import { processDeaths } from './combat/deaths.js';
 import { updateEncounter } from './combat/encounter.js';
 import { updateHazards } from './combat/hazards.js';
@@ -76,12 +78,18 @@ export function setPhase(game, phase) {
 export function enterFloor(game, floor) {
   const { state, bus } = game;
   const map = generateFloorFromRng(rngOf(state, 'world'), floor);
+  const arriving = state.world !== null && floor > state.run.floor;
   state.run.floor = floor;
   state.run.depth = 0;
   state.world = map;
   // 플레이어는 층을 넘어가도 유지되고(체력·무기·축복 포함), 적·투사체·장판·전리품은 비운다.
   populateFloor(state, bus, map);
   refreshPlayerStats(state);
+  // 다음 층으로 넘어왔으면 숨을 돌린다: 최대 체력의 일부를 회복한다.
+  if (arriving) {
+    const p = getPlayer(state);
+    heal(p, (p.maxHp * ENCOUNTERS.stage.healPct) / 100);
+  }
   // 상점의 진열품은 (런 시드, 층)으로 정해진다.
   const player = getPlayer(state);
   state.shop = {

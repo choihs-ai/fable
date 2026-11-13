@@ -231,11 +231,13 @@ function fillWave(rng, pool, budget, wave) {
 }
 
 /** 방의 웨이브 구성. 깊을수록 예산이 크고, 뒤 웨이브일수록 조금 더 크다. */
-function wavesOf(rng, zone, room) {
+function wavesOf(rng, zone, room, floor) {
   const cfg = ENCOUNTERS;
   if (room.kind === ROOM_KIND.BOSS) return [[{ type: zone.boss.id, elite: false }]];
   const pool = zone.enemies.filter((e) => e.minDepth <= room.depth);
-  const base = Math.min(cfg.budget.max, cfg.budget.base + cfg.budget.perDepth * room.depth);
+  // 층이 깊을수록 예산과 그 상한이 함께 오른다.
+  const deeper = Math.max(0, floor - 1);
+  const base = Math.min(cfg.budget.max + cfg.stage.budgetMaxPerStage * deeper, cfg.budget.base + cfg.budget.perDepth * room.depth + cfg.stage.budgetPerStage * deeper);
   const waves = [];
   if (room.kind === ROOM_KIND.ELITE) {
     const count = rng.int(cfg.elite.waves[0], cfg.elite.waves[1]);
@@ -381,7 +383,7 @@ export function buildStage(rng, plan, { plain = false } = {}) {
     rooms.push({
       id: room.id, kind: room.kind, x: room.x, y: room.y, w: room.w, h: room.h, shape: room.shape,
       depth: room.depth, reward: room.reward, cover: room.cover, feature, doors: roomDoors[room.id],
-      waves: fight ? wavesOf(waveRng, plan.zone, room) : [],
+      waves: fight ? wavesOf(waveRng, plan.zone, room, plan.floor) : [],
       spawnCells: fight ? spawnCellsOf(layout, room, structure.regionAt, doorCells) : [],
       // 실행 중에 바뀌는 값: 'idle'(아직) | 'active'(전투 중) | 'cleared'(끝남), 지금 웨이브 번호, 화면에 드러났는가.
       state: 'idle', wave: 0, seen: false,

@@ -15,7 +15,7 @@
 //
 // 검사 항목(판마다):
 //   1. 틱이 예외를 던지지 않는가
-//   2. 판이 끝나는가(승리 또는 사망). 시간 상한(게임 시간 30분)을 넘기면 "끝나지 않음"으로 센다
+//   2. 판이 끝나는가(승리 또는 사망). 시간 상한(게임 시간 60분)을 넘기면 "끝나지 않음"으로 센다
 //   3. 주기적으로: 상태가 세이브 검증기를 통과하고(오탐 = 저장 실패), NaN·공유 객체가 없고, 살아 있는 몸이 벽 속에 있지 않은가
 //   4. 중간에 저장했다 불러온 게임이 저장하지 않은 게임과 끝까지 같은가(일부 시드)
 // 문제가 하나라도 있으면 종료 코드 1. 승률·시간은 통계일 뿐 실패 조건이 아니다.
@@ -38,7 +38,7 @@ import { botStep, createBot } from './lib/bot.js';
 import { findBadNumber, findSharedObject } from './lib/save-sim.js';
 
 const DT = 1 / 60;
-const TICK_LIMIT = 30 * 60 * 60;
+const TICK_LIMIT = 60 * 60 * 60;
 const CHECK_EVERY = 240;
 
 function option(args, name, fallback) {
@@ -134,6 +134,7 @@ export function playRun({ seed, character = 'knight', plan = 'full', dodge = tru
     seed, error, problems,
     outcome: error ? 'error' : state.phase === PHASE.VICTORY ? 'victory' : state.phase === PHASE.GAME_OVER ? 'death' : 'timeout',
     sec: state.tick / 60,
+    floor: state.run.floor,
     roomsCleared: state.run.roomsCleared,
     kills: state.run.kills,
     boons: state.run.boons.length,
@@ -175,6 +176,13 @@ function summarize(results, options) {
   console.log(`  보스: 도달 ${results.filter((r) => r.reachedBoss).length}판, 잡은 판의 전투 시간 평균 ${avg(bossSec).toFixed(1)}초`);
   console.log(`  받은 피해: 평균 ${avg(results.map((r) => r.damageTaken)).toFixed(0)}, 승리한 판의 남은 체력 평균 ${avg(wins.map((r) => r.hp)).toFixed(0)}`);
   console.log(`  사망한 곳: ${JSON.stringify(deathAt)}`);
+  // 판이 끝난 층: 죽은 판은 그 층에서, 이긴 판은 "끝"으로 센다.
+  const ended = {};
+  for (const r of results) {
+    const key = r.outcome === 'victory' ? '끝' : `${r.floor}층`;
+    ended[key] = (ended[key] ?? 0) + 1;
+  }
+  console.log(`  판이 끝난 층: ${Object.keys(ended).sort().map((k) => `${k} ${ended[k]}`).join(' · ')}`);
   console.log(`  제자리걸음 감지: ${results.reduce((a, r) => a + r.stuck, 0)}회, 이어하기 확인: ${results.filter((r) => r.resumed).length}판`);
   const bad = results.filter((r) => r.error || r.problems.length > 0 || r.outcome === 'timeout');
   for (const r of bad.slice(0, 12)) console.log(`  문제 [${r.seed}] ${r.outcome}: ${r.error ?? ''} ${r.problems.slice(0, 3).join(' ; ')}`);

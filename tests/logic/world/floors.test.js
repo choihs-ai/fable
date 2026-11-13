@@ -7,12 +7,20 @@ import { ZONES } from '../../../data/zones.js';
 import { enemyDef, isBossType } from '../../../src/logic/entities/defs.js';
 import { FLOOR_KIND, REWARD, ROOM_KIND, TOTAL_FLOORS, floorPlan, isFightRoom } from '../../../src/logic/world/floors.js';
 
-test('맛보기 판은 1구역 1층이고, 층마다 구역이 순서대로 쓰인다', () => {
+test('한 판은 여섯 층이고, 층마다 구역이 순서대로 쓰이며 구역마다 보스가 있다', () => {
   assert.equal(TOTAL_FLOORS, WORLD.stages);
-  assert.equal(TOTAL_FLOORS, 1);
-  const plan = floorPlan(1);
-  assert.deepEqual({ floor: plan.floor, zoneIndex: plan.zoneIndex, kind: plan.kind }, { floor: 1, zoneIndex: 0, kind: FLOOR_KIND.STAGE });
-  assert.equal(plan.zone, ZONES[0]);
+  assert.equal(TOTAL_FLOORS, 6);
+  assert.equal(ZONES.length, TOTAL_FLOORS);
+  for (let floor = 1; floor <= TOTAL_FLOORS; floor++) {
+    const plan = floorPlan(floor);
+    assert.deepEqual({ floor: plan.floor, zoneIndex: plan.zoneIndex, kind: plan.kind }, { floor, zoneIndex: floor - 1, kind: FLOOR_KIND.STAGE });
+    assert.equal(plan.zone, ZONES[floor - 1]);
+    assert.ok(plan.zone.boss && plan.zone.boss.id, `${floor}층: 보스`);
+    // 적마다 예산 몫(cost)과 나오는 깊이(minDepth)가 있고, 깊이 0 에서 싼 적(cost 3 이하)과 정예가 될 만한 적(cost 2 이상)이 모두 나온다.
+    for (const e of plan.zone.enemies) assert.ok(e.cost >= 1 && e.minDepth >= 0 && e.weight > 0, `${floor}층 ${e.id}`);
+    const shallow = plan.zone.enemies.filter((e) => e.minDepth === 0);
+    assert.ok(shallow.some((e) => e.cost <= 3) && shallow.some((e) => e.cost >= 2), `${floor}층: 깊이 0 의 적`);
+  }
 });
 
 test('floorPlan 은 범위를 벗어난 층을 거부한다', () => {

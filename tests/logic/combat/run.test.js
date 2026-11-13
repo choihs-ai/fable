@@ -5,15 +5,16 @@ import { test } from 'node:test';
 
 import { playRun } from '../../../scripts/bot-run.mjs';
 
-test('봇이 맛보기 판을 완주한다: 방을 깨고, 축복을 고르고, 보스를 잡고, 출구 포털로 나간다', () => {
+test('봇이 여섯 층을 완주한다: 방을 깨고, 축복을 고르고, 층마다 보스를 잡고, 마지막 포털로 나간다', () => {
   for (const seed of ['run-a', 'run-b', 'run-c']) {
     const result = playRun({ seed, resumeCheck: true });
     assert.equal(result.error, null, `${seed}: ${result.error}`);
     assert.deepEqual(result.problems, [], seed);
     assert.equal(result.outcome, 'victory', seed);
-    assert.ok(result.roomsCleared >= 4 && result.boons >= 2 && result.kills >= 20, `${seed}: 방 ${result.roomsCleared}, 축복 ${result.boons}, 처치 ${result.kills}`);
+    assert.equal(result.floor, 6, seed);
+    assert.ok(result.roomsCleared >= 24 && result.boons >= 10 && result.kills >= 150, `${seed}: 방 ${result.roomsCleared}, 축복 ${result.boons}, 처치 ${result.kills}`);
     assert.ok(result.reachedBoss && result.bossSec > 5, `${seed}: 보스 전투 ${result.bossSec}초`);
-    assert.ok(result.sec > 90 && result.sec < 15 * 60, `${seed}: ${result.sec.toFixed(0)}초`);
+    assert.ok(result.sec > 8 * 60 && result.sec < 50 * 60, `${seed}: ${result.sec.toFixed(0)}초`);
     assert.equal(result.resumed, true, `${seed}: 전투 중에 저장했다 불러온 게임이 끝까지 같았다`);
   }
 });

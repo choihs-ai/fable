@@ -8,8 +8,8 @@
 import { deepFreeze } from './freeze.js';
 
 export const WORLD = deepFreeze({
-  /** 한 판의 층 수. 층마다 data/zones.js 의 구역을 순서대로 쓴다. 맛보기 판은 1구역 1층이다. */
-  stages: 1,
+  /** 한 판의 층(스테이지) 수. 층마다 data/zones.js 의 구역을 순서대로 쓴다: 구역 여섯, 층마다 보스 하나. */
+  stages: 6,
 
   /** 한 층의 생성 재시도 상한. 넘으면 격자 모양의 비상 레이아웃으로 대체한다(무한 재시도 방지). */
   maxAttempts: 12,

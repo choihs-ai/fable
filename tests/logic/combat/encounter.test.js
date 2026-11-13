@@ -1,5 +1,7 @@
 // 방 전투: 문 잠김 → 웨이브 → 전멸 시 문 열림 + 보상. 방 단위 공개, 숨은 문, 보스와 출구 포털.
 
+import { ZONES } from '../../../data/zones.js';
+import { TOTAL_FLOORS } from '../../../src/logic/world/floors.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -246,7 +248,7 @@ test('싸움이 없는 방(상점·보상)은 들어서는 것으로 끝나고, 
   else assert.ok(s.state.drops.some((d) => d.kind === 'weapon'));
 });
 
-test('보스 방: 보스가 한가운데에 나타나고, 잡으면 출구 방으로 가는 문이 열린다. 포털로 나가면 승리', () => {
+test('보스 방: 보스가 한가운데에 나타나고, 잡으면 출구 방으로 가는 문이 열린다. 포털로 다음 층에 가고, 마지막 층의 포털은 승리', () => {
   const s = createStage({ seed: 'boss' });
   const boss = s.room(ROOM_KIND.BOSS);
   const exit = s.room(ROOM_KIND.EXIT);
@@ -271,8 +273,30 @@ test('보스 방: 보스가 한가운데에 나타나고, 잡으면 출구 방�
   s.moveTo(exit);
   s.step(2);
   assert.deepEqual(interactTarget(s.state), { type: 'portal' });
+  // 첫 층의 포털: 다음 층으로 간다. 플레이어는 그대로 가고(축복·무기·금화), 최대 체력의 일부를 회복한다.
+  s.player.hp = 20;
+  const gold = s.state.run.gold;
+  const next = interact(s.game);
+  assert.deepEqual(next, { ok: true, type: 'portal', victory: false, floor: 2 });
+  assert.equal(s.state.run.floor, 2);
+  assert.equal(s.state.world.floor, 2);
+  assert.equal(s.state.world.zoneId, ZONES[1].id);
+  assert.equal(s.state.phase, PHASE.PLAYING);
+  assert.equal(s.state.run.gold, gold);
+  const p2 = s.state.entities.byId[s.state.playerId];
+  assert.equal(p2.hp, 20 + Math.round((p2.maxHp * ENCOUNTERS.stage.healPct) / 100));
+  assert.deepEqual(validateRunState(s.state), []);
+
+  // 마지막 층의 포털: 승리.
+  s.state.run.floor = TOTAL_FLOORS;
+  const exit2 = s.state.world.rooms.find((r) => r.kind === 'exit');
+  const boss2 = s.state.world.rooms.find((r) => r.kind === 'boss');
+  boss2.state = 'cleared';
+  p2.x = exit2.feature.x + 0.5;
+  p2.y = exit2.feature.y + 0.5;
+  s.state.run.depth = 0;
   const souls = s.state.meta.souls;
-  const result = interact(s.game);
+  const result = usePortal(s.game);
   assert.deepEqual(result, { ok: true, type: 'portal', victory: true });
   assert.equal(s.state.phase, PHASE.VICTORY);
   const ended = s.events(EVENTS.RUN_ENDED)[0];
