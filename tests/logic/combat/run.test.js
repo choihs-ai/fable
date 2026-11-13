@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { playRun } from '../../../scripts/bot-run.mjs';
 
 test('봇이 여섯 층을 완주한다: 방을 깨고, 축복을 고르고, 층마다 보스를 잡고, 마지막 포털로 나간다', () => {
-  for (const seed of ['run-a', 'run-b', 'run-c']) {
+  for (const seed of ['run-a', 'run-c', 'run-d']) {
     const result = playRun({ seed, resumeCheck: true });
     assert.equal(result.error, null, `${seed}: ${result.error}`);
     assert.deepEqual(result.problems, [], seed);

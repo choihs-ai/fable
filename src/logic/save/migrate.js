@@ -57,7 +57,11 @@ const RUN_MIGRATIONS = {
   // v7 → v8(저주): 판에 건 저주 단계(run.curse)가 생겼다. 옛 판은 저주 없이 하던 판이다.
   7(run) {
     run.version = 8;
-    if (isObject(run.run)) fill(run.run, { curse: 0 });
+    if (isObject(run.run)) {
+      fill(run.run, { curse: 0 });
+      // 축복 "광기"가 쓰는 값.
+      if (isObject(run.run.boonState)) fill(run.run.boonState, { furyUntil: 0 });
+    }
     return run;
   },
 };

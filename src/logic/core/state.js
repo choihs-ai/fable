@@ -50,8 +50,8 @@ export function createInitialState({ seed }) {
       gold: 0,
       /** 가진 축복의 id(얻은 순서). 효과는 logic/combat/boons.js. */
       boons: [],
-      /** 축복이 쓰는 값: 과충전의 공격 횟수, 얼음 갑옷·증기 폭발을 다시 쓸 수 있는 틱, 되살아났는가. */
-      boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, revived: false },
+      /** 축복이 쓰는 값: 과충전의 공격 횟수, 얼음 갑옷·증기 폭발을 다시 쓸 수 있는 틱, 광기가 끝나는 틱, 되살아났는가. */
+      boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, furyUntil: 0, revived: false },
       /** 지금 제시된 3택1({ kind:'boon', options:[id…], rerolls }) 또는 null. 제시돼 있는 동안 ui 가 게임을 멈춘다. */
       choice: null,
       /** 이번 런에 남은 무료 다시 뽑기. */

@@ -74,7 +74,7 @@ export const runFields = Object.freeze({
   curse: int(0, CURSE.max),
   gold: int(0, L.gold),
   boons: boonList,
-  boonState: shape({ shots: count, iceArmorAt: timer, steamAt: timer, revived: bool }),
+  boonState: shape({ shots: count, iceArmorAt: timer, steamAt: timer, furyUntil: timer, revived: bool }),
   choice: nullable(shape({ kind: among(['boon']), options: list(boonId, 16, 1), rerolls: count })),
   freeRerolls: count,
   depth: int(0, 4096),

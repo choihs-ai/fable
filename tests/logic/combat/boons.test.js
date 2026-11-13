@@ -11,6 +11,7 @@ import { WEAPONS } from '../../../data/weapons.js';
 import { EVENTS } from '../../../src/logic/core/events.js';
 import { PHASE } from '../../../src/logic/core/state.js';
 import { dealDamage } from '../../../src/logic/combat/damage.js';
+import { outgoingMul } from '../../../src/logic/combat/boons.js';
 import { applyHit } from '../../../src/logic/combat/hit.js';
 import { spawnProjectile } from '../../../src/logic/combat/projectiles.js';
 import { applyStatus } from '../../../src/logic/combat/statuses.js';
@@ -396,9 +397,83 @@ test('축복이 낸 피해는 다시 축복을 부르지 않는다(끝없이 되
 
 test('데이터에 있는 축복은 모두 로직에서 쓰인다(이름만 있고 효과가 없는 축복이 없다)', () => {
   const dir = fileURLToPath(new URL('../../../src/logic/', import.meta.url));
-  const source = ['combat/boons.js', 'combat/player.js', 'combat/projectiles.js', 'entities/stats.js']
+  const source = ['combat/boons.js', 'combat/player.js', 'combat/projectiles.js', 'combat/encounter.js', 'entities/stats.js']
     .map((file) => readFileSync(dir + file, 'utf8')).join('\n');
   for (const id of Object.keys(BOONS)) {
     assert.ok(source.includes(`'${id}'`) || source.includes(`BOONS.${id}`), `${id}: 로직 어디에서도 쓰이지 않는다`);
   }
+});
+
+// ── 새 축복(6스테이지에 맞춰 늘린 것) ──
+
+test('축복이 넉넉하다: 50종 이상, 계열마다 8종 이상, 합성은 계열 쌍마다 2종', () => {
+  const ids = Object.keys(BOONS);
+  assert.ok(ids.length >= 50, `축복 ${ids.length}종`);
+  for (const family of ['fire', 'bolt', 'ice']) assert.ok(ids.filter((id) => BOONS[id].family === family).length >= 8, family);
+  const pairs = {};
+  for (const id of ids.filter((i) => BOONS[i].duo)) {
+    const key = [...BOONS[id].duo].sort().join('+');
+    pairs[key] = (pairs[key] ?? 0) + 1;
+  }
+  assert.deepEqual(pairs, { 'bolt+fire': 2, 'bolt+ice': 2, 'fire+ice': 2 });
+  assert.equal(new Set(ids.map((id) => BOONS[id].name)).size, ids.length, '이름이 모두 다르다');
+});
+
+test('피해 배율 축복: 그을음(화상)·처형(빈사)·선제(멀쩡한 적)·결투(하나 남음)·광기(처치 뒤)', () => {
+  const hit = (boons, prepare) => {
+    const a = arena(boons);
+    const z = dummy(a, 8.0, 7.5);
+    const other = dummy(a, 12.5, 2.5);
+    prepare(a, z, other);
+    const before = z.hp;
+    dealDamage(a.state, a.bus, z, 10 * outgoingMul(a.state, a.player, z), { sourceId: a.player.id });
+    return before - z.hp;
+  };
+  const base = hit([], (a, z) => { z.hp -= 5; });
+  assert.ok(hit(['scorch'], (a, z) => { z.hp -= 5; z.statuses.burn = { stacks: 1, until: a.state.tick + 100, nextTick: a.state.tick + 100, sourceId: null }; }) > base);
+  assert.ok(hit(['executioner'], (a, z) => { z.hp = Math.floor(z.maxHp * 0.2); }) > base);
+  assert.ok(hit(['first_strike'], () => {}) > base);
+  assert.equal(hit(['first_strike'], (a, z) => { z.hp -= 5; }), base, '다친 적에게는 그대로');
+  assert.ok(hit(['duelist'], (a, z, other) => { z.hp -= 5; other.dead = true; delete a.state.entities.byId[other.id]; }) > base);
+  assert.equal(hit(['duelist'], (a, z) => { z.hp -= 5; }), base, '적이 둘이면 그대로');
+  assert.ok(hit(['fury'], (a, z) => { z.hp -= 5; a.state.run.boonState.furyUntil = a.state.tick + 60; }) > base);
+});
+
+test('처치 축복: 뇌운은 가까운 적에게 벼락, 수확은 대시 충전, 탐욕은 금화, 광기는 시간을 건다', () => {
+  const a = arena(['storm_kill', 'reaper', 'greed', 'fury', 'quick_charge']);
+  const z = dummy(a, 8.0, 7.5);
+  const near = dummy(a, 9.5, 7.5);
+  const nearHp = near.hp;
+  a.player.kit.charges = 0;
+  a.player.kit.energy = 0;
+  const gold = a.state.run.gold;
+  dealDamage(a.state, a.bus, z, 1e9, { sourceId: a.player.id });
+  a.step(1);
+  assert.ok(near.hp < nearHp, '뇌운');
+  assert.equal(a.player.kit.charges, 1, '수확');
+  assert.equal(a.state.run.gold, gold + BOONS.greed.gold, '탐욕');
+  assert.ok(a.state.run.boonState.furyUntil > a.state.tick, '광기');
+  assert.equal(a.player.kit.energy, BOONS.quick_charge.energy, '급속 충전');
+});
+
+test('맞았을 때: 가시 갑옷은 주변을 다치게 하고, 반격 전류는 기절시킨다', () => {
+  const a = arena(['thorns', 'volt_armor']);
+  const z = dummy(a, a.player.x + 1.2, a.player.y);
+  const before = z.hp;
+  applyHit(a.state, a.bus, a.player, { damage: 1 }, z.id, z.x, z.y);
+  assert.ok(before - z.hp >= BOONS.thorns.damage, `피해 ${before - z.hp}`);
+  assert.ok(z.statuses.stun, '기절');
+});
+
+test('능력치 축복: 무쇠 살갗·날랜 발·예리함·날 선 전류·급속 충전', () => {
+  const base = arena([]);
+  const a = arena(['iron_skin', 'fleet', 'keen_eye', 'keen_current', 'quick_charge']);
+  // 도우미가 치명타를 꺼 두므로 능력치를 다시 합산한다.
+  refreshPlayerStats(base.state);
+  refreshPlayerStats(a.state);
+  assert.equal(a.player.maxHp, base.player.maxHp + BOONS.iron_skin.maxHp);
+  assert.ok(Math.abs(a.player.speed - base.player.speed * BOONS.fleet.speedMul) < 1e-9);
+  assert.ok(Math.abs(a.player.critChance - (base.player.critChance + BOONS.keen_eye.critChance)) < 1e-9);
+  assert.ok(Math.abs(a.player.critDamage - (base.player.critDamage + BOONS.keen_current.critDamage)) < 1e-9);
+  assert.equal(a.player.kit.maxEnergy - base.player.kit.maxEnergy, BOONS.quick_charge.maxEnergy);
 });

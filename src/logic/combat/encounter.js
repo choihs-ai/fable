@@ -1,6 +1,7 @@
 // 방 전투(매 틱): 방에 들어서면 문이 잠기고, 웨이브가 차례로 나타나고, 모두 잡으면 문이 열리며 보상이 나온다.
 // 방과 복도가 화면에 드러나는 것(방 단위 공개)과 숨은 문도 여기서 다룬다.
 
+import { BOONS } from '../../../data/boons.js';
 import { ENCOUNTERS } from '../../../data/encounters.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
@@ -111,6 +112,8 @@ function clearRoom(state, bus, room) {
   const player = getPlayer(state);
   const pct = metaBonuses(state.meta).roomHeal;
   if (player && pct > 0) heal(player, (player.maxHp * pct) / 100);
+  // 축복 "상처 싸매기".
+  if (player && state.run.boons.includes('mender')) heal(player, BOONS.mender.heal);
 }
 
 function runEncounter(state, bus, player) {

@@ -82,7 +82,8 @@ function startDash(state, bus, player, input, moveLen) {
   player.action = null;
   player.facingX = dirX;
   player.facingY = dirY;
-  player.invulnUntil = Math.max(player.invulnUntil, tick + ticksOf(cfg.invuln));
+  // 축복 "유령 걸음": 대시의 무적이 길어진다.
+  player.invulnUntil = Math.max(player.invulnUntil, tick + ticksOf(cfg.invuln + (hasBoon(state, 'ghost_step') ? BOONS.ghost_step.invuln : 0)));
   const dashTicks = Math.max(1, Math.round(cfg.duration * TICK_RATE));
   const charged = hasBoon(state, 'static_dash');
   player.dash = {

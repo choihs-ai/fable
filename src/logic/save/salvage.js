@@ -38,7 +38,7 @@ export function extractCore(data) {
   if (tick !== data.tick) repaired.push('tick');
 
   const run = {
-    floor: rawRun.floor, character: 'knight', gold: 0, boons: [], boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, revived: false },
+    floor: rawRun.floor, character: 'knight', gold: 0, boons: [], boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, furyUntil: 0, revived: false },
     freeRerolls: 0, kills: 0, eliteKills: 0, bossKills: 0, roomsCleared: 0, curse: 0,
   };
   for (const key of ['character', 'gold', 'freeRerolls', 'kills', 'eliteKills', 'bossKills', 'roomsCleared', 'curse']) {
