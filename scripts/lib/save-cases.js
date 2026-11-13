@@ -168,7 +168,11 @@ export const CASES = [
   { id: 'world-room-kind', title: '모르는 종류의 방', expect: 'salvage', corrupt: edit((d) => { d.world.rooms[2].kind = 'lobby'; }) },
   { id: 'world-room-outside', title: '방이 맵 밖으로 나감', expect: 'salvage', corrupt: edit((d) => { d.world.rooms[2].w = 400; }) },
   { id: 'world-room-state', title: '모르는 방 상태', expect: 'salvage', corrupt: edit((d) => { d.world.rooms[2].state = 'haunted'; }) },
-  { id: 'world-room-two-active', title: '전투 중인 방이 둘', expect: 'salvage', corrupt: edit((d) => { d.world.rooms.find((r) => r.state === 'idle' && r.waves.length > 0).state = 'active'; }) },
+  { id: 'world-room-two-active', title: '전투 중인 방이 둘', expect: 'salvage', corrupt: edit((d) => {
+    // 아직 들어가지 않은 전투방을 전투 중으로 바꾼다. 판의 끝 무렵이라 그런 방이 없으면 이미 깬 전투방을 쓴다.
+    const rooms = d.world.rooms.filter((r) => r.waves.length > 0 && r.state !== 'active');
+    (rooms.find((r) => r.state === 'idle') ?? rooms[0]).state = 'active';
+  }) },
   { id: 'world-room-wave', title: '웨이브 번호가 웨이브 수를 벗어남', expect: 'salvage', corrupt: edit((d) => { activeRoom(d).wave = 9; }) },
   { id: 'world-room-enemy', title: '웨이브에 없는 적', expect: 'salvage', corrupt: edit((d) => { roomOf(d, 'boss').waves[0][0].type = 'dragon_god'; }) },
   { id: 'world-room-enemy-proto', title: '웨이브의 적 이름이 "constructor"', expect: 'salvage', corrupt: edit((d) => { roomOf(d, 'boss').waves[0][0].type = 'constructor'; }) },
