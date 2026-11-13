@@ -7,7 +7,7 @@ import { Rng } from './prng.js';
  * 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다.
  * 5: 방 단위 액션 로그라이트로 바꾸면서 런의 구조가 통째로 달라졌다(4 이하의 런은 이어할 수 없다).
  */
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 8;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
@@ -45,6 +45,8 @@ export function createInitialState({ seed }) {
       floor: 1,
       /** 고른 캐릭터(data/characters.js). */
       character: 'knight',
+      /** 이 판에 건 저주 단계(data/meta.js 의 CURSE). 판을 시작할 때 정해지고 바뀌지 않는다. */
+      curse: 0,
       gold: 0,
       /** 가진 축복의 id(얻은 순서). 효과는 logic/combat/boons.js. */
       boons: [],

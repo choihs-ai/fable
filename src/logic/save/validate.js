@@ -6,6 +6,7 @@
 // (그래서 수치를 고친 세이브, 곧 치트는 걸러내지 않는다.)
 // 필드를 추가·삭제하면 STATE_VERSION 을 올리고 이 파일과 migrate.js 를 함께 고친다.
 
+import { CURSE } from '../../../data/meta.js';
 import { BOONS } from '../../../data/boons.js';
 import { BOSSES } from '../../../data/bosses.js';
 import { CHARACTERS } from '../../../data/characters.js';
@@ -70,6 +71,7 @@ const boonList = (r, v, p) => {
 export const runFields = Object.freeze({
   floor: int(1, TOTAL_FLOORS),
   character: keyOf(CHARACTERS),
+  curse: int(0, CURSE.max),
   gold: int(0, L.gold),
   boons: boonList,
   boonState: shape({ shots: count, iceArmorAt: timer, steamAt: timer, revived: bool }),

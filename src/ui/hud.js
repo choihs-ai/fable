@@ -142,6 +142,7 @@ export function createHud({ root, on }) {
       } else if (here) {
         info = { start: '첫 방', shop: '상점', reward: '보상 방', exit: '출구', bonus: '숨은 방' }[here.kind] ?? (here.state === 'cleared' ? '정리한 방' : '');
       }
+      if (info !== '') info = `${state.run.floor}층${state.run.curse > 0 ? ` 저주${state.run.curse}` : ''} · ${info}`;
       changed('room', info, (v) => {
         setText(room, v);
         room.classList.toggle('hidden', v === '');

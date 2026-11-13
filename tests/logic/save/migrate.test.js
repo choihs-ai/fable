@@ -113,7 +113,7 @@ test('메타 v1 세이브(방 단위 구조 이전): 영혼석과 기록은 남�
   const refund = LEGACY_UNLOCK_COSTS.vigor_1 + LEGACY_UNLOCK_COSTS.purse_1 + LEGACY_UNLOCK_COSTS.relic_pack;
   assert.deepEqual(read.meta, {
     version: META_VERSION, souls: data.souls + refund, upgrades: {}, characters: { knight: true },
-    runs: data.runs, victories: data.victories, bestRooms: 0, totalKills: data.totalKills,
+    runs: data.runs, victories: data.victories, bestRooms: 0, totalKills: data.totalKills, curse: 0, curseMax: 0,
   });
   // 돌려받은 영혼석으로 새 강화를 살 수 있다.
   assert.equal(buyUpgrade(read.meta, 'vigor').ok, true);

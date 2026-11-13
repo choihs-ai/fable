@@ -51,6 +51,7 @@ const REASONS = {
   nothing: '가까이에 아무것도 없다',
   'no-weapon': '바꿀 무기가 없다',
   'owned-form': '이미 들고 있는 탈이다',
+  locked: '아직 열리지 않았다',
   'too-far': '조금 더 가까이',
   'no-choice': '고를 것이 없다',
   'bad-index': '고를 수 없다',

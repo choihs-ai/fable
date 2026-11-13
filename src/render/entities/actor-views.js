@@ -161,6 +161,10 @@ export function createActorViews({ scene, assets }) {
       const flap = Math.sin(clock * 22 + view.id) * 0.9;
       fig.wings[0].rotation.z = flap;
       fig.wings[1].rotation.z = -flap;
+    } else if (fig.form === 'blob') {
+      // 말랑하게: 움직일 때는 통통 튀고, 서 있을 때는 숨 쉬듯 조금 부푼다.
+      const bounce = Math.sin(view.walk * 2.2) * 0.14 * view.speed + Math.sin(clock * 3 + view.id) * 0.04;
+      body.scale.set(1 - bounce * 0.6, p.squash * (1 + bounce), 1 - bounce * 0.6);
     } else if (fig.quadLegs) {
       fig.quadLegs.forEach((leg, i) => {
         leg.rotation.x = Math.sin(view.walk * 1.6 + (i % 2 === 0 ? 0 : Math.PI) + (i > 1 ? Math.PI : 0)) * 0.7 * view.speed;

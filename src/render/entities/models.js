@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 
 /**
- * 모델의 생김새. scale 은 키 배율, form 은 'biped'(두 발) | 'bat'(날개) | 'quad'(네 발).
+ * 모델의 생김새. scale 은 키 배율, form 은 'biped'(두 발) | 'bat'(날개) | 'quad'(네 발) | 'blob'(말랑한 덩어리).
  * face: 'visor'(투구 틈의 빛나는 눈) | 'glow'(어두운 얼굴에 빛나는 눈) | 'skull'(해골: 검은 눈구멍 + 불씨) | 'eyes'(점 눈)
  * eye: 빛나는 눈의 색. extras: 장식 이름들.
  */
@@ -36,6 +36,32 @@ export const LOOKS = Object.freeze({
   zombie: { form: 'biped', scale: 1.12, body: 0x7a5038, trim: 0x3a2a24, skin: 0x86b85a, face: 'eyes', eye: 0xfff6c8, weapon: null, reach: true, extras: ['stitch'] },
   bat: { form: 'bat', scale: 1, body: 0x5a3a86, trim: 0x2e1d4a, skin: 0xff5a8a, eye: 0xff5a8a, extras: [] },
   rat: { form: 'quad', scale: 1, body: 0x8a6a52, trim: 0x4a382c, skin: 0xf0a0b0, eye: 0xff3a3a, extras: [] },
+  // 지하 수로
+  slime: { form: 'blob', scale: 1, body: 0x6fd04a, trim: 0x3a7a2a, skin: 0x6fd04a, eye: 0x1a1418, extras: [] },
+  slimelet: { form: 'blob', scale: 0.65, body: 0x8fe06a, trim: 0x3a7a2a, skin: 0x8fe06a, eye: 0x1a1418, extras: [] },
+  leech: { form: 'blob', scale: 0.8, body: 0x8a2a3a, trim: 0x4a141c, skin: 0x8a2a3a, eye: 0xffe08a, glowEye: true, extras: [] },
+  sludge_king: { form: 'blob', scale: 2.7, body: 0x4aa83a, trim: 0xd8a84a, skin: 0x4aa83a, eye: 0xfff2a0, glowEye: true, extras: ['crown'] },
+  // 버섯 동굴
+  sporeling: { form: 'blob', scale: 0.85, body: 0xf0e0c8, trim: 0xe0457a, skin: 0xf0e0c8, eye: 0x1a1418, extras: ['cap'] },
+  cave_spider: { form: 'quad', scale: 1.15, body: 0x3a3048, trim: 0x1c1626, skin: 0x5a4a70, eye: 0xff3a3a, extras: [] },
+  fungal_brute: { form: 'biped', scale: 1.45, body: 0xa05ab0, trim: 0x5a2a6a, skin: 0xe8d8c0, face: 'eyes', eye: 0x1a1418, weapon: null, extras: ['hat'] },
+  spore_mother: { form: 'blob', scale: 2.7, body: 0xe8d8c0, trim: 0xc0306a, skin: 0xe8d8c0, eye: 0x2a0a1a, extras: ['cap'] },
+  // 버려진 광산
+  kobold: { form: 'biped', scale: 0.95, body: 0xa0703a, trim: 0x4a3020, skin: 0x9ac05a, face: 'eyes', eye: 0x1a1418, thin: true, weapon: null, extras: ['horns'] },
+  miner_ghoul: { form: 'biped', scale: 1.12, body: 0x5a6a7a, trim: 0x2a3038, skin: 0x9ab0a0, face: 'skull', eye: 0xffe14a, weapon: 'hammer', extras: ['hat'] },
+  stone_golem: { form: 'biped', scale: 1.6, body: 0x8a8478, trim: 0x5a564e, skin: 0xa8a294, face: 'glow', eye: 0x5af0ff, weapon: null, extras: ['pauldrons'] },
+  foreman: { form: 'biped', scale: 2.0, body: 0x6a5a3a, trim: 0x2a2620, skin: 0x9ab0a0, face: 'skull', eye: 0xffb020, weapon: 'hammer', weaponScale: 1.15, extras: ['jaw', 'hat', 'pauldrons'] },
+  // 용암 굴
+  fire_imp: { form: 'bat', scale: 1, body: 0xe8452a, trim: 0x8a1c14, skin: 0xffe14a, eye: 0xffe14a, extras: [] },
+  magma_hound: { form: 'quad', scale: 1.3, body: 0x7a2a1c, trim: 0x3a1410, skin: 0xff8a3a, eye: 0xffe14a, extras: [] },
+  ash_wraith: { form: 'biped', scale: 1.1, body: 0x5a5560, trim: 0x2a2830, skin: 0x1a181e, face: 'glow', eye: 0xff7a2a, thin: true, weapon: null, extras: ['hood', 'robe'] },
+  cinder_drake: { form: 'quad', scale: 2.7, body: 0xc0381c, trim: 0x5a1810, skin: 0xffa23a, eye: 0xffe14a, extras: [] },
+  // 심연의 성채
+  dark_knight: { form: 'biped', scale: 1.35, body: 0x2a2e48, trim: 0x14162a, skin: 0x3a4060, face: 'visor', eye: 0xff3a5a, weapon: 'greatsword', extras: ['plume', 'pauldrons'] },
+  cultist: { form: 'biped', scale: 1.08, body: 0x4a2a7a, trim: 0xd0a040, skin: 0x140e20, face: 'glow', eye: 0xc77dff, weapon: 'staff', extras: ['hood', 'robe'] },
+  gargoyle: { form: 'bat', scale: 1.5, body: 0x6a7088, trim: 0x3a4058, skin: 0x7ab8ff, eye: 0x7ab8ff, extras: [] },
+  shade: { form: 'biped', scale: 1.05, body: 0x1c1c30, trim: 0x0c0c18, skin: 0x0c0c18, face: 'glow', eye: 0x7af2ff, thin: true, weapon: null, extras: ['cowl'] },
+  abyss_lord: { form: 'biped', scale: 2.4, body: 0x1c1640, trim: 0x7a3fc0, skin: 0x0c0a1c, face: 'glow', eye: 0xff3ad8, weapon: 'scythe', weaponScale: 1.15, extras: ['horns', 'pauldrons', 'cape'] },
   bone_warden: { form: 'biped', scale: 2.1, body: 0x2e2a3e, trim: 0x1c1826, skin: 0xefe7d2, face: 'skull', eye: 0xff3a2a, weapon: 'greatsword', weaponScale: 1.15, extras: ['jaw', 'horns', 'pauldrons', 'cape'] },
   merchant: { form: 'biped', scale: 1.15, body: 0x2f7a5a, trim: 0xd8a84a, skin: 0xf2c8a0, face: 'eyes', eye: 0x2a1a14, weapon: null, extras: ['hat', 'pack'] },
 });
@@ -371,6 +397,31 @@ export function buildFigure(assets, look, { elite = false } = {}) {
       pivot.add(wing);
       body.add(pivot);
       fig.wings.push(pivot);
+    }
+    body.add(fig.torso, head);
+    fig.head = head;
+  } else if (look.form === 'blob') {
+    // 말랑한 덩어리(슬라임·포자): 납작한 둥근 몸 하나에 눈 둘. 장식으로 버섯 갓이나 왕관을 얹는다.
+    fig.hipY = 0.24;
+    fig.height = 0.62;
+    body.position.y = fig.hipY;
+    fig.torso = part(assets, 'rbox', bodyMat, 0.62, 0.46, 0.58, 0, 0.02, 0);
+    const head = new THREE.Group();
+    head.position.set(0, 0.04, 0);
+    const eyeMat = look.glowEye ? assets.glow(look.eye, 1) : assets.toon(look.eye);
+    for (const sx of [-1, 1]) {
+      if (!look.glowEye) head.add(bit(assets, 'rbox', assets.toon(0xfaf6ea), 0.13, 0.15, 0.03, sx * 0.14, 0.04, 0.29));
+      head.add(bit(assets, 'cube', eyeMat, look.glowEye ? 0.1 : 0.06, look.glowEye ? 0.08 : 0.08, 0.02, sx * 0.14, 0.03, 0.305));
+    }
+    if (has('cap')) {
+      head.add(part(assets, 'tube', trimMat, 0.46, 0.1, 0.46, 0, 0.2, 0), part(assets, 'head', trimMat, 0.4, 0.2, 0.4, 0, 0.32, 0));
+      for (const [x, z] of [[-0.2, 0.18], [0.22, 0.05], [0, -0.24]]) head.add(bit(assets, 'rbox', assets.toon(0xfaf6ea), 0.09, 0.05, 0.09, x, 0.42, z));
+      fig.height = 0.85;
+    }
+    if (has('crown')) {
+      head.add(part(assets, 'tube', trimMat, 0.2, 0.07, 0.2, 0, 0.24, 0));
+      for (const [x, z] of [[-0.14, 0.08], [0.14, 0.08], [0, -0.15], [0, 0.17]]) head.add(part(assets, 'spike', trimMat, 0.05, 0.16, 0.05, x, 0.3, z));
+      fig.height = 0.8;
     }
     body.add(fig.torso, head);
     fig.head = head;

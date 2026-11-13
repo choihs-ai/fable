@@ -6,6 +6,7 @@
 //   - 런이 끝나면 결과 화면을 띄운다.
 
 import { CHARACTERS } from '../../data/characters.js';
+import { ZONES } from '../../data/zones.js';
 import { EVENTS } from '../logic/core/events.js';
 import { PHASE } from '../logic/core/state.js';
 import { h } from './dom.js';
@@ -138,6 +139,7 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
         }),
         bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 없다 — 바꿔 들거나 구슬을 주워라')),
         bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길', 'clear')),
+        bus.on(EVENTS.FLOOR_ENTERED, ({ floor, zoneId }) => hud.banner(`${floor}층 · ${ZONES.find((z) => z.id === zoneId)?.name ?? ''}`, 'stage')),
         bus.on(EVENTS.BOSS_PHASE_CHANGED, () => haptics.pulse('bossPhase')),
         bus.on(EVENTS.DROP_COLLECTED, ({ kind }) => {
           if (kind === 'gold' || kind === 'energy' || kind === 'health') haptics.pulse('pickup');

@@ -3,11 +3,12 @@
 
 import { BOONS, BOON_RULES } from '../../data/boons.js';
 import { CHARACTERS, CHARACTER_ORDER } from '../../data/characters.js';
-import { UPGRADES } from '../../data/meta.js';
+import { ZONES } from '../../data/zones.js';
+import { CURSE, UPGRADES } from '../../data/meta.js';
 import { SETTINGS } from '../../data/settings.js';
 import { WEAPONS } from '../../data/weapons.js';
 import {
-  boonRerollCost, buyMetaUpgrade, buyShopItem, chooseBoon, rerollBoons, rerollShop, shopPrice, unlockMetaCharacter,
+  boonRerollCost, buyMetaUpgrade, buyShopItem, chooseBoon, rerollBoons, rerollShop, setMetaCurse, shopPrice, unlockMetaCharacter,
 } from '../logic/commands.js';
 import { upgradeLevel } from '../logic/items/meta.js';
 import { shopRerollCost } from '../logic/items/shop.js';
@@ -66,10 +67,10 @@ export function createScreens({ layer, ctx }) {
     return h('div', { class: 'title' },
       h('div', { class: 'parade' }, CHARACTER_ORDER.map((id) => maskPortrait(id, state().meta.characters[id] === true ? '' : 'locked'))),
       h('h1', { class: 'logo', text: 'FABLE' }),
-      h('p', { class: 'strip', text: '탈을 바꿔 쓰고, 방을 하나씩 부순다' }),
+      h('p', { class: 'strip', text: '탈을 바꿔 쓰고, 여섯 층을 뚫고 내려간다' }),
       ...session.notices.map((n) => h('p', { class: 'notice', text: n })),
       h('div', { class: 'menu' },
-        cont ? button([maskPortrait(cont.character), h('span', { text: `이어하기 · 방 ${cont.rooms}개째` })], () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
+        cont ? button([maskPortrait(cont.character), h('span', { text: `이어하기 · ${cont.floor}층 ${ZONES[cont.floor - 1]?.name ?? ''}` })], () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
         button(cont && !confirmNew ? '새 판' : cont ? '하던 판을 버리고 새 판' : '새 판', () => {
           if (cont && !confirmNew) {
             confirmNew = true;
@@ -132,8 +133,18 @@ export function createScreens({ layer, ctx }) {
       h('h4', { class: 'group', text: '싸우는 법이 달라진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'rule').map(row),
       h('h4', { class: 'group', text: '몸이 좋아진다' }), ...ids.filter((id) => UPGRADES[id].kind === 'stat').map(row),
     ];
+    // 저주: 한 번 끝까지 깨면 열린다. 단계를 올리면 적이 세지고 영혼석을 더 받는다.
+    const curse = meta.curseMax > 0
+      ? h('div', { class: 'row curse', 'data-curse': meta.curse },
+        h('span', { class: 'tile kind-curse' }, icon('skull')),
+        h('div', { class: 'grow' },
+          h('b', {}, `저주 ${meta.curse}단계`, h('span', { class: 'ticks' }, Array.from({ length: CURSE.max }, (_, i) => h('i', { class: i < meta.curse ? 'on' : i < meta.curseMax ? '' : 'locked' })))),
+          h('small', { text: meta.curse === 0 ? '저주 없이 간다. 올리면 적이 세지고 영혼석을 더 받는다.' : `적 체력 +${Math.round(CURSE.hp * meta.curse * 100)}% · 공격 +${Math.round(CURSE.damage * meta.curse * 100)}% · 영혼석 +${Math.round(CURSE.souls * meta.curse * 100)}%` })),
+        button('−', () => { run(setMetaCurse(game(), meta.curse - 1)); ctx.actions.metaChanged(); }, { class: 'toggle', disabled: meta.curse <= 0, action: 'curse-down' }),
+        button('+', () => { run(setMetaCurse(game(), meta.curse + 1)); ctx.actions.metaChanged(); }, { class: 'toggle', disabled: meta.curse >= meta.curseMax, action: 'curse-up' }))
+      : h('p', { class: 'meta', text: '여섯 층을 모두 뚫으면 저주가 열린다.' });
     const stats = h('p', { class: 'meta', text: `${meta.runs}판 · ${meta.victories}번 탈출 · 한 판에 방 ${meta.bestRooms}개까지 · ${meta.totalKills}마리 처치` });
-    return panel('거점', souls(), h('div', { class: 'list scroll' }, rows), stats,
+    return panel('거점', souls(), curse, h('div', { class: 'list scroll' }, rows), stats,
       h('div', { class: 'pair' },
         button('탈 고르기', () => open('characters', 'hub'), { action: 'characters' }),
         button('돌아가기', () => close(), { class: 'primary', action: 'back' })));
@@ -250,8 +261,9 @@ export function createScreens({ layer, ctx }) {
     return h('div', { class: `panel result ${last.victory ? 'win' : 'lose'}` },
       h('h2', { class: 'stamp', text: last.victory ? '탈출!' : '쓰러졌다' }),
       h('div', { class: 'tallies' },
-        tally('door', '정리한 방', last.roomsCleared), tally('blade', '처치', last.kills), tally('skull', '정예 · 보스', last.eliteKills + last.bossKills)),
+        tally('door', '닿은 곳', `${last.floor}층 ${ZONES[last.floor - 1]?.name ?? ''}`), tally('check', '정리한 방', last.roomsCleared), tally('blade', '처치', last.kills), tally('skull', '정예 · 보스', last.eliteKills + last.bossKills)),
       h('div', { class: 'reward' }, icon('soul'), h('span', { class: 'num', text: `+${last.souls}` })),
+      last.curseUnlocked ? h('p', { class: 'unlock', text: `저주 ${last.curseUnlocked}단계가 열렸다` }) : null,
       h('p', { class: 'meta', text: `영혼석 ${s.meta.souls}개. 거점에서 강화를 사거나 새 탈을 푼다.` }),
       button('한 판 더', () => ctx.actions.retry(), { class: 'primary', action: 'retry' }),
       h('div', { class: 'pair' },

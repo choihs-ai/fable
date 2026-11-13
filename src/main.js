@@ -43,7 +43,7 @@ const session = { canContinue: null, notices: [], lastRun: null };
 function refreshSession() {
   const run = loaded.run.result;
   const progress = run.status === 'exact' ? run.state.run : run.status === 'salvage' ? run.core.run : null;
-  session.canContinue = progress ? { character: progress.character, rooms: progress.roomsCleared } : null;
+  session.canContinue = progress ? { character: progress.character, rooms: progress.roomsCleared, floor: progress.floor } : null;
   session.notices = [];
   if (!store.persistent) session.notices.push('이 브라우저에서는 진행이 저장되지 않습니다. 페이지를 닫으면 사라집니다.');
   if (loaded.run.primaryIssue && loaded.run.source === 'backup') session.notices.push('세이브가 손상되어 바로 앞의 저장본으로 되돌렸습니다.');

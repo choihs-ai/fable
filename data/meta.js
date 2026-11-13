@@ -2,7 +2,14 @@
 
 import { deepFreeze } from './freeze.js';
 
-export const META_VERSION = 2;
+export const META_VERSION = 3;
+
+/**
+ * 저주: 여섯 층을 모두 깨면 한 단계씩 열리는, 스스로 거는 어려움. 거점에서 단계를 고르고 판을 시작한다.
+ * 단계마다 적의 체력·공격이 hp·damage 만큼 늘고(곱이 아니라 더해 간다), 그 판에서 얻는 영혼석이 souls 만큼 는다.
+ * 고른 단계로 끝까지 깨면 다음 단계가 열린다(max 까지).
+ */
+export const CURSE = deepFreeze({ max: 5, hp: 0.15, damage: 0.1, souls: 0.3 });
 
 /** 런이 끝날 때 얻는 영혼석. */
 export const SOULS = deepFreeze({

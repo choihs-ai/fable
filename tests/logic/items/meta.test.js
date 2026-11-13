@@ -80,7 +80,7 @@ test('normalizeMeta: 모르는 강화·캐릭터와 잘못된 값은 버리고, 
   });
   assert.deepEqual(clean, {
     version: META_VERSION, souls: 12, upgrades: { vigor: UPGRADES.vigor.cost.length }, characters: { knight: true, mage: true },
-    runs: 0, victories: 0, bestRooms: 0, totalKills: 7,
+    runs: 0, victories: 0, bestRooms: 0, totalKills: 7, curse: 0, curseMax: 0,
   });
   for (const junk of [null, undefined, 5, 'x', [], { upgrades: [] }, { characters: 'a' }]) {
     assert.deepEqual(normalizeMeta(junk), createMeta());

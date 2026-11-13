@@ -2,12 +2,13 @@
 // 메타 객체는 게임 상태(state.meta)에 들어 있고, 저장 단계에서 런과 따로 보관한다.
 
 import { CHARACTERS } from '../../../data/characters.js';
-import { META_VERSION, SOULS, UPGRADES } from '../../../data/meta.js';
+import { CURSE, META_VERSION, SOULS, UPGRADES } from '../../../data/meta.js';
 
 export function createMeta() {
   const characters = {};
   for (const id of Object.keys(CHARACTERS)) if (CHARACTERS[id].cost === 0) characters[id] = true;
-  return { version: META_VERSION, souls: 0, upgrades: {}, characters, runs: 0, victories: 0, bestRooms: 0, totalKills: 0 };
+  // curse: 다음 판에 걸 저주 단계, curseMax: 지금까지 열린 가장 높은 단계(0 이면 아직 한 번도 깨지 못했다).
+  return { version: META_VERSION, souls: 0, upgrades: {}, characters, runs: 0, victories: 0, bestRooms: 0, totalKills: 0, curse: 0, curseMax: 0 };
 }
 
 const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -20,6 +21,8 @@ export function normalizeMeta(meta) {
     if (Number.isInteger(meta[key]) && meta[key] >= 0) clean[key] = meta[key];
   }
   // `UPGRADES[id]` 로 확인하면 "constructor" 같은 물려받은 이름이 통과한다. 반드시 자기 키인지 본다.
+  if (Number.isInteger(meta.curseMax) && meta.curseMax >= 0) clean.curseMax = Math.min(meta.curseMax, CURSE.max);
+  if (Number.isInteger(meta.curse) && meta.curse >= 0) clean.curse = Math.min(meta.curse, clean.curseMax);
   const upgrades = isRecord(meta.upgrades) ? meta.upgrades : {};
   for (const id of Object.keys(upgrades)) {
     const level = upgrades[id];
@@ -88,9 +91,21 @@ export function metaBonuses(meta) {
   return total;
 }
 
-/** 런 하나가 주는 영혼석. */
-export function soulsForRun({ roomsCleared, eliteKills, bossKills, victory }) {
-  return roomsCleared * SOULS.perRoom + eliteKills * SOULS.perElite + bossKills * SOULS.perBoss + (victory ? SOULS.victory : 0);
+/** 런 하나가 주는 영혼석. 저주 단계만큼 더 준다. */
+export function soulsForRun({ roomsCleared, eliteKills, bossKills, victory, curse = 0 }) {
+  const base = roomsCleared * SOULS.perRoom + eliteKills * SOULS.perElite + bossKills * SOULS.perBoss + (victory ? SOULS.victory : 0);
+  return Math.round(base * (1 + CURSE.souls * curse));
+}
+
+/**
+ * 다음 판에 걸 저주 단계를 고른다. 열린 단계까지만.
+ * @returns {{ ok:true, curse:number } | { ok:false, reason:string }} reason: 'locked'
+ */
+export function setCurse(meta, level) {
+  if (!Number.isInteger(level) || level < 0) throw new RangeError(`setCurse: 단계가 올바르지 않습니다 (${level})`);
+  if (level > meta.curseMax) return { ok: false, reason: 'locked' };
+  meta.curse = level;
+  return { ok: true, curse: level };
 }
 
 /**
@@ -101,7 +116,11 @@ export function settleRun(meta, summary) {
   const souls = soulsForRun(summary);
   meta.souls += souls;
   meta.runs += 1;
-  if (summary.victory) meta.victories += 1;
+  if (summary.victory) {
+    meta.victories += 1;
+    // 지금 열린 가장 높은 단계로 깼으면 다음 단계가 열린다.
+    if ((summary.curse ?? 0) >= meta.curseMax && meta.curseMax < CURSE.max) meta.curseMax += 1;
+  }
   if (summary.roomsCleared > meta.bestRooms) meta.bestRooms = summary.roomsCleared;
   meta.totalKills += summary.kills;
   return souls;

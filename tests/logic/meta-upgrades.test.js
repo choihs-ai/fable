@@ -129,3 +129,45 @@ test('모든 규칙 강화를 끝까지 올린 메타: 합산 값이 데이터�
   assert.equal(total.shopDiscount, 30);
   assert.equal(total.roomHeal, 8);
 });
+
+// ── 저주 ──
+
+test('저주: 여섯 층을 깨면 한 단계씩 열리고, 고른 단계만큼 적이 세지고 영혼석을 더 받는다', async () => {
+  const { CURSE } = await import('../../data/meta.js');
+  const { setMetaCurse } = await import('../../src/logic/commands.js');
+  const { settleRun, soulsForRun, createMeta } = await import('../../src/logic/items/meta.js');
+  const { depthScaling } = await import('../../src/logic/entities/scaling.js');
+  const meta = createMeta();
+  const game = createGame({ seed: 'curse', meta });
+  assert.deepEqual(setMetaCurse(game, 1), { ok: false, reason: 'locked' });
+  assert.throws(() => setMetaCurse(game, -1), RangeError);
+
+  // 저주 없이 끝까지 깨면 1단계가 열린다. 지면 열리지 않는다.
+  const summary = { roomsCleared: 30, eliteKills: 6, bossKills: 6, kills: 300, victory: true, curse: 0 };
+  settleRun(game.state.meta, { ...summary, victory: false });
+  assert.equal(game.state.meta.curseMax, 0);
+  settleRun(game.state.meta, summary);
+  assert.equal(game.state.meta.curseMax, 1);
+  // 낮은 단계로 다시 깨도 더 열리지 않는다. 열린 가장 높은 단계로 깨야 다음이 열린다.
+  settleRun(game.state.meta, summary);
+  assert.equal(game.state.meta.curseMax, 1);
+  assert.deepEqual(setMetaCurse(game, 1), { ok: true, curse: 1 });
+  settleRun(game.state.meta, { ...summary, curse: 1 });
+  assert.equal(game.state.meta.curseMax, 2);
+  for (let i = 0; i < 20; i++) settleRun(game.state.meta, { ...summary, curse: game.state.meta.curseMax });
+  assert.equal(game.state.meta.curseMax, CURSE.max, '상한을 넘지 않는다');
+
+  // 영혼석과 적의 배율.
+  assert.equal(soulsForRun({ ...summary, curse: 2 }), Math.round(soulsForRun(summary) * (1 + CURSE.souls * 2)));
+  const plain = depthScaling(2, { stage: 3 });
+  const cursed = depthScaling(2, { stage: 3, curse: 2 });
+  assert.ok(Math.abs(cursed.hp / plain.hp - (1 + CURSE.hp * 2)) < 1e-9);
+  assert.ok(Math.abs(cursed.damage / plain.damage - (1 + CURSE.damage * 2)) < 1e-9);
+
+  // 새 판은 고른 단계를 건 채로 시작하고, 저장된다.
+  setMetaCurse(game, 2);
+  const next = createGame({ seed: 'curse-2', meta: game.state.meta });
+  enterFloor(next, 1);
+  assert.equal(next.state.run.curse, 2);
+  assert.deepEqual(validateRunState(next.state), []);
+});

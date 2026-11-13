@@ -18,7 +18,7 @@ import { getPlayer } from './entities/actors.js';
 import { refreshPlayerStats } from './entities/stats.js';
 import { endRun, enterFloor } from './game.js';
 import { rerollCost, rollBoonChoices } from './items/boons.js';
-import { buyUpgrade, metaBonuses, unlockCharacter } from './items/meta.js';
+import { buyUpgrade, metaBonuses, setCurse, unlockCharacter } from './items/meta.js';
 import { healPrice, rollShopStock, shopRerollCost } from './items/shop.js';
 import { ROOM_KIND, TOTAL_FLOORS } from './world/floors.js';
 
@@ -284,6 +284,11 @@ export function rerollShop(game) {
 export function buyMetaUpgrade(game, id) {
   if (typeof id !== 'string') throw new TypeError('buyMetaUpgrade: 강화 id 는 문자열이어야 합니다');
   return buyUpgrade(game.state.meta, id);
+}
+
+/** 다음 판에 걸 저주 단계를 고른다(열린 단계까지). reason: 'locked' */
+export function setMetaCurse(game, level) {
+  return setCurse(game.state.meta, level);
 }
 
 /** 영혼석으로 캐릭터를 해금한다. reason: 'unknown' | 'owned' | 'no-souls' */

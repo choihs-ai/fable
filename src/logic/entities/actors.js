@@ -162,7 +162,7 @@ export function spawnEnemy(state, bus, type, x, y, options = {}) {
   const boss = isBossType(type);
   const elite = options.elite === true && !boss;
   const actor = createActor(state, boss ? ACTOR_KIND.BOSS : ACTOR_KIND.ENEMY, type, def, x, y);
-  const scale = depthScaling(state.run.depth, { elite, boss, stage: state.run.floor });
+  const scale = depthScaling(state.run.depth, { elite, boss, stage: state.run.floor, curse: state.run.curse });
   actor.maxHp = Math.max(1, Math.round(def.hp * scale.hp));
   actor.hp = actor.maxHp;
   actor.power = scale.damage;

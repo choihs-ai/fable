@@ -54,6 +54,12 @@ const RUN_MIGRATIONS = {
     if (isObject(run.input)) fill(run.input, { skill2: false });
     return run;
   },
+  // v7 → v8(저주): 판에 건 저주 단계(run.curse)가 생겼다. 옛 판은 저주 없이 하던 판이다.
+  7(run) {
+    run.version = 8;
+    if (isObject(run.run)) fill(run.run, { curse: 0 });
+    return run;
+  },
 };
 
 const META_MIGRATIONS = {
@@ -70,6 +76,13 @@ const META_MIGRATIONS = {
       version: 2, souls, upgrades: {}, characters: {}, runs: count(meta.runs), victories: count(meta.victories), bestRooms: 0, totalKills: count(meta.totalKills),
     };
   },
+};
+
+// v2 → v3(저주): 고른 저주 단계와 열린 단계가 생겼다.
+META_MIGRATIONS[2] = (meta) => {
+  meta.version = 3;
+  fill(meta, { curse: 0, curseMax: 0 });
+  return meta;
 };
 
 const SETTINGS_MIGRATIONS = {

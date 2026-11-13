@@ -40,6 +40,7 @@ export function createGame({ seed, meta, character = 'knight', bus = new EventBu
   state.meta = meta ? normalizeMeta(meta) : createMeta();
   state.run.character = Object.hasOwn(CHARACTERS, character) && state.meta.characters[character] === true ? character : 'knight';
   const bonus = metaBonuses(state.meta);
+  state.run.curse = state.meta.curse;
   state.run.gold = bonus.gold;
   state.run.freeRerolls = bonus.freeRerolls;
   return { state, bus };
@@ -54,10 +55,11 @@ export function endRun(game, victory) {
   if (state.run.ended) return;
   state.run.ended = true;
   const run = state.run;
-  const summary = { floor: run.floor, kills: run.kills, eliteKills: run.eliteKills, bossKills: run.bossKills, roomsCleared: run.roomsCleared, victory };
+  const summary = { floor: run.floor, curse: run.curse, kills: run.kills, eliteKills: run.eliteKills, bossKills: run.bossKills, roomsCleared: run.roomsCleared, victory };
+  const curseMaxBefore = state.meta.curseMax;
   const souls = settleRun(state.meta, summary);
   setPhase(game, victory ? PHASE.VICTORY : PHASE.GAME_OVER);
-  bus.emit(EVENTS.RUN_ENDED, { ...summary, souls });
+  bus.emit(EVENTS.RUN_ENDED, { ...summary, souls, curseUnlocked: state.meta.curseMax > curseMaxBefore ? state.meta.curseMax : 0 });
 }
 
 /** 페이즈를 바꾸고 PHASE_CHANGED 를 발행한다. 같은 페이즈면 아무 일도 하지 않는다. */
