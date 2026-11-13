@@ -21,13 +21,13 @@ export const ENCOUNTERS = deepFreeze({
   maxPerWave: 7,
 
   /** 깊이에 따른 적의 체력·공격 배율: base + perDepth × 깊이(상한 max). */
-  scaling: { hpBase: 1.8, hpPerDepth: 0.12, hpMax: 2.7, damageBase: 1.3, damagePerDepth: 0.05, damageMax: 1.7 },
+  scaling: { hpBase: 1.7, hpPerDepth: 0.12, hpMax: 2.6, damageBase: 1.15, damagePerDepth: 0.05, damageMax: 1.55 },
 
   /**
    * 스테이지(층)가 깊어질수록: 적의 체력·공격 배율에 (1 + perStage × (층 − 1)) 을 곱하고, 웨이브 예산에 budgetPerStage × (층 − 1) 을 더한다.
    * 보스는 bossHp·bossDamage 를 쓴다. 다음 층에 들어설 때 최대 체력의 healPct % 를 회복한다.
    */
-  stage: { hp: 0.3, damage: 0.17, budgetPerStage: 1.2, budgetMaxPerStage: 1.5, bossHp: 0.32, bossDamage: 0.14, healPct: 30 },
+  stage: { hp: 0.34, damage: 0.22, budgetPerStage: 1.2, budgetMaxPerStage: 1.5, bossHp: 0.34, bossDamage: 0.18, healPct: 30 },
 
   /** 정예: 크고 단단하고 아프다. 정예방의 웨이브마다 정예가 perWave 마리 끼고, 나머지 예산은 budgetRatio 만큼만 쓴다. */
   elite: { hp: 2.6, damage: 1.3, radius: 1.25, speed: 1.1, perWave: 1, budgetRatio: 0.6, waves: [2, 2] },

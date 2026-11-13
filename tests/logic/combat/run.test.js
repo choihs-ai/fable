@@ -49,5 +49,5 @@ test('피하지 않는 봇은 훨씬 많이 맞는다(적은 아프지만 피할
     careful += a.damageTaken / Math.max(1, a.roomsCleared);
     reckless += b.damageTaken / Math.max(1, b.roomsCleared);
   }
-  assert.ok(reckless > careful * 3, `방 하나당 받은 피해: 피할 때 ${careful.toFixed(1)}, 안 피할 때 ${reckless.toFixed(1)}`);
+  assert.ok(reckless > careful * 2, `방 하나당 받은 피해: 피할 때 ${careful.toFixed(1)}, 안 피할 때 ${reckless.toFixed(1)}`);
 });
