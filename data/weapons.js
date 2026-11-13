@@ -1,5 +1,6 @@
 // 무기. 원거리(ranged)는 쏠 때마다 에너지를 쓰고, 근접(melee)은 에너지를 쓰지 않는다.
 //
+// 근접 10종·원거리 12종. 수치만 다른 무기를 늘리지 않는다 — 쓰는 법(거리·범위·상태이상·대시 공격)이 달라야 한다.
 //   attack  기본 공격(기술 형식은 data/player.js 머리말)
 //   dash    대시 공격 — 대시 직후에 나가는 강한 공격. 생략하면 attack 을 DASH_ATTACK 배율로 키운 것을 쓴다
 //   energy  한 번 쏠 때 드는 에너지
@@ -24,8 +25,8 @@ export const JITTER = deepFreeze([[1, 0], [0.9986, 0.0523], [0.9986, -0.0523], [
 export const DASH_ATTACK = deepFreeze({ damage: 1.7, knockback: 1.6, knockbackAdd: 3, arcRange: 0.6, pierce: 2, radius: 1.3 });
 
 export const WEAPON_ORDER = Object.freeze([
-  'sword', 'dagger', 'spear', 'greatsword', 'dual_blades', 'hammer',
-  'pistol', 'staff', 'bow', 'smg', 'shotgun', 'sniper', 'laser', 'rocket',
+  'sword', 'dagger', 'spear', 'greatsword', 'dual_blades', 'hammer', 'whip', 'gauntlets', 'katana', 'scythe',
+  'pistol', 'staff', 'bow', 'smg', 'shotgun', 'sniper', 'laser', 'rocket', 'shuriken', 'crossbow', 'frost_staff', 'flamethrower',
 ]);
 
 export const WEAPONS = deepFreeze({
@@ -62,6 +63,26 @@ export const WEAPONS = deepFreeze({
       effects: [{ type: 'circle', radius: 2.3, damage: 36, knockback: 14, status: { id: 'stun', duration: 0.6 } }],
     },
   },
+  whip: {
+    name: '채찍', kind: 'melee', energy: 0, tier: 2, look: 'whip', desc: '멀리까지 닿고 맞은 적을 느리게 한다.',
+    attack: { cooldown: 0.4, effects: [{ type: 'arc', range: 3.7, cosHalf: 0.78, damage: 13, knockback: 2, status: { id: 'slow', duration: 1.2 } }] },
+    dash: { cooldown: 0.4, effects: [{ type: 'arc', range: 4, cosHalf: 0.2, damage: 22, knockback: 9, status: { id: 'slow', duration: 2 } }] },
+  },
+  gauntlets: {
+    name: '권갑', kind: 'melee', energy: 0, tier: 2, look: 'gauntlets', desc: '코앞에서 빠르게 밀어붙인다. 대시 공격은 기절시키는 들이받기.',
+    attack: { cooldown: 0.17, effects: [{ type: 'arc', range: 1.35, cosHalf: 0.35, damage: 9, knockback: 9 }] },
+    dash: { cooldown: 0.4, effects: [{ type: 'dash', speed: 22, distance: 2.6, damage: 24, knockback: 16, status: { id: 'stun', duration: 0.7 } }] },
+  },
+  katana: {
+    name: '태도', kind: 'melee', energy: 0, tier: 3, look: 'katana', desc: '베인 적이 피를 흘린다. 대시 공격은 멀리까지 가르는 발도.',
+    attack: { cooldown: 0.3, effects: [{ type: 'arc', range: 2.2, cosHalf: 0.1, damage: 18, knockback: 5, status: { id: 'bleed', duration: 3 } }] },
+    dash: { recovery: 0.1, cooldown: 0.5, effects: [{ type: 'beam', range: 5.5, width: 0.9, damage: 40, knockback: 8, status: { id: 'bleed', duration: 4 } }] },
+  },
+  scythe: {
+    name: '낫', kind: 'melee', energy: 0, tier: 3, look: 'scythe', desc: '둘레를 한 바퀴 벤다. 벤 만큼 체력을 조금 되찾는다.',
+    attack: { windup: 0.1, cooldown: 0.6, effects: [{ type: 'circle', radius: 2.4, damage: 21, knockback: 6, lifesteal: 0.06 }] },
+    dash: { cooldown: 0.6, effects: [{ type: 'circle', radius: 3.1, damage: 34, knockback: 12, lifesteal: 0.06 }] },
+  },
 
   // ── 원거리 ──
   pistol: {
@@ -96,6 +117,28 @@ export const WEAPONS = deepFreeze({
       recovery: 0.15, cooldown: 1.1,
       effects: [{ type: 'projectile', speed: 34, radius: 0.16, range: 17, damage: 46, pierce: 3, knockback: 14 }],
     },
+  },
+  shuriken: {
+    name: '수리검', kind: 'ranged', energy: 1, tier: 1, look: 'shuriken', desc: '세 갈래로 날아가 한 명씩 꿰뚫는다.',
+    attack: { cooldown: 0.3, effects: [{ type: 'projectile', speed: 20, radius: 0.13, range: 8, damage: 5, pierce: 1, knockback: 2, spread: [R0, R8, R8N] }] },
+  },
+  crossbow: {
+    name: '석궁', kind: 'ranged', energy: 5, tier: 2, look: 'crossbow', desc: '묵직한 한 발. 두 명을 꿰뚫고 멀리 밀어낸다.',
+    attack: { recovery: 0.08, cooldown: 0.75, effects: [{ type: 'projectile', speed: 27, radius: 0.16, range: 14, damage: 31, pierce: 2, knockback: 13 }] },
+  },
+  frost_staff: {
+    name: '서리 지팡이', kind: 'ranged', energy: 3, tier: 2, look: 'froststaff', desc: '터지며 둘레를 느리게 하는 얼음 구슬.',
+    attack: {
+      cooldown: 0.5,
+      effects: [{
+        type: 'projectile', speed: 11, radius: 0.26, range: 10, damage: 10, knockback: 3, status: { id: 'slow', duration: 2 },
+        explode: { radius: 1.7, damage: 8, status: { id: 'slow', duration: 2 } },
+      }],
+    },
+  },
+  flamethrower: {
+    name: '화염방사기', kind: 'ranged', energy: 1, tier: 3, look: 'flamethrower', desc: '짧게 뿜는 불길. 닿는 적마다 불이 붙는다.',
+    attack: { cooldown: 0.07, effects: [{ type: 'projectile', speed: 9, radius: 0.3, range: 4.3, damage: 3, pierce: 3, jitter: 1, status: { id: 'burn', duration: 2.5 } }] },
   },
   laser: {
     name: '레이저', kind: 'ranged', energy: 1, tier: 3, look: 'laser', desc: '닿는 적을 모두 태우는 광선.',

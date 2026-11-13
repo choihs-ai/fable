@@ -44,6 +44,7 @@ export const SFX = deepFreeze({
 export const WEAPON_SFX = deepFreeze({
   sword: 'swing', dagger: 'swing', dual: 'swing', spear: 'swing', greatsword: 'heavy', hammer: 'heavy',
   pistol: 'shot', smg: 'shot', sniper: 'blast', shotgun: 'blast', rocket: 'blast', staff: 'magic', laser: 'zap', bow: 'bow',
+  whip: 'swing', gauntlets: 'swing', katana: 'swing', scythe: 'heavy', shuriken: 'bow', crossbow: 'bow', froststaff: 'magic', flamethrower: 'zap',
 });
 
 /** 같은 효과음은 이 시간(초) 안에 다시 내지 않는다(여럿이 한꺼번에 맞을 때 소리가 뭉개지지 않도록). */

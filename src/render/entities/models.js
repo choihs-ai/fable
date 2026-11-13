@@ -26,6 +26,10 @@ export const LOOKS = Object.freeze({
   mage: { form: 'biped', scale: 1.18, body: 0x7a3fc0, trim: 0xf0b83a, skin: 0x1c1430, face: 'glow', eye: 0xffd84a, weaponScale: 1.3, extras: ['hood', 'robe'] },
   rogue: { form: 'biped', scale: 1.14, body: 0x1f8a80, trim: 0x16242c, skin: 0x10141c, face: 'glow', eye: 0xff5a7a, weaponScale: 1.3, thin: true, extras: ['cowl', 'scarf'] },
   brute: { form: 'biped', scale: 1.3, body: 0xc0452e, trim: 0x3a2018, skin: 0xe8b890, face: 'eyes', eye: 0x2a1410, weaponScale: 1.25, extras: ['horns', 'pauldrons'] },
+  gunner: { form: 'biped', scale: 1.18, body: 0x8a5a32, trim: 0x3a2a1e, skin: 0xe8c49a, face: 'eyes', eye: 0x2a1a14, weaponScale: 1.3, extras: ['hat', 'pack'] },
+  shaman: { form: 'biped', scale: 1.16, body: 0xc8323c, trim: 0xf0b83a, skin: 0xf6f0e0, face: 'eyes', eye: 0x1a1014, weaponScale: 1.3, extras: ['hood', 'robe'] },
+  jester: { form: 'biped', scale: 1.12, body: 0xe8a020, trim: 0x7a2ac0, skin: 0xfff3d6, face: 'eyes', eye: 0x1a1014, weaponScale: 1.3, thin: true, extras: ['horns', 'scarf'] },
+  revenant: { form: 'biped', scale: 1.22, body: 0x3a5a4c, trim: 0x1c2a26, skin: 0xcfe0d0, face: 'skull', eye: 0x7dffb0, weaponScale: 1.3, extras: ['jaw', 'cowl', 'cape'] },
   // 지하 묘지
   skeleton: { form: 'biped', scale: 1.08, body: 0xefe7d2, trim: 0x6a5a48, skin: 0xefe7d2, face: 'skull', eye: 0xff8a2a, thin: true, weapon: 'sword', extras: ['jaw'] },
   bone_archer: { form: 'biped', scale: 1.08, body: 0x3f7a4a, trim: 0x2a3a26, skin: 0xe6dcc4, face: 'skull', eye: 0x9aff6a, thin: true, weapon: 'bow', extras: ['jaw', 'cowl'] },
@@ -146,6 +150,48 @@ export function buildWeapon(assets, look) {
       add(part(assets, 'tube', t(0x5a7a4a), 0.11, 0.85, 0.11, 0, 0.25, 0.02), part(assets, 'cube', t(DARK), 0.08, 0.18, 0.1, 0, -0.05, -0.08));
       g.children[0].rotation.x = Math.PI;
       tip = 0.62;
+      break;
+    case 'whip':
+      add(part(assets, 'cube', t(DARK), 0.07, 0.18, 0.07, 0, -0.04, 0), part(assets, 'limb', t(0x6a3a22), 0.045, 1.25, 0.045, 0, -0.12, 0), part(assets, 'spike', t(0xd8b04a), 0.05, 0.14, 0.05, 0, -1.5, 0));
+      g.children[2].rotation.x = Math.PI;
+      g.children[2].position.y = -1.36;
+      tip = 1.45;
+      break;
+    case 'gauntlets':
+      add(part(assets, 'rbox', t(0xb8863a), 0.22, 0.22, 0.24, 0, -0.03, 0), part(assets, 'cube', t(DARK), 0.24, 0.06, 0.26, 0, 0.07, 0));
+      off = new THREE.Group();
+      off.add(part(assets, 'rbox', t(0xb8863a), 0.22, 0.22, 0.24, 0, -0.03, 0), part(assets, 'cube', t(DARK), 0.24, 0.06, 0.26, 0, 0.07, 0));
+      tip = 0.22;
+      break;
+    case 'katana':
+      add(part(assets, 'cube', t(0x7a1c24), 0.06, 0.24, 0.06, 0, -0.03, 0), part(assets, 'cube', t(GOLD), 0.16, 0.035, 0.12, 0, -0.16, 0), part(assets, 'limb', t(0xe6ecf4), 0.05, 0.92, 0.025, 0, -0.18, 0));
+      tip = 1.1;
+      break;
+    case 'scythe': {
+      const blade = part(assets, 'spike', t(METAL), 0.11, 0.62, 0.03, 0.05, -1.0, 0);
+      blade.rotation.z = -1.25;
+      add(part(assets, 'limb', t(DARK), 0.05, 1.55, 0.05, 0, 0.5, 0), blade);
+      tip = 1.08;
+      break;
+    }
+    case 'shuriken':
+      add(part(assets, 'star', t(METAL), 0.17, 0.17, 0.035, 0, -0.1, 0), part(assets, 'cube', t(DARK), 0.05, 0.05, 0.05, 0, -0.1, 0));
+      tip = 0.22;
+      break;
+    case 'crossbow':
+      add(part(assets, 'cube', t(WOOD), 0.09, 0.22, 0.1, 0, 0, 0), part(assets, 'limb', t(DARK), 0.07, 0.5, 0.07, 0, -0.08, 0.02), part(assets, 'cube', t(WOOD), 0.56, 0.05, 0.06, 0, -0.5, 0.02), part(assets, 'limb', t(METAL), 0.025, 0.4, 0.025, 0, -0.14, 0.07));
+      tip = 0.62;
+      break;
+    case 'froststaff':
+      add(part(assets, 'limb', t(0xcfd6e2), 0.05, 1.3, 0.05, 0, 0.4, 0), part(assets, 'spike', t(0xbfe8ff), 0.1, 0.26, 0.1, 0, -0.9, 0), part(assets, 'orb', assets.glow(0x7ad7ff, 0.9), 0.11, 0.11, 0.11, 0, -0.84, 0));
+      g.children[1].rotation.x = Math.PI;
+      g.children[1].position.y = -0.86;
+      tip = 1.0;
+      break;
+    case 'flamethrower':
+      add(part(assets, 'tube', t(0x8a3a2a), 0.1, 0.62, 0.1, 0, 0.1, 0.02), part(assets, 'cube', t(0x4a4e58), 0.16, 0.28, 0.16, 0, 0.12, -0.1), part(assets, 'orb', assets.glow(0xff8a2a, 0.9), 0.07, 0.07, 0.07, 0, -0.55, 0.02));
+      g.children[0].rotation.x = Math.PI;
+      tip = 0.58;
       break;
     case 'claw':
     default:

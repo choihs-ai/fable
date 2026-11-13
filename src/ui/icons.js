@@ -44,11 +44,23 @@ const SHAPES = {
   skull: () => [fill('M12 2.5 C6 2.5 3.5 6.5 3.5 11 C3.5 14 5 15.5 6.5 16.5 L6.5 20.5 L17.5 20.5 L17.5 16.5 C19 15.5 20.5 14 20.5 11 C20.5 6.5 18 2.5 12 2.5 Z'), s('circle', { cx: 8.6, cy: 11, r: 2.2, fill: 'var(--ink)' }), s('circle', { cx: 15.4, cy: 11, r: 2.2, fill: 'var(--ink)' })],
   door: () => [fill('M5 21 L5 8 C5 2 19 2 19 8 L19 21 Z'), s('circle', { cx: 15, cy: 13.5, r: 1.4, fill: 'var(--ink)' })],
   check: () => [...line('M4.5 12.5 L10 18 L20 6.5', 3.2)],
-  // 탈의 스킬
-  'skill-knight': () => [fill('M5 9 C5 4 10 4 10 9 L10 20 L5 20 Z'), fill('M14 9 C14 4 19 4 19 9 L19 20 L14 20 Z')],
-  'skill-mage': () => [fill('M6 3 L18 3 L18 6 L13.5 12 L18 18 L18 21 L6 21 L6 18 L10.5 12 L6 6 Z')],
-  'skill-rogue': () => [fill('M12 21 L3 8 L6 6 Z'), fill('M12 21 L10.3 3 L13.7 3 Z'), fill('M12 21 L18 6 L21 8 Z')],
-  'skill-brute': () => [fill('M7 3 L17 3 L17 12 L7 12 Z'), ...line('M2.5 17 L7 15 M21.5 17 L17 15 M12 15.5 V21', 2.4)],
+  // 스킬(탈마다 둘 — data/characters.js 의 glyph)
+  twin: () => [fill('M5 9 C5 4 10 4 10 9 L10 20 L5 20 Z'), fill('M14 9 C14 4 19 4 19 9 L19 20 L14 20 Z')],
+  hourglass: () => [fill('M6 3 L18 3 L18 6 L13.5 12 L18 18 L18 21 L6 21 L6 18 L10.5 12 L6 6 Z')],
+  fan: () => [fill('M12 21 L3 8 L6 6 Z'), fill('M12 21 L10.3 3 L13.7 3 Z'), fill('M12 21 L18 6 L21 8 Z')],
+  quake: () => [fill('M7 3 L17 3 L17 12 L7 12 Z'), ...line('M2.5 17 L7 15 M21.5 17 L17 15 M12 15.5 V21', 2.4)],
+  shield: () => [fill('M12 2 L20 5 V11 C20 16.5 16.5 20 12 22 C7.5 20 4 16.5 4 11 V5 Z'), s('path', { d: 'M12 6 V18', fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.8, 'stroke-linecap': 'round' })],
+  meteor: () => [...line('M3 3 L10 10 M9 2 L13 8 M2 9 L8 13', 2.2), s('circle', { cx: 15.5, cy: 15.5, r: 5.5, fill: 'currentColor', stroke: 'var(--ink)', 'stroke-width': 2 })],
+  cloud: () => [fill('M6.5 19 C1.5 19 1.5 12.5 6 12 C6 6.5 13.5 5.5 15 10 C20 9 22.5 13.5 20 17 C19.5 18.5 18 19 16.5 19 Z')],
+  charge: () => [fill('M11 4 L22 12 L11 20 L11 15 L2 15 L2 9 L11 9 Z')],
+  beam: () => [fill('M2 10.5 L22 7 L22 17 L2 13.5 Z'), s('path', { d: 'M6 12 H19', fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.6, 'stroke-linecap': 'round' })],
+  bomb: () => [...line('M15 8.5 L19 3.5', 2.2), s('circle', { cx: 11, cy: 14, r: 7.5, fill: 'currentColor', stroke: 'var(--ink)', 'stroke-width': 2 }), s('circle', { cx: 20, cy: 3, r: 1.6, fill: 'var(--red)', stroke: 'var(--ink)', 'stroke-width': 1 })],
+  heal: () => [fill('M9 3 H15 V9 H21 V15 H15 V21 H9 V15 H3 V9 H9 Z')],
+  wisp: () => [fill('M12 2 C13 6 18 8 18 14 C18 18.5 15.5 22 12 22 C8.5 22 6 18.5 6 14 C6 11 8 9.5 9 7.5 C10 9 10.5 10 11 11 C11.5 8 11 5 12 2 Z'), s('circle', { cx: 12, cy: 16, r: 2.2, fill: 'var(--ink)' })],
+  firework: () => [...line('M12 2 V7 M12 17 V22 M2 12 H7 M17 12 H22 M5 5 L8.5 8.5 M15.5 15.5 L19 19 M19 5 L15.5 8.5 M5 19 L8.5 15.5', 2.4), s('circle', { cx: 12, cy: 12, r: 2.4, fill: 'currentColor', stroke: 'var(--ink)', 'stroke-width': 1.6 })],
+  tumble: () => [...line('M19.5 13 A7.5 7.5 0 1 1 12 5.5', 2.8), fill('M11 1 L17 5.5 L11 10 Z')],
+  reap: () => [...line('M6 21 L15 8', 2.6), fill('M10 9 C13 2.5 20 2 22 5 C18.5 4.5 15.5 6.5 14 11 Z')],
+  spear: () => [...line('M3.5 20.5 L15 9', 2.8), fill('M21.5 2.5 L20 11 L13 4 Z')],
 };
 
 /**
@@ -73,6 +85,10 @@ const MASKS = {
   mage: { head: '#1c1430', hood: '#7a3fc0', eye: '#ffd84a', kind: 'glow', top: 'point' },
   rogue: { head: '#10141c', hood: '#1f8a80', eye: '#ff5a7a', kind: 'glow', top: null },
   brute: { head: '#e8b890', hood: null, eye: '#2a1410', kind: 'eyes', top: 'horns' },
+  gunner: { head: '#e8c49a', hood: null, eye: '#2a1a14', kind: 'eyes', top: 'brim' },
+  shaman: { head: '#f6f0e0', hood: '#c8323c', eye: '#1a1014', kind: 'glow', top: 'point' },
+  jester: { head: '#fff3d6', hood: null, eye: '#1a1014', kind: 'eyes', top: 'jester' },
+  revenant: { head: '#cfe0d0', hood: '#2a3a34', eye: '#7dffb0', kind: 'skull', top: null },
 };
 
 /** 탈 초상: 큰 머리 하나(32×32). 모르는 탈이면 빈 탈. */
@@ -86,10 +102,21 @@ export function maskPortrait(form, cls = '') {
   if (m.top === 'point') parts.push(s('path', { d: 'M16 0.8 L22 9 L10 9 Z', fill: m.hood, ...ink }));
   if (m.hood) parts.push(s('rect', { x: 3.5, y: 6, width: 25, height: 23, rx: 5, fill: m.hood, ...ink }));
   parts.push(s('rect', { x: m.hood ? 7 : 4.5, y: m.hood ? 11 : 7, width: m.hood ? 18 : 23, height: m.hood ? 15 : 21, rx: 4, fill: m.head, ...ink }));
+  if (m.top === 'brim') {
+    parts.push(s('rect', { x: 8, y: 1.5, width: 16, height: 7, rx: 2, fill: '#8a5a32', ...ink }), s('rect', { x: 1.5, y: 6.5, width: 29, height: 3.6, rx: 1.5, fill: '#5a3a22', ...ink }));
+  }
+  if (m.top === 'jester') {
+    parts.push(s('path', { d: 'M5 9 L1.5 1.5 L15 8 Z', fill: '#e5383b', ...ink }), s('path', { d: 'M27 9 L30.5 1.5 L17 8 Z', fill: '#27c2a3', ...ink }));
+    parts.push(s('circle', { cx: 1.8, cy: 1.8, r: 1.6, fill: '#f4b62a', stroke: 'var(--ink)', 'stroke-width': 1 }), s('circle', { cx: 30.2, cy: 1.8, r: 1.6, fill: '#f4b62a', stroke: 'var(--ink)', 'stroke-width': 1 }));
+  }
   if (m.top === 'plume') parts.push(s('path', { d: 'M13 7.5 L16 1 L19 7.5 Z', fill: '#e8353a', ...ink }));
   if (m.kind === 'visor') {
     parts.push(s('rect', { x: 7, y: 15, width: 18, height: 5.5, rx: 1.5, fill: '#14101c' }));
     parts.push(s('rect', { x: 10, y: 16.2, width: 3.6, height: 3, fill: m.eye }), s('rect', { x: 18.4, y: 16.2, width: 3.6, height: 3, fill: m.eye }));
+  } else if (m.kind === 'skull') {
+    parts.push(s('rect', { x: 9.5, y: 14.5, width: 5, height: 5.5, rx: 1.5, fill: '#120a10' }), s('rect', { x: 17.5, y: 14.5, width: 5, height: 5.5, rx: 1.5, fill: '#120a10' }));
+    parts.push(s('rect', { x: 11, y: 16.4, width: 2, height: 2, fill: m.eye }), s('rect', { x: 19, y: 16.4, width: 2, height: 2, fill: m.eye }));
+    parts.push(s('path', { d: 'M15 22 L16 20 L17 22 Z', fill: '#120a10' }));
   } else if (m.kind === 'glow') {
     parts.push(s('rect', { x: 10.5, y: 16, width: 3.6, height: 5, rx: 1, fill: m.eye }), s('rect', { x: 17.9, y: 16, width: 3.6, height: 5, rx: 1, fill: m.eye }));
   } else {

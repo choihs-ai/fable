@@ -159,21 +159,25 @@ export function createHud({ root, on }) {
       minimap.update(state, here ? here.id : null);
 
       // 조작부 표시.
-      const skill = CHARACTERS[kit.character].skill;
-      const skillLeft = Math.max(0, (player.cooldowns[skillKey(kit.character)] ?? 0) - state.tick);
-      const skillTotal = cooldownTicks(player, skill.cooldown);
+      const skills = CHARACTERS[kit.character].skills;
+      const cooling = { dash: 0 };
+      skills.forEach((skill, i) => {
+        const left = Math.max(0, (player.cooldowns[skillKey(kit.character, i)] ?? 0) - state.tick);
+        const total = cooldownTicks(player, skill.cooldown);
+        cooling[i === 0 ? 'skill' : 'skill2'] = total > 0 ? left / total : 0;
+      });
       const target = interactTarget(state);
       let interact = null;
       if (target) interact = target.type === 'weapon' ? weaponName(target.weapon) : target.type === 'form' ? `${characterName(target.form)}의 탈` : target.type === 'shop' ? '상점' : '포털';
       const recharge = kit.chargeAt > 0 ? Math.max(0, kit.chargeAt - state.tick) / kit.rechargeTicks : 0;
+      cooling.dash = kit.charges === 0 ? recharge : 0;
       return {
-        cooling: { skill: skillTotal > 0 ? skillLeft / skillTotal : 0, dash: kit.charges === 0 ? recharge : 0 },
+        cooling,
         charges: kit.charges,
         maxCharges: kit.maxCharges,
         interact,
         swap: kit.weapons[1 - kit.slot] !== null,
-        skill: skill.name,
-        form: kit.character,
+        skills: skills.map((skill) => ({ name: skill.name, glyph: skill.glyph })),
       };
     },
   };

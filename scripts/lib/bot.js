@@ -5,12 +5,13 @@
 // 목적은 잘하는 것이 아니라 "사람이 할 법한 조작으로 한 판이 처음부터 끝까지 굴러가는지" 보는 것이다.
 // 난수를 쓰지 않으므로 같은 시드의 판은 언제 돌려도 같은 결과가 나온다.
 
+import { CHARACTERS } from '../../data/characters.js';
 import { WEAPONS } from '../../data/weapons.js';
 import { buyShopItem, chooseBoon, interact, interactTarget, shopPrice, swapWeapons } from '../../src/logic/commands.js';
 import { isReady } from '../../src/logic/combat/abilities.js';
 import { createNavMemory, steerAway, steerToward } from '../../src/logic/combat/ai/steer.js';
 import { currentRoom } from '../../src/logic/combat/encounter.js';
-import { setInput } from '../../src/logic/combat/player.js';
+import { setInput, skillKey } from '../../src/logic/combat/player.js';
 import { PHASE } from '../../src/logic/core/state.js';
 import { getPlayer, opponentsOf } from '../../src/logic/entities/actors.js';
 import { defOf } from '../../src/logic/entities/defs.js';
@@ -284,7 +285,17 @@ function fight(game, bot, nav, player, input) {
     }
   }
   input.attack = nearest !== null;
-  if (nearest && isReady(state, player, 'skill') && (enemies.length >= 2 || nearest.kind === 'boss')) input.skill = true;
+  // 스킬 둘: 적이 둘 이상이거나 보스일 때 준비된 것부터 쓴다(회복 스킬은 체력이 깎였을 때만).
+  if (nearest && (enemies.length >= 2 || nearest.kind === 'boss')) {
+    const skills = CHARACTERS[kit.character].skills;
+    for (let i = 0; i < skills.length; i++) {
+      if (!isReady(state, player, skillKey(kit.character, i))) continue;
+      if (skills[i].type === 'heal' && player.hp > player.maxHp * 0.7) continue;
+      if (i === 0) input.skill = true;
+      else input.skill2 = true;
+      break;
+    }
+  }
 }
 
 /** 싸우지 않을 때: 줍고, 사고, 다음 방으로 간다. */
@@ -394,7 +405,7 @@ function explore(game, bot, nav, player, input) {
  */
 export function botStep(game, bot) {
   const { state } = game;
-  const input = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false };
+  const input = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false };
   if (state.phase !== PHASE.PLAYING || !state.world) return input;
   const player = getPlayer(state);
   if (!player || player.dead) return input;

@@ -5,6 +5,7 @@
 export const SWING = Object.freeze({
   sword: 'slash', dagger: 'thrust', spear: 'thrust', greatsword: 'slash', dual: 'slash', hammer: 'smash',
   pistol: 'shoot', staff: 'shoot', bow: 'shoot', smg: 'shoot', shotgun: 'shoot', sniper: 'shoot', laser: 'shoot', rocket: 'shoot',
+  whip: 'slash', gauntlets: 'thrust', katana: 'slash', scythe: 'slash', shuriken: 'shoot', crossbow: 'shoot', froststaff: 'shoot', flamethrower: 'shoot',
   claw: 'slash', bite: 'thrust', none: 'slash',
 });
 

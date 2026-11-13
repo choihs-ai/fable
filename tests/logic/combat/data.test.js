@@ -184,29 +184,34 @@ test('플레이어 데이터: 대시는 충전식이고 무적 시간이 돌진�
   assert.ok(PLAYER.bash.effects[0].damage > 0, '에너지가 없을 때의 근접 공격');
 });
 
-test('탈(캐릭터) 데이터: 4종 이상, 시작 무기 둘, 서로 다른 스킬과 교체 기술', () => {
-  assert.ok(CHARACTER_ORDER.length >= 4);
+test('탈(캐릭터) 데이터: 8종 이상, 시작 무기 둘, 스킬 둘과 교체 기술 — 이름이 모두 다르다', () => {
+  assert.ok(CHARACTER_ORDER.length >= 8);
   assert.deepEqual([...CHARACTER_ORDER].sort(), Object.keys(CHARACTERS).sort());
   const skills = new Set();
   for (const [id, c] of Object.entries(CHARACTERS)) {
     assert.ok(c.hp > 0 && c.speed > 0 && c.energy > 0 && c.name && c.desc, id);
     assert.equal(c.weapons.length, 2, id);
     for (const w of c.weapons) assert.ok(WEAPONS[w], `${id}: 무기 ${w}`);
-    assert.ok(c.skill.cooldown > 0 && c.skill.name && c.skill.desc, id);
-    assert.ok(['dual', 'warp', 'cast'].includes(c.skill.type), id);
-    if (c.skill.type === 'cast') assert.ok(c.skill.effects.length > 0, id);
+    assert.equal(c.skills.length, 2, `${id}: 스킬 둘`);
+    for (const skill of c.skills) {
+      assert.ok(skill.cooldown > 0 && skill.name && skill.desc && skill.glyph, `${id}: ${skill.name}`);
+      assert.ok(['dual', 'warp', 'cast', 'heal', 'guard'].includes(skill.type), `${id}: ${skill.type}`);
+      if (skill.type === 'cast') assert.ok(skill.effects.length > 0, id);
+      if (skill.type === 'heal') assert.ok(skill.pct > 0 && skill.pct <= 50, id);
+      if (skill.type === 'guard') assert.ok(skill.invuln > 0, id);
+      skills.add(skill.name);
+    }
     assert.ok(c.swap.name && c.swap.desc && c.swap.effects.length > 0, `${id}: 교체 기술`);
-    skills.add(c.skill.name);
     skills.add(c.swap.name);
     assert.ok(Number.isInteger(c.cost) && c.cost >= 0, id);
   }
-  assert.equal(skills.size, CHARACTER_ORDER.length * 2, '스킬과 교체 기술의 이름이 모두 다르다');
+  assert.equal(skills.size, CHARACTER_ORDER.length * 3, '스킬과 교체 기술의 이름이 모두 다르다');
   assert.ok(Object.values(CHARACTERS).some((c) => c.cost === 0), '처음부터 쓸 수 있는 캐릭터가 있다');
   assert.ok(Object.values(CHARACTERS).some((c) => c.cost > 0), '해금하는 캐릭터가 있다');
 });
 
-test('무기 데이터: 12종 이상, 원거리는 에너지를 쓰고 근접은 쓰지 않는다', () => {
-  assert.ok(WEAPON_ORDER.length >= 12, `무기 ${WEAPON_ORDER.length}종`);
+test('무기 데이터: 20종 이상, 원거리는 에너지를 쓰고 근접은 쓰지 않는다', () => {
+  assert.ok(WEAPON_ORDER.length >= 20, `무기 ${WEAPON_ORDER.length}종`);
   assert.deepEqual([...WEAPON_ORDER].sort(), Object.keys(WEAPONS).sort());
   for (const id of ['pistol', 'shotgun', 'smg', 'sniper', 'laser', 'rocket', 'bow', 'spear', 'greatsword', 'dual_blades']) assert.ok(WEAPONS[id], id);
   const types = new Set();
@@ -221,7 +226,8 @@ test('무기 데이터: 12종 이상, 원거리는 에너지를 쓰고 근접은
       for (const e of ability.effects) {
         types.add(e.type);
         if (e.type !== 'dash') assert.ok(e.damage > 0, `${id}: 피해`);
-        if (w.kind === 'melee') assert.ok(['arc', 'circle', 'dash'].includes(e.type), `${id}: 근접 효과 ${e.type}`);
+        // 근접의 대시 공격은 길게 가르는 것(beam)도 된다(태도의 발도).
+        if (w.kind === 'melee') assert.ok(['arc', 'circle', 'dash', 'beam'].includes(e.type), `${id}: 근접 효과 ${e.type}`);
         else assert.ok(['projectile', 'beam'].includes(e.type), `${id}: 원거리 효과 ${e.type}`);
       }
     }

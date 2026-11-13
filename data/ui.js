@@ -28,6 +28,7 @@ export const INPUT = deepFreeze({
     attack: ['KeyJ', 'Space'],
     dash: ['KeyK', 'ShiftLeft', 'ShiftRight'],
     skill: ['KeyL', 'KeyQ'],
+    skill2: ['KeyI', 'KeyC'],
     swap: ['KeyR', 'Tab'],
     interact: ['KeyE', 'KeyF'],
   },

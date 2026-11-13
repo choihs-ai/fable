@@ -48,6 +48,12 @@ const RUN_MIGRATIONS = {
     }
     return run;
   },
+  // v6 → v7(스킬 둘): 입력에 두 번째 스킬(skill2)이 생겼다.
+  6(run) {
+    run.version = 7;
+    if (isObject(run.input)) fill(run.input, { skill2: false });
+    return run;
+  },
 };
 
 const META_MIGRATIONS = {

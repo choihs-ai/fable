@@ -11,8 +11,8 @@
 
 import { INPUT } from '../../../data/ui.js';
 
-export const BUTTONS = Object.freeze(['attack', 'dash', 'skill', 'swap', 'interact']);
-const ONCE = ['dash', 'skill', 'swap', 'interact'];
+export const BUTTONS = Object.freeze(['attack', 'dash', 'skill', 'skill2', 'swap', 'interact']);
+const ONCE = ['dash', 'skill', 'skill2', 'swap', 'interact'];
 
 /**
  * @param {object} [options]
@@ -116,7 +116,7 @@ export function createControls({ sensitivity = 100 } = {}) {
     },
     /**
      * 이번 프레임의 입력. 한 번짜리 입력은 가져가면 지워진다.
-     * @returns {{ moveX:number, moveY:number, aimX:number, aimY:number, attack:boolean, dash:boolean, skill:boolean, swap:boolean, interact:boolean }}
+     * @returns {{ moveX:number, moveY:number, aimX:number, aimY:number, attack:boolean, dash:boolean, skill:boolean, skill2:boolean, swap:boolean, interact:boolean }}
      */
     take() {
       let { x, y } = stickVector();
@@ -135,7 +135,7 @@ export function createControls({ sensitivity = 100 } = {}) {
       const a = aimVector();
       const out = {
         moveX: x, moveY: y, aimX: a.x, aimY: a.y, attack,
-        dash: pending.has('dash'), skill: pending.has('skill'), swap: pending.has('swap'), interact: pending.has('interact'),
+        dash: pending.has('dash'), skill: pending.has('skill'), skill2: pending.has('skill2'), swap: pending.has('swap'), interact: pending.has('interact'),
       };
       pending.clear();
       return out;

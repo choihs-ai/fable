@@ -95,7 +95,7 @@ export function createScreens({ layer, ctx }) {
         h('div', { class: 'gauges' },
           gauge('체력', c.hp, all.map((x) => x.hp)), gauge('속도', c.speed, all.map((x) => x.speed)), gauge('에너지', c.energy, all.map((x) => x.energy))),
         h('p', { class: 'line' }, icon('blade'), h('span', { text: c.weapons.map(weaponName).join(' · ') })),
-        h('p', { class: 'line' }, icon(`skill-${id}`), h('span', {}, h('b', { text: c.skill.name }), ` ${c.skill.desc}`)),
+        ...c.skills.map((skill) => h('p', { class: 'line' }, icon(skill.glyph), h('span', {}, h('b', { text: skill.name }), ` ${skill.desc}`))),
         h('p', { class: 'line' }, icon('swap'), h('span', {}, h('b', { text: c.swap.name }), ` ${c.swap.desc}`)),
         owned
           ? button('이 탈로 시작', () => ctx.actions.newGame(id), { class: 'primary', action: `start-${id}` })

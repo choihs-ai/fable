@@ -167,3 +167,76 @@ test('v5 세이브(탈 교체 이전)는 v6 으로 올라온다: 쓰던 캐릭�
   assert.deepEqual(moved.data.entities.byId[old.playerId].cooldowns, { [skillKey('knight')]: old.tick + 100 });
   assert.deepEqual(validateRunState({ ...moved.data, meta: s.state.meta }), []);
 });
+
+// ── 스킬 둘 ──
+
+/** 이 탈을 쓴 채로 시작하는 무대(해금은 건너뛴다). */
+function stageAs(form, seed) {
+  const s = createStage({ seed, meta: { version: 2, souls: 0, upgrades: {}, characters: { knight: true, [form]: true } }, character: form });
+  assert.equal(s.player.kit.character, form);
+  return s;
+}
+
+test('탈마다 스킬이 둘이고, 두 번째 스킬은 skill2 입력으로 나가며 대기 시간을 따로 센다', () => {
+  for (const form of CHARACTER_ORDER) {
+    const s = stageAs(form, `skill2-${form}`);
+    s.step(1, { skill2: true });
+    s.step(2);
+    assert.ok(s.player.cooldowns[skillKey(form, 1)] > s.state.tick, `${form}: 두 번째 스킬의 대기가 돈다`);
+    assert.equal(s.player.cooldowns[skillKey(form, 0)] ?? 0, 0, `${form}: 첫 번째 스킬은 그대로 준비돼 있다`);
+    assert.equal(s.events(EVENTS.SKILL_USED).at(-1).index, 1);
+    assert.equal(s.state.input.skill2, false, '한 번 처리되면 지워진다');
+    s.step(24); // 돌진하는 스킬(투사의 돌격, 광대의 재주넘기)이 끝날 때까지 기다린다 — 돌진 중에 누른 입력은 버퍼가 끝나면 사라진다.
+    setInput(s.state, { skill: true });
+    s.step(40);
+    assert.ok(s.player.cooldowns[skillKey(form, 0)] > 0, `${form}: 첫 번째 스킬도 나간다`);
+    assert.deepEqual(validateRunState(s.state), [], `${form}: 스킬을 쓴 뒤의 상태가 저장된다`);
+  }
+});
+
+test('회복 스킬(무당의 굿): 최대 체력의 정해진 비율만큼 회복한다', () => {
+  const s = stageAs('shaman', 'skill-heal');
+  s.player.hp = 30;
+  s.step(1, { skill: true });
+  s.step(2);
+  assert.equal(s.player.hp, 30 + Math.round((s.player.maxHp * CHARACTERS.shaman.skills[0].pct) / 100));
+  assert.equal(s.events(EVENTS.PLAYER_HEALED).length, 1);
+});
+
+test('수호 스킬(기사): 잠깐 무적이 되고 둘레의 적 탄이 지워진다', () => {
+  const s = stageAs('knight', 'skill-guard');
+  const skill = CHARACTERS.knight.skills[1];
+  s.state.projectiles.push({
+    id: s.state.entities.nextId++, ownerId: 999, faction: 'enemy', x: s.player.x + 1, y: s.player.y, vx: 0, vy: 0, radius: 0.2, damage: 5, power: 1,
+    knockback: 0, status: null, left: 5, pierce: 0, hit: [], explode: null, bounces: 0, split: false, proc: true,
+  });
+  s.step(1, { skill2: true });
+  s.step(1);
+  assert.ok(s.player.invulnUntil >= s.state.tick + ticksOf(skill.invuln) - 3);
+  assert.equal(s.state.projectiles.filter((p) => p.faction === 'enemy').length, 0);
+});
+
+test('발밑에 까는 스킬(포수의 화약통): 장판이 플레이어 자리에 깔리고 잠시 뒤 터져 곁의 적을 다치게 한다', () => {
+  const s = stageAs('gunner', 'skill-self');
+  const foe = spawnEnemy(s.state, s.bus, 'zombie', s.player.x + 1.5, s.player.y, { depth: 0 });
+  const before = foe.hp;
+  const px = s.player.x;
+  s.step(1, { skill2: true });
+  s.step(1);
+  const hz = s.state.hazards.at(-1);
+  assert.ok(Math.abs(hz.x - px) < 0.2 && hz.faction === 'player');
+  s.step(ticksOf(CHARACTERS.gunner.skills[1].effects[0].delay) + 4);
+  assert.ok(foe.hp < before || foe.dead);
+});
+
+test('v6 세이브(스킬 하나)는 v7 로 올라온다: 입력에 skill2 가 생긴다', () => {
+  const s = createStage({ seed: 'form-migrate7' });
+  const old = JSON.parse(JSON.stringify(s.state));
+  delete old.meta;
+  old.version = 6;
+  delete old.input.skill2;
+  const moved = migrate('run', old, 6);
+  assert.equal(moved.ok, true);
+  assert.equal(moved.data.input.skill2, false);
+  assert.deepEqual(validateRunState({ ...moved.data, meta: s.state.meta }), []);
+});

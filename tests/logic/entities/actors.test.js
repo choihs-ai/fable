@@ -83,7 +83,7 @@ test('상태 버전과 새 항목', () => {
   assert.deepEqual(game.state.projectiles, []);
   assert.deepEqual(game.state.hazards, []);
   assert.equal(game.state.encounter, null);
-  assert.deepEqual(game.state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false });
+  assert.deepEqual(game.state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false });
 });
 
 test('전투 중인 상태도 JSON 으로 왕복하면 그대로다', () => {

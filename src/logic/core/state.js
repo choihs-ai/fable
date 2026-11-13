@@ -7,7 +7,7 @@ import { Rng } from './prng.js';
  * 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다.
  * 5: 방 단위 액션 로그라이트로 바꾸면서 런의 구조가 통째로 달라졌다(4 이하의 런은 이어할 수 없다).
  */
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
@@ -84,9 +84,9 @@ export function createInitialState({ seed }) {
     encounter: null,
     /**
      * 이번 틱의 플레이어 입력. ui 가 setInput 으로 채우고 로직이 읽는다.
-     * move/aim 은 방향 벡터(aim 이 0 이면 자동 조준). dash 와 skill 은 한 번 처리되면 로직이 지운다.
+     * move/aim 은 방향 벡터(aim 이 0 이면 자동 조준). dash 와 skill·skill2(탈의 두 스킬)는 한 번 처리되면 로직이 지운다.
      */
-    input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false },
+    input: { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false },
     /** 바닥에 놓인 것: { id, kind:'gold'|'energy'|'health'|'weapon'|'boon'|'chest', x, y, amount?, weapon? }. */
     drops: [],
     /** 이 층의 상점: { stock:[{ kind, weapon?, boon?, price, sold }], rerolls, heals } 또는 null. */

@@ -228,14 +228,16 @@ button, .btn, [data-tap] { touch-action: manipulation; }
 .pad-button.disabled { opacity: 0.35; }
 .pad-attack { width: 98px; height: 98px; right: 0; bottom: 0; background: var(--red); }
 .pad-attack .glyph .icon { width: 54px; height: 54px; }
-.pad-dash { width: 72px; height: 72px; right: 106px; bottom: 4px; background: var(--teal); color: var(--ink); }
+.pad-dash { width: 72px; height: 72px; right: 106px; bottom: 0; background: var(--teal); color: var(--ink); }
 .pad-dash .glyph .icon { width: 36px; height: 36px; color: var(--paper); }
 .pad-dash.empty { background: #1c6f60; }
 .pad-skill { width: 66px; height: 66px; right: 10px; bottom: 108px; background: var(--gold); }
 .pad-skill .glyph .icon { width: 32px; height: 32px; }
+.pad-skill2 { width: 60px; height: 60px; right: 84px; bottom: 150px; background: var(--soul); }
+.pad-skill2 .glyph .icon { width: 29px; height: 29px; }
 .pad-swap { width: 50px; height: 50px; right: 92px; bottom: 90px; background: var(--paper); color: var(--night); }
 .pad-swap .glyph .icon { width: 28px; height: 28px; }
-.pad-interact { width: 68px; height: 68px; right: 152px; bottom: 132px; background: var(--green); animation: hop 0.5s steps(2) infinite; }
+.pad-interact { width: 68px; height: 68px; right: 152px; bottom: 76px; background: var(--green); animation: hop 0.5s steps(2) infinite; }
 @keyframes hop { from { margin-bottom: 0; } to { margin-bottom: 4px; } }
 .pips { position: absolute; bottom: 6px; display: flex; gap: 3px; z-index: 1; }
 .pips i { width: 9px; height: 6px; background: rgba(18, 11, 20, 0.45); border: 1.5px solid var(--ink); border-radius: 1px; }

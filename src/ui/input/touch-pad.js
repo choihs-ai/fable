@@ -1,7 +1,7 @@
 // 가상 조이스틱과 버튼을 화면에 만들고, 포인터·키보드 이벤트를 조작 상태 기계(controls.js)에 넘긴다.
 // 포인터 이벤트를 쓴다: 손가락마다 pointerId 가 달라 멀티터치를 구분할 수 있고, 마우스도 같은 길로 들어온다.
 //
-// 버튼: 공격(크게, 끌면 수동 조준), 대시(충전 표시), 스킬(재사용 대기 표시), 무기 교체, 상호작용(할 것이 있을 때만 보인다).
+// 버튼: 공격(크게, 끌면 수동 조준), 대시(충전 표시), 스킬 둘(재사용 대기 표시), 교체, 상호작용(할 것이 있을 때만 보인다).
 
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
@@ -11,7 +11,8 @@ import { createControls } from './controls.js';
 const BUTTONS = [
   { name: 'attack', icon: 'attack', label: '' },
   { name: 'dash', icon: 'dash', label: '' },
-  { name: 'skill', icon: 'skill-knight', label: '' },
+  { name: 'skill', icon: 'twin', label: '' },
+  { name: 'skill2', icon: 'shield', label: '' },
   { name: 'swap', icon: 'swap', label: '' },
   { name: 'interact', icon: 'interact', label: '' },
 ];
@@ -37,7 +38,7 @@ export function createTouchPad({ root, sensitivity }) {
     const text = h('span', { class: 'label', text: label });
     const pips = h('div', { class: 'pips' });
     const el = h('div', { class: `pad-button pad-${name}`, 'data-button': name }, cool, face, text, pips);
-    buttons[name] = { el, cool, face, text, pips, last: -1, pipsShown: '', form: '' };
+    buttons[name] = { el, cool, face, text, pips, last: -1, pipsShown: '', glyph: glyph };
     cluster.append(el);
   }
   buttons.attack.el.append(aimArrow);
@@ -99,7 +100,7 @@ export function createTouchPad({ root, sensitivity }) {
     for (const name of Object.keys(buttons)) buttons[name].el.classList.remove('down');
   }
 
-  const EMPTY = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false };
+  const EMPTY = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false, swap: false, interact: false };
 
   return {
     controls,
@@ -128,7 +129,7 @@ export function createTouchPad({ root, sensitivity }) {
     },
     /**
      * 스틱·조준 그림과 버튼 표시를 갱신한다.
-     * @param {object} view { cooling:{ name → 0~1 }, charges, maxCharges, interact: 글자|null, swap: 무기 이름|null, skill: 이름 }
+     * @param {object} view { cooling:{ name → 0~1 }, charges, maxCharges, interact: 글자|null, swap: 바꿀 수 있는가, skills:[{ name, glyph }] }
      */
     draw(view) {
       const shape = controls.stickShape();
@@ -162,12 +163,15 @@ export function createTouchPad({ root, sensitivity }) {
       buttons.interact.el.classList.toggle('hidden', interact === null);
       if (interact !== null && buttons.interact.text.textContent !== interact) buttons.interact.text.textContent = interact;
       buttons.swap.el.classList.toggle('disabled', !view.swap);
-      if (view.skill && buttons.skill.text.textContent !== view.skill) buttons.skill.text.textContent = view.skill;
-      // 스킬 버튼의 그림은 쓰고 있는 탈에 따라 바뀐다.
-      if (view.form && buttons.skill.form !== view.form) {
-        buttons.skill.form = view.form;
-        buttons.skill.face.replaceChildren(icon(`skill-${view.form}`));
-      }
+      // 스킬 버튼 둘: 이름과 그림은 쓰고 있는 탈에 따라 바뀐다.
+      (view.skills ?? []).forEach((skill, i) => {
+        const button = buttons[i === 0 ? 'skill' : 'skill2'];
+        if (button.text.textContent !== skill.name) button.text.textContent = skill.name;
+        if (button.glyph !== skill.glyph) {
+          button.glyph = skill.glyph;
+          button.face.replaceChildren(icon(skill.glyph));
+        }
+      });
     },
     dispose() {
       window.removeEventListener('keydown', onKeyDown);

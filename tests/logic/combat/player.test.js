@@ -40,7 +40,7 @@ test('setInput: 이동 벡터는 길이 1 로 자르고, 잘못된 값은 0·fal
   setInput(state, { moveX: 3, moveY: 4 });
   assert.ok(Math.abs(Math.hypot(state.input.moveX, state.input.moveY) - 1) < 1e-9);
   setInput(state, { moveX: NaN, moveY: 'x', aimX: Infinity, aimY: undefined, attack: 1, dash: 'yes', skill: null });
-  assert.deepEqual(state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false });
+  assert.deepEqual(state.input, { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false });
   setInput(state, { attack: true });
   assert.equal(state.input.attack, true);
   assert.equal(state.input.moveX, 0, '주지 않은 항목은 그대로');
@@ -312,7 +312,7 @@ test('기사 스킬(쌍수 사격): 지속시간 동안 다른 손의 무기도 
   assert.equal(a.player.kit.energy, energy, '에너지를 쓰지 않는다');
   assert.ok(hits(a, z).length >= 4);
   // 재사용 대기 중에는 다시 쓰지 못하고, 지속시간이 끝나면 한 손만 나간다.
-  a.step(sec(CHARACTERS.knight.skill.duration), { attack: false, skill: true });
+  a.step(sec(CHARACTERS.knight.skills[0].duration), { attack: false, skill: true });
   assert.equal(a.events(EVENTS.SKILL_USED).length, 1);
   const before = a.events(EVENTS.WEAPON_USED).length;
   a.step(sec(0.5), { attack: true, skill: false });
@@ -329,14 +329,14 @@ test('마법사 스킬(시간 왜곡): 장판 안의 적과 적의 탄이 느려
   assert.ok(field, '장판이 깔린다');
   assert.ok(Math.hypot(field.x - skeleton.x, field.y - skeleton.y) < 0.5, '겨눈 적의 자리');
   a.step(3);
-  assert.equal(skeleton.speedMul, CHARACTERS.mage.skill.slow);
+  assert.equal(skeleton.speedMul, CHARACTERS.mage.skills[0].slow);
   // 장판 안에서 쏜 적의 탄은 느리게 난다.
   const fast = spawnProjectile(a.state, a.bus, skeleton, { speed: 10, radius: 0.2, range: 30, damage: 1 }, 0, 1, { x: field.x, y: field.y });
   const y0 = fast.y;
   a.step(6);
-  assert.ok(Math.abs(fast.y - y0 - 10 * 0.1 * CHARACTERS.mage.skill.slow) < 0.02, `탄이 간 거리 ${(fast.y - y0).toFixed(3)}`);
+  assert.ok(Math.abs(fast.y - y0 - 10 * 0.1 * CHARACTERS.mage.skills[0].slow) < 0.02, `탄이 간 거리 ${(fast.y - y0).toFixed(3)}`);
   // 장판이 사라지면 원래대로.
-  a.step(sec(CHARACTERS.mage.skill.duration) + 20);
+  a.step(sec(CHARACTERS.mage.skills[0].duration) + 20);
   assert.equal(a.state.hazards.filter((h) => h.kind === 'warp').length, 0);
   assert.equal(skeleton.speedMul, 1);
 });

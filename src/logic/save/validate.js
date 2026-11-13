@@ -299,7 +299,7 @@ const kitShape = shape({
   rechargeTicks: int(1, L.timerAhead),
   weapons: list(nullable(weaponId), 2, 2),
   slot: among([0, 1]),
-  buffer: nullable(shape({ kind: among(['dash', 'skill']), until: timer })),
+  buffer: nullable(shape({ kind: among(['dash', 'skill', 'skill2']), until: timer })),
   dashing: bool,
   dashAttackUntil: timer,
   critUntil: timer,
@@ -423,7 +423,7 @@ const encounterShape = shape({
   nextWaveAt: timer,
 });
 const inputShape = shape({
-  moveX: unit, moveY: unit, aimX: num(-L.count, L.count), aimY: num(-L.count, L.count), attack: bool, dash: bool, skill: bool,
+  moveX: unit, moveY: unit, aimX: num(-L.count, L.count), aimY: num(-L.count, L.count), attack: bool, dash: bool, skill: bool, skill2: bool,
 });
 
 const place = { id, x: coord, y: coord };

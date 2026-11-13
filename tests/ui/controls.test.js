@@ -8,7 +8,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
 
 test('조이스틱: 닿은 곳이 중심, 민 방향과 거리가 이동 입력이 된다', () => {
   const c = createControls();
-  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false });
+  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false, swap: false, interact: false });
   assert.equal(c.stickDown(1, 100, 300), true);
   assert.deepEqual(c.take().moveX, 0, '닿기만 하면 움직이지 않는다');
   c.pointerMove(1, 100 + R, 300);
@@ -134,7 +134,7 @@ test('전부 놓기(백그라운드 전환·화면 회전·메뉴): 쥔 것과 �
   c.buttonDown(5, 'swap');
   c.keyDown('KeyW');
   c.reset();
-  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, swap: false, interact: false });
+  assert.deepEqual(c.take(), { moveX: 0, moveY: 0, aimX: 0, aimY: 0, attack: false, dash: false, skill: false, skill2: false, swap: false, interact: false });
   assert.deepEqual(c.held(), { stick: null, aim: null, buttons: [], pointers: 0 });
   // 놓인 뒤에 늦게 도착한 이동·뗌 이벤트는 무시된다(옛 손가락이 되살아나지 않는다).
   c.pointerMove(1, 999, 999);

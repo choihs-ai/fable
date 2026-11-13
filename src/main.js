@@ -284,6 +284,7 @@ function frame(now) {
     const next = { moveX: input.moveX, moveY: input.moveY, aimX: input.aimX, aimY: input.aimY, attack: input.attack };
     if (input.dash) next.dash = true;
     if (input.skill) next.skill = true;
+    if (input.skill2) next.skill2 = true;
     setInput(game.state, next);
     if (input.swap) ui.screens.current === null && swapWeapons(game);
     if (input.interact) doInteract();

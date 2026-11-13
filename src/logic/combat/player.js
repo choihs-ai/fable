@@ -16,6 +16,7 @@ import { weaponAbilityId } from '../entities/defs.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
 import { abilityOf, cooldownTicks, isReady, runEffects, startAbility } from './abilities.js';
+import { heal } from './damage.js';
 import { refreshPlayerStats } from '../entities/stats.js';
 import { hasBoon, onDashEnd } from './boons.js';
 import { spawnHazard, spawnWarpField } from './hazards.js';
@@ -44,6 +45,7 @@ export function setInput(state, input) {
   if (input.attack !== undefined) target.attack = input.attack === true;
   if (input.dash !== undefined) target.dash = input.dash === true;
   if (input.skill !== undefined) target.skill = input.skill === true;
+  if (input.skill2 !== undefined) target.skill2 = input.skill2 === true;
 }
 
 /** 조준 방향: 입력이 있으면 그 방향(수동 조준), 없으면 시야가 닿는 가장 가까운 적, 그것도 없으면 바라보는 방향. */
@@ -97,13 +99,33 @@ function startDash(state, bus, player, input, moveLen) {
   bus.emit(EVENTS.PLAYER_DASHED, { id: player.id, dirX, dirY, charges: kit.charges });
 }
 
-function useSkill(state, bus, player, input) {
+/** 스킬의 목표 지점: 발밑(at:'self'), 겨눈 적의 자리, 적이 없으면 겨눈 쪽으로 reach 칸 앞. */
+function skillTarget(player, skill, aim) {
+  if (skill.at === 'self') return { x: player.x, y: player.y };
+  if (aim.target) return { x: aim.target.x, y: aim.target.y };
+  const reach = skill.reach ?? 1;
+  return { x: player.x + aim.x * reach, y: player.y + aim.y * reach };
+}
+
+/** 탈의 index 번째 스킬(0 또는 1)을 쓴다. */
+function useSkill(state, bus, player, input, index) {
   const kit = player.kit;
-  const skill = CHARACTERS[kit.character].skill;
-  player.cooldowns[skillKey(kit.character)] = state.tick + cooldownTicks(player, skill.cooldown);
-  if (skill.type === 'cast') {
+  const skill = CHARACTERS[kit.character].skills[index];
+  player.cooldowns[skillKey(kit.character, index)] = state.tick + cooldownTicks(player, skill.cooldown);
+  if (skill.type === 'cast' || skill.type === 'guard') {
     const aim = aimDirection(state, player, input);
-    runEffects(state, bus, player, skill.effects, { dirX: aim.x, dirY: aim.y, targetX: aim.tx, targetY: aim.ty });
+    const at = skillTarget(player, skill, aim);
+    if (skill.type === 'guard') {
+      player.invulnUntil = Math.max(player.invulnUntil, state.tick + ticksOf(skill.invuln));
+      if (skill.clearBullets) {
+        const r2 = skill.clearBullets * skill.clearBullets;
+        clearBullets(state, bus, player.faction, (p) => (p.x - player.x) * (p.x - player.x) + (p.y - player.y) * (p.y - player.y) <= r2, player.x, player.y);
+      }
+    }
+    if (skill.effects) runEffects(state, bus, player, skill.effects, { dirX: aim.x, dirY: aim.y, targetX: at.x, targetY: at.y });
+  } else if (skill.type === 'heal') {
+    const healed = heal(player, (player.maxHp * skill.pct) / 100);
+    bus.emit(EVENTS.PLAYER_HEALED, { id: player.id, amount: healed, x: player.x, y: player.y });
   } else if (skill.type === 'dual') {
     kit.dualUntil = state.tick + ticksOf(skill.duration);
   } else if (skill.type === 'warp') {
@@ -122,7 +144,7 @@ function useSkill(state, bus, player, input) {
   } else {
     throw new RangeError(`알 수 없는 스킬 "${skill.type}"`);
   }
-  bus.emit(EVENTS.SKILL_USED, { character: kit.character, type: skill.type });
+  bus.emit(EVENTS.SKILL_USED, { character: kit.character, index, type: skill.type, x: player.x, y: player.y });
 }
 
 function emitUsed(bus, player, weaponId, slot, dash, offhand, aim) {
@@ -188,8 +210,8 @@ function attack(state, bus, player, input) {
   }
 }
 
-/** 탈마다 스킬의 재사용 대기를 따로 센다. */
-export const skillKey = (form) => `skill:${form}`;
+/** 스킬의 재사용 대기 이름. 탈마다, 스킬마다(index 0·1) 따로 센다. */
+export const skillKey = (form, index = 0) => (index === 0 ? `skill:${form}` : `skill:${form}:${index + 1}`);
 
 /**
  * 쓰는 탈을 바꾼다: 능력치를 그 탈의 것으로 다시 합산한다. 잃은 체력·쓴 에너지는 그대로 가져간다
@@ -267,8 +289,10 @@ export function controlPlayer(state, bus) {
   const bufferTicks = ticksOf(PLAYER.inputBuffer);
   if (input.dash) kit.buffer = { kind: 'dash', until: tick + bufferTicks };
   else if (input.skill) kit.buffer = { kind: 'skill', until: tick + bufferTicks };
+  else if (input.skill2) kit.buffer = { kind: 'skill2', until: tick + bufferTicks };
   input.dash = false;
   input.skill = false;
+  input.skill2 = false;
   if (kit.buffer && tick > kit.buffer.until) kit.buffer = null;
 
   player.moveX = 0;
@@ -295,9 +319,10 @@ export function controlPlayer(state, bus) {
     startDash(state, bus, player, input, moveLen);
     return;
   }
-  if (kit.buffer && kit.buffer.kind === 'skill' && !player.action && isReady(state, player, skillKey(kit.character))) {
+  const wanted = kit.buffer && kit.buffer.kind === 'skill' ? 0 : kit.buffer && kit.buffer.kind === 'skill2' ? 1 : -1;
+  if (wanted !== -1 && !player.action && isReady(state, player, skillKey(kit.character, wanted))) {
     kit.buffer = null;
-    useSkill(state, bus, player, input);
+    useSkill(state, bus, player, input, wanted);
   }
 
   if (player.action) return;
