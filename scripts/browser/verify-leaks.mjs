@@ -178,9 +178,20 @@ try {
   for (const key of ['geometries', 'texOther', 'programs', 'glBuffers', 'glTexOther', 'glVaos', 'sceneOther', 'dom']) {
     const a = max(steady.slice(0, half), key);
     const b = max(steady.slice(half), key);
-    const ok = b <= a;
+    let ok = b <= a;
+    let note = '';
+    // VAO 는 (지오메트리, 셰이더) 짝마다 하나다. 풀이 새 모델을 처음 만들어 그린 순간에만 늘었다면
+    // 처음 보는 짝이 생긴 것이다(지오메트리·셰이더 수가 그대로면 짝의 수에 상한이 있다). 누수로 보지 않는다.
+    if (!ok && key === 'glVaos') {
+      const grewWithPool = steady.every((r, i) => {
+        const prev = i === 0 ? rows[WARM] : steady[i - 1];
+        return r.glVaos <= prev.glVaos || r.actorViews > prev.actorViews || r.pooled > prev.pooled;
+      });
+      const bounded = max(steady, 'geometries') <= rows[WARM].geometries && max(steady, 'programs') <= rows[WARM].programs;
+      if (grewWithPool && bounded) { ok = true; note = '  (풀이 새 모델을 만든 순간에만 늘었다)'; }
+    }
     if (!ok) failed++;
-    console.log(`  ${ok ? '✔' : '✖'} ${key.padEnd(11)} ${a} → ${b}${ok ? '' : '  ← 늘어남'}   (처음 ${rows[0][key]}, 한 바퀴 뒤 ${rows[WARM][key]})`);
+    console.log(`  ${ok ? '✔' : '✖'} ${key.padEnd(11)} ${a} → ${b}${ok ? note : '  ← 늘어남'}   (처음 ${rows[0][key]}, 한 바퀴 뒤 ${rows[WARM][key]})`);
   }
   console.log('  풀: 만든 수 / 상한 (한 바퀴 뒤 → 끝)');
   for (const name of Object.keys(rows.at(-1).pools)) {

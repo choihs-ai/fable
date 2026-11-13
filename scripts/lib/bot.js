@@ -189,6 +189,21 @@ function pickRoom(state, bot, room) {
   return map.rooms[step];
 }
 
+/**
+ * 무기 하나를 얻으면 바뀌는 칸(등급이 낮은 쪽)을 빼고, 그래도 근접 무기가 남는가.
+ * 에너지는 저절로 차지 않으므로 원거리 둘만 들면 여섯 층을 가는 동안 개머리판만 휘두르게 된다.
+ */
+function keepsMelee(kit, weaponId) {
+  if (WEAPONS[weaponId].kind === 'melee' || kit.weapons.includes(null)) return true;
+  const hadMelee = kit.weapons.some((id) => WEAPONS[id].kind === 'melee');
+  if (!hadMelee) return true;
+  const current = kit.weapons[kit.slot];
+  const other = kit.weapons[1 - kit.slot];
+  const replaced = WEAPONS[other].tier < WEAPONS[current].tier ? other : current;
+  const kept = replaced === other ? current : other;
+  return WEAPONS[kept].kind === 'melee';
+}
+
 /** 상점에서 살 만한 것을 산다. */
 function shopping(game, player) {
   const { state } = game;
@@ -198,7 +213,7 @@ function shopping(game, player) {
     if (item.sold || state.run.gold < shopPrice(state, item)) return;
     if (item.kind === 'heal' && player.hp < player.maxHp * 0.65) buyShopItem(game, index);
     else if (item.kind === 'boon') buyShopItem(game, index);
-    else if (item.kind === 'weapon' && WEAPONS[item.weapon].tier > minTier) {
+    else if (item.kind === 'weapon' && WEAPONS[item.weapon].tier > minTier && keepsMelee(player.kit, item.weapon)) {
       // 등급이 낮은 쪽을 들고 사면 그 무기와 바뀐다.
       const kit = player.kit;
       const other = kit.weapons[1 - kit.slot];
@@ -324,7 +339,7 @@ function explore(game, bot, nav, player, input) {
       if (bot.ignored.includes(drop.id)) continue;
       if (drop.kind === 'weapon') {
         const tiers = kit.weapons.filter(Boolean).map((id) => WEAPONS[id].tier);
-        const wanted = kit.weapons.includes(null) || WEAPONS[drop.weapon].tier > Math.min(...tiers);
+        const wanted = kit.weapons.includes(null) || (WEAPONS[drop.weapon].tier > Math.min(...tiers) && keepsMelee(kit, drop.weapon));
         if (!wanted || kit.weapons.includes(drop.weapon)) {
           bot.ignored.push(drop.id);
           continue;
