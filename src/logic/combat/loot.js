@@ -4,6 +4,7 @@
 import { CHARACTER_ORDER } from '../../../data/characters.js';
 import { BOON_RULES } from '../../../data/boons.js';
 import { ENCOUNTERS } from '../../../data/encounters.js';
+import { WEAPON_UPGRADE } from '../../../data/weapons.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
 import { getActor, getPlayer } from '../entities/actors.js';
@@ -16,6 +17,8 @@ import { heal } from './damage.js';
 /** 바닥에 무언가를 놓는다. */
 export function addDrop(state, bus, x, y, drop) {
   const made = { id: state.entities.nextId++, x, y, ...drop };
+  // 무기는 늘 강화 단계를 갖고 놓인다(새 무기는 0).
+  if (made.kind === 'weapon' && made.level === undefined) made.level = 0;
   state.drops.push(made);
   bus.emit(EVENTS.DROP_SPAWNED, { id: made.id, kind: made.kind, x, y });
   return made;
@@ -80,14 +83,19 @@ export function grantRoomReward(state, bus, room) {
   const eliteGold = rng.int(cfg.eliteGold[0], cfg.eliteGold[1]);
   const bossGold = rng.int(cfg.bossGold[0], cfg.bossGold[1]);
   const bonusGold = rng.int(cfg.bonusGold[0], cfg.bonusGold[1]);
-  const weapon = rollWeapon(rng, player ? player.kit.weapons.filter(Boolean) : []);
+  const fresh = rollWeapon(rng, player ? player.kit.weapons.filter(Boolean) : []);
+  // 무기 보상은 가끔 든 무기(최고 단계가 아닌 것)를 내놓는다 — 주우면 강해진다. 굴림은 늘 두 번 한다.
+  const upgradeRoll = rng.float();
+  const upgradePick = rng.float();
+  const upgradable = player ? player.kit.weapons.filter((id, i) => id !== null && player.kit.levels[i] < WEAPON_UPGRADE.max) : [];
+  const weapon = upgradable.length > 0 && upgradeRoll < WEAPON_UPGRADE.offerChance ? upgradable[Math.floor(upgradePick * upgradable.length)] : fresh;
 
   if (room.kind === ROOM_KIND.COMBAT || room.kind === ROOM_KIND.ELITE || room.kind === ROOM_KIND.BOSS) {
     addGold(state, bus, clearGold);
     if (player) player.kit.energy = Math.min(player.kit.maxEnergy, player.kit.energy + Math.round((player.kit.maxEnergy * cfg.clearEnergyPct) / 100));
   }
   if (room.reward === REWARD.BOON) addDrop(state, bus, cx, cy, { kind: 'boon' });
-  else if (room.reward === REWARD.WEAPON) addDrop(state, bus, cx, cy, { kind: 'weapon', weapon });
+  else if (room.reward === REWARD.WEAPON) addDrop(state, bus, cx, cy, { kind: 'weapon', weapon, level: 0 });
   else if (room.reward === REWARD.GOLD) addDrop(state, bus, cx, cy, { kind: 'gold', amount: roomGold });
   else if (room.reward === REWARD.HEALTH) {
     addDrop(state, bus, cx, cy, { kind: 'health', amount: player ? Math.round((player.maxHp * cfg.healthPct) / 100) : 0 });

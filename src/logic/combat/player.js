@@ -247,6 +247,7 @@ export function swapWeapon(state, bus) {
   if (!kit.weapons[1 - kit.slot]) return false;
   kit.slot = 1 - kit.slot;
   kit.dashAttackUntil = 0;
+  refreshPlayerStats(state);
   bus.emit(EVENTS.WEAPON_SWAPPED, { slot: kit.slot, weapon: kit.weapons[kit.slot] });
   const form = kit.forms[kit.slot];
   if (form !== null && form !== kit.character) {

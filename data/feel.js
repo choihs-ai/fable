@@ -30,6 +30,15 @@ export const FEEL = deepFreeze({
   /** 방이 드러나는 페이드(초), 벽을 낮추는 빠르기(초당 비율), 층에 들어갈 때의 화면 페이드(초). */
   reveal: { roomSec: 0.3, wallRate: 10, screenFadeSec: 0.35 },
 
+  // 축복의 기운: 계열(불·번개·얼음)마다 몸 둘레를 도는 구슬, 축복 수에 따라 발밑의 고리.
+  // perOrb 축복 몇 개마다 구슬 하나(올림), maxOrbs 계열마다 최대 구슬 수, radius·height 도는 반지름·높이(칸),
+  // speed 초당 회전(라디안), bob 위아래 흔들림, ringsAt 발밑 고리가 하나씩 느는 축복 수, ringOpacity 고리의 진하기
+  aura: {
+    perOrb: 2, maxOrbs: 3, radius: 0.85, height: 0.85, speed: 2.4, bob: 0.08, size: 0.09,
+    ringsAt: [4, 10, 18], ringOpacity: 0.32,
+    colors: { fire: 0xff7a35, bolt: 0xffe14a, ice: 0x8ad8ff, none: 0xf1e4c8 },
+  },
+
   /** 진동(밀리초, 또는 [진동, 쉼, 진동…]). */
   vibration: {
     hit: 8, crit: 16, kill: 18, hurt: [45], dash: 10, clear: [20, 40, 30], boon: 20, bossPhase: [60, 40, 60],

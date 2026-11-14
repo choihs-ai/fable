@@ -1,9 +1,10 @@
-// 플레이어 능력치: 캐릭터의 기본값 + 영구 강화(메타) + 능력치를 바꾸는 축복을 처음부터 다시 합산해 플레이어에 반영한다.
-// 축복을 얻거나 영구 강화가 바뀌면 다시 부른다. 더했다 빼는 식으로 고치지 않는다.
+// 플레이어 능력치: 캐릭터의 기본값 + 영구 강화(메타) + 능력치를 바꾸는 축복 + 든 무기의 강화 단계를 처음부터 다시 합산해 플레이어에 반영한다.
+// 축복을 얻거나 영구 강화가 바뀌거나 무기를 바꿔 들면 다시 부른다. 더했다 빼는 식으로 고치지 않는다.
 
 import { BOONS } from '../../../data/boons.js';
 import { CHARACTERS } from '../../../data/characters.js';
 import { PLAYER } from '../../../data/player.js';
+import { WEAPON_UPGRADE } from '../../../data/weapons.js';
 import { ticksOf } from '../core/time.js';
 import { metaBonuses } from '../items/meta.js';
 import { getPlayer } from './actors.js';
@@ -28,7 +29,9 @@ export function refreshPlayerStats(state) {
   if (player.hp > maxHp) player.hp = maxHp;
 
   player.speed = character.speed * (has('fleet') ? BOONS.fleet.speedMul : 1);
-  player.power = 1 + bonus.power + (has('glass_cannon') ? BOONS.glass_cannon.power : 0);
+  // 든 무기의 강화 단계만큼 공격 배율이 오른다(바꿔 들면 다시 합산한다).
+  const level = kit.levels ? kit.levels[kit.slot] : 0;
+  player.power = (1 + bonus.power + (has('glass_cannon') ? BOONS.glass_cannon.power : 0)) * (1 + level * WEAPON_UPGRADE.power);
   player.critChance = PLAYER.critChance + (has('conduct') ? BOONS.conduct.critChance : 0) + (has('keen_eye') ? BOONS.keen_eye.critChance : 0);
   player.critDamage = PLAYER.critDamage + (has('keen_current') ? BOONS.keen_current.critDamage : 0);
 

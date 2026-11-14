@@ -26,6 +26,8 @@ export const EVENTS = Object.freeze({
   WEAPON_SWAPPED: 'weapon:swapped',
   /** payload: { weapon, dropped:string|null } — 무기를 주움(자리가 없으면 든 무기와 바꿈) */
   WEAPON_PICKED: 'weapon:picked',
+  /** payload: { weapon, slot, level } — 이미 든 무기를 또 주워 그 칸의 무기가 강해짐 */
+  WEAPON_UPGRADED: 'weapon:upgraded',
   /** payload: { need, have } — 에너지가 모자라 쏘지 못함 */
   ENERGY_EMPTY: 'energy:empty',
   /** payload: { character, type } — 캐릭터 스킬 사용 */

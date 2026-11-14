@@ -1,4 +1,4 @@
-// 한 판 검증: 실제 브라우저에서 타이틀 → 캐릭터 → 봇이 한 판을 끝까지 → 결과 → 거점(영구 강화 구매) → 바로 다시 하기 → 저장하고 타이틀 → 이어하기.
+// 한 판 검증: 실제 브라우저에서 타이틀 → 이야기의 시작 → 캐릭터 → 봇이 한 판을 끝까지 → 결과 → 거점(영구 강화 구매) → 바로 다시 하기 → 저장하고 타이틀 → 이어하기.
 // 그동안 화면이 제대로 그려지는지를 본다(버그 2: 맵이 조각조각 생기거나 깜빡이지 않는가).
 //
 //   node scripts/browser/verify-play.mjs --three <three 패키지 폴더> [--out <화면 갈무리 폴더>] [--character mage] [--seed play-check]
@@ -48,7 +48,17 @@ try {
   await click('[data-action="new"]');
   await frames(page, 3);
   s = await snap();
-  check('새 게임 → 캐릭터 고르기', s.screen === 'characters');
+  // 처음 하는 판: 이야기의 시작이 먼저 뜨고, 쪽을 다 넘기면 탈 고르기로 간다.
+  const prologue = [];
+  for (let i = 0; i < 10 && s.screen === 'story'; i++) {
+    prologue.push(await page.evaluate(() => document.querySelector('.story .page')?.textContent ?? ''));
+    if (i === 0) await shot('play-01b-story');
+    await click('[data-action="story-next"]');
+    await frames(page, 3);
+    s = await snap();
+  }
+  check('새 게임(처음) → 이야기의 시작을 쪽마다 넘긴다', prologue.length >= 2 && new Set(prologue).size === prologue.length && prologue.every(Boolean), prologue);
+  check('이야기를 다 보면 → 탈 고르기', s.screen === 'characters');
   await shot('play-02-characters');
   if (CHARACTER !== 'knight') {
     await page.evaluate(() => {
@@ -170,7 +180,16 @@ try {
   s = await snap();
   const seen = await page.evaluate(() => window.__seen);
   check('한 판이 끝까지 돈다(승리 또는 사망)', ['gameOver', 'victory'].includes(s.phase), { phase: s.phase, rooms: s.run.roomsCleared, kills: s.run.kills, sec: (s.tick / 60).toFixed(0) });
+  // 처음 이기면 엔딩이 먼저 뜬다(건너뛰기).
+  if (s.screen === 'story') {
+    await shot('play-05a-ending');
+    check('처음 이긴 판: 엔딩이 뜬다', s.phase === 'victory', { phase: s.phase });
+    await click('[data-action="story-skip"]');
+    await frames(page, 3);
+    s = await snap();
+  }
   check('결과 화면이 뜬다', s.screen === 'result');
+  check('결과 화면에 이야기 한 줄이 있다', await page.evaluate(() => (document.querySelector('.story-line')?.textContent ?? '').length > 0));
   const second = seen.floors.find((fl) => fl.floor === 2);
   check('포털로 2층에 넘어간다: 넘어가는 순간 화면이 가려져 있고 셰이더를 다시 준비한다', Boolean(second) && second.veil > 0.9 && second.compile >= 2, seen.floors);
   await shot('play-05-result');

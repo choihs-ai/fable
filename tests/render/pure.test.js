@@ -191,3 +191,29 @@ test('처치된 몸: 맞은 방향으로 날아가며 솟았다가 바닥에 떨
   assert.equal(end.h, 0);
   assert.ok(end.dx > mid.dx, '땅에 닿은 뒤에도 조금 미끄러진다');
 });
+
+test('축복의 기운: 계열마다 축복 두 개에 구슬 하나(최대 셋), 합성 축복은 두 계열을 다 세고, 축복이 쌓이면 발밑 고리가 는다', async () => {
+  const { auraPlan } = await import('../../src/render/entities/aura-plan.js');
+  const { BOONS } = await import('../../data/boons.js');
+  const { FEEL } = await import('../../data/feel.js');
+  const A = FEEL.aura;
+  const empty = auraPlan([], BOONS, A);
+  assert.deepEqual(empty.orbs, []);
+  assert.equal(empty.rings, 0);
+  assert.equal(empty.dominant, 'none');
+  const of = (family) => Object.keys(BOONS).filter((id) => BOONS[id].family === family && !BOONS[id].duo);
+  const fire = of('fire');
+  const one = auraPlan(fire.slice(0, 1), BOONS, A);
+  assert.equal(one.orbs.length, 1, '하나만 있어도 구슬 하나');
+  assert.equal(one.dominant, 'fire');
+  const many = auraPlan(fire, BOONS, A);
+  assert.equal(many.orbs.filter((o) => o.family === 'fire').length, A.maxOrbs, '최대 수를 넘지 않는다');
+  const duo = Object.keys(BOONS).find((id) => Array.isArray(BOONS[id].duo));
+  const mixed = auraPlan([duo], BOONS, A);
+  assert.deepEqual(Object.values(mixed.counts).filter((n) => n > 0).length, 2, '합성 축복은 두 계열');
+  const all = Object.keys(BOONS);
+  assert.equal(auraPlan(all.slice(0, A.ringsAt[0] - 1), BOONS, A).rings, 0);
+  assert.equal(auraPlan(all.slice(0, A.ringsAt[0]), BOONS, A).rings, 1);
+  assert.equal(auraPlan(all, BOONS, A).rings, A.ringsAt.length);
+  assert.deepEqual(auraPlan(['없는 축복'], BOONS, A).orbs, [], '모르는 이름은 무시한다');
+});

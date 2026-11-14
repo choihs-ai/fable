@@ -5,7 +5,7 @@
 import { CHARACTERS } from '../../../data/characters.js';
 import { BOONS } from '../../../data/boons.js';
 import { SAVE } from '../../../data/save.js';
-import { WEAPONS } from '../../../data/weapons.js';
+import { WEAPONS, WEAPON_UPGRADE } from '../../../data/weapons.js';
 import { RNG_STREAMS } from '../core/state.js';
 import { TOTAL_FLOORS } from '../world/floors.js';
 import { createReport, isInt, isKeyOf, isNum, isObject, passes } from './schema.js';
@@ -23,7 +23,7 @@ function good(check, value) {
  * @param {*} data 세이브 본문 또는 실행 중이던 상태
  * @returns {{ ok:true, core:object, repaired:string[] } | { ok:false, reason:string }}
  *   core: { seed, tick, rng, run:{ floor, character, gold, boons, boonState, freeRerolls, kills, eliteKills, bossKills, roomsCleared },
- *           kit:{ weapons, slot, energy, forms }|null, hp, nextId, pendingChoice } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
+ *           kit:{ weapons, levels, slot, energy, forms }|null, hp, nextId, pendingChoice } — rng 는 스트림 이름 → 수열 위치(숫자 4개) 또는 null,
  *           kit 은 플레이어의 무기와 에너지 또는 null, hp 는 플레이어 체력 또는 null, pendingChoice 는 축복 3택1 이 떠 있었는가
  *   repaired: 기본값으로 되돌린 항목
  */
@@ -83,7 +83,9 @@ export function extractCore(data) {
       let forms = Array.isArray(rawKit.forms) && rawKit.forms.length === 2 ? rawKit.forms.map((id) => (isKeyOf(CHARACTERS, id) ? id : null)) : [null, null];
       if (forms[0] !== null && forms[0] === forms[1]) forms[1] = null;
       if (forms[0] === null && forms[1] === null) forms = null;
-      kit = { weapons, slot: weapons[slot] !== null ? slot : 1 - slot, energy: isNum(rawKit.energy, 0, L.count) ? rawKit.energy : 0, forms };
+      // 무기 강화 단계: 무기가 있는 칸의 올바른 값만 건지고 나머지는 0.
+      const levels = weapons.map((id, i) => (id !== null && Array.isArray(rawKit.levels) && isInt(rawKit.levels[i], 0, WEAPON_UPGRADE.max) ? rawKit.levels[i] : 0));
+      kit = { weapons, levels, slot: weapons[slot] !== null ? slot : 1 - slot, energy: isNum(rawKit.energy, 0, L.count) ? rawKit.energy : 0, forms };
     }
   }
   if (kit === null) repaired.push('player.kit');

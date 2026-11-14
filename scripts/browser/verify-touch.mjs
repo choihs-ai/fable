@@ -75,11 +75,16 @@ try {
   check('오디오: 첫 터치 전에는 시작하지 않는다', (await read()).audio.unlocked === false);
   await page.touchscreen.tap(...Object.values(await center('[data-action="new"]')));
   await settle();
+  // 처음 하는 판이면 이야기의 시작이 먼저 뜬다 — 건너뛰기를 터치로.
+  if (await page.$('[data-action="story-skip"]')) {
+    await page.touchscreen.tap(...Object.values(await center('[data-action="story-skip"]')));
+    await settle();
+  }
   await page.touchscreen.tap(...Object.values(await center('[data-action="start-knight"]')));
   await frames(page, 40);
   let s = await read();
   check('오디오: 첫 터치 뒤에 시작한다', s.audio.unlocked && s.audio.state === 'running', s.audio);
-  check('새 게임(터치로 두 화면): 플레이 중이고 조작부가 보인다', s.phase === 'playing' && !s.padHidden, { phase: s.phase, screen: s.screen });
+  check('새 게임(터치로 이야기 건너뛰기 → 탈 고르기): 플레이 중이고 조작부가 보인다', s.phase === 'playing' && !s.padHidden, { phase: s.phase, screen: s.screen });
 
   // ── 버그 1: 두 번 두드려 확대 ──
   const view = page.viewportSize();
@@ -166,7 +171,7 @@ try {
   const before = await read();
   await page.waitForTimeout(400);
   s = await read();
-  check('조이스틱: 오른쪽으로 밀면 이동 입력이 들어가고 실제로 움직인다', s.input.moveX > 0.95 && s.x > before.x + 0.5, { moveX: s.input.moveX, dx: +(s.x - before.x).toFixed(2) });
+  check('조이스틱: 오른쪽으로 밀면 이동 입력이 들어가고 실제로 움직인다', s.input.moveX > 0.95 && s.x > before.x + 0.5, { moveX: s.input.moveX, dx: +(s.x - before.x).toFixed(2), phase: s.phase, ticks: s.tick - before.tick, screen: s.screen, x: s.x, y: s.y });
 
   // ── 멀티터치: 스틱 + 공격(끌어서 수동 조준) + 대시 ──
   await touch(cdp, 'touchStart', [{ id: 1, x: stick.x + 90, y: stick.y }, { id: 2, ...attack }]);

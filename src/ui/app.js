@@ -5,7 +5,9 @@
 //   - 축복 3택1 이 제시돼 있으면 그 화면을 띄운다(세이브에서 이어한 경우에도 — 이벤트가 아니라 상태를 본다).
 //   - 런이 끝나면 결과 화면을 띄운다.
 
+import { BOSSES } from '../../data/bosses.js';
 import { CHARACTERS } from '../../data/characters.js';
+import { STORY } from '../../data/story.js';
 import { ZONES } from '../../data/zones.js';
 import { EVENTS } from '../logic/core/events.js';
 import { PHASE } from '../logic/core/state.js';
@@ -66,6 +68,16 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
     },
   });
 
+  /** 보스 방이면 그 층 구역의 보스 id(이야기가 있는 것만), 아니면 null. */
+  function bossOfRoom(roomId) {
+    const { state } = getGame();
+    const room = state.world && state.world.rooms[roomId];
+    if (!room || room.kind !== 'boss') return null;
+    const zone = ZONES.find((z) => z.id === state.world.zoneId);
+    const id = zone && zone.boss ? zone.boss.id : null;
+    return id && Object.hasOwn(STORY.bosses, id) && Object.hasOwn(BOSSES, id) ? id : null;
+  }
+
   function syncVisibility() {
     const { state } = getGame();
     const inRun = state.world !== null && state.phase !== PHASE.TITLE;
@@ -103,7 +115,9 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
       const offs = [
         bus.on(EVENTS.RUN_ENDED, ({ victory }) => {
           haptics.pulse('death');
-          screens.open('result');
+          // 처음 여섯 층을 다 깨면 엔딩을 먼저 보여 준다.
+          if (victory && getGame().state.meta.victories === 1) screens.story(STORY.ending, () => screens.open('result'));
+          else screens.open('result');
           hud.toast(victory ? '탈출!' : '쓰러졌다');
         }),
         bus.on(EVENTS.DAMAGE_DEALT, ({ targetId, sourceId, amount, crit }) => {
@@ -116,15 +130,23 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
         }),
         bus.on(EVENTS.PLAYER_DASHED, () => haptics.pulse('dash')),
         bus.on(EVENTS.SKILL_USED, () => haptics.pulse('skill')),
-        bus.on(EVENTS.DOORS_LOCKED, () => {
+        bus.on(EVENTS.DOORS_LOCKED, ({ roomId }) => {
           haptics.pulse('door');
-          hud.banner('문이 잠겼다', 'lock');
+          // 보스 방은 보스의 한 마디가 큰 글자를 대신한다(같은 자리에 겹치지 않게).
+          const boss = bossOfRoom(roomId);
+          if (boss) hud.say(BOSSES[boss].name, STORY.bosses[boss].intro, 'boss');
+          else hud.banner('문이 잠겼다', 'lock');
         }),
         bus.on(EVENTS.WAVE_STARTED, ({ wave, waves }) => {
           if (wave > 0) hud.banner(`${wave + 1}/${waves} 물결`, 'wave');
         }),
-        bus.on(EVENTS.ROOM_CLEARED, ({ kind, reward }) => {
+        bus.on(EVENTS.ROOM_CLEARED, ({ roomId, kind, reward }) => {
           haptics.pulse('clear');
+          const boss = bossOfRoom(roomId);
+          if (boss) {
+            hud.say(BOSSES[boss].name, STORY.bosses[boss].defeat, 'defeat');
+            return;
+          }
           hud.banner(kind === 'boss' ? '보스를 쓰러뜨렸다' : `방 정리${REWARD_NAMES[reward] ? ` · ${REWARD_NAMES[reward]}` : ''}`, 'clear');
         }),
         bus.on(EVENTS.BOON_CHOSEN, ({ boon }) => {
@@ -132,6 +154,10 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
           hud.toast(boonName(boon));
         }),
         bus.on(EVENTS.WEAPON_PICKED, ({ weapon }) => hud.toast(`${weaponName(weapon)}을(를) 들었다`)),
+        bus.on(EVENTS.WEAPON_UPGRADED, ({ weapon, level }) => {
+          haptics.pulse('boon');
+          hud.banner(`${weaponName(weapon)} +${level}`, 'clear');
+        }),
         bus.on(EVENTS.FORM_CHANGED, ({ to, picked, burst }) => {
           haptics.pulse(burst ? 'skill' : 'dash');
           if (picked) hud.toast(`${characterName(to)}의 탈을 썼다`);
@@ -139,7 +165,11 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
         }),
         bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 없다 — 바꿔 들거나 구슬을 주워라')),
         bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길', 'clear')),
-        bus.on(EVENTS.FLOOR_ENTERED, ({ floor, zoneId }) => hud.banner(`${floor}층 · ${ZONES.find((z) => z.id === zoneId)?.name ?? ''}`, 'stage')),
+        bus.on(EVENTS.FLOOR_ENTERED, ({ floor, zoneId }) => {
+          const chapter = STORY.chapters[zoneId];
+          if (chapter) hud.say(chapter.title, chapter.line, 'chapter');
+          else hud.banner(`${floor}층 · ${ZONES.find((z) => z.id === zoneId)?.name ?? ''}`, 'stage');
+        }),
         bus.on(EVENTS.BOSS_PHASE_CHANGED, () => haptics.pulse('bossPhase')),
         bus.on(EVENTS.DROP_COLLECTED, ({ kind }) => {
           if (kind === 'gold' || kind === 'energy' || kind === 'health') haptics.pulse('pickup');

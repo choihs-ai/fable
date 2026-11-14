@@ -7,7 +7,7 @@ import { Rng } from './prng.js';
  * 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다.
  * 5: 방 단위 액션 로그라이트로 바꾸면서 런의 구조가 통째로 달라졌다(4 이하의 런은 이어할 수 없다).
  */
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',

@@ -64,6 +64,21 @@ const RUN_MIGRATIONS = {
     }
     return run;
   },
+  // v8 → v9(무기 강화): 플레이어의 무기 칸마다 강화 단계(kit.levels), 바닥에 놓인 무기에도 단계(level)가 생겼다.
+  8(run) {
+    run.version = 9;
+    const byId = isObject(run.entities) && isObject(run.entities.byId) ? run.entities.byId : {};
+    for (const key of Object.keys(byId)) {
+      const actor = byId[key];
+      if (isObject(actor) && isObject(actor.kit)) fill(actor.kit, { levels: [0, 0] });
+    }
+    if (Array.isArray(run.drops)) {
+      for (const drop of run.drops) {
+        if (isObject(drop) && drop.kind === 'weapon') fill(drop, { level: 0 });
+      }
+    }
+    return run;
+  },
 };
 
 const META_MIGRATIONS = {

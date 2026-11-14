@@ -132,6 +132,8 @@ export function spawnPlayer(state, bus, x, y) {
     rechargeTicks: 1,
     /** 무기 두 칸(빈 칸은 null)과 지금 든 칸. */
     weapons: [character.weapons[0], character.weapons[1] ?? null],
+    /** 무기 칸마다의 강화 단계(0 ~ WEAPON_UPGRADE.max). 빈 칸은 0. */
+    levels: [0, 0],
     slot: 0,
     /** 기억해 둔 입력: { kind:'dash'|'skill', until } 또는 null. */
     buffer: null,

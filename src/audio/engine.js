@@ -214,6 +214,7 @@ export function createAudio({ contextClass = () => globalThis.AudioContext ?? gl
         bus.on(EVENTS.CHAIN_LIGHTNING, play('bolt')),
         bus.on(EVENTS.DROP_COLLECTED, (e) => this.play(e.kind === 'gold' ? 'coin' : 'pickup')),
         bus.on(EVENTS.BOON_CHOSEN, play('boon')),
+        bus.on(EVENTS.WEAPON_UPGRADED, play('boon')),
         bus.on(EVENTS.SHOP_PURCHASE, play('coin')),
         bus.on(EVENTS.DOORS_LOCKED, play('doorLock')),
         bus.on(EVENTS.DOORS_OPENED, play('doorOpen')),

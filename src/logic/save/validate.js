@@ -13,7 +13,7 @@ import { CHARACTERS } from '../../../data/characters.js';
 import { ENEMIES } from '../../../data/enemies.js';
 import { SAVE } from '../../../data/save.js';
 import { STATUSES } from '../../../data/statuses.js';
-import { WEAPONS } from '../../../data/weapons.js';
+import { WEAPONS, WEAPON_UPGRADE } from '../../../data/weapons.js';
 import { ZONES } from '../../../data/zones.js';
 import { PHASE, RNG_STREAMS, STATE_VERSION } from '../core/state.js';
 import { ACTOR_KIND, PLAYER_DEF, enemyDef } from '../entities/defs.js';
@@ -302,6 +302,7 @@ const kitShape = shape({
   chargeAt: timer,
   rechargeTicks: int(1, L.timerAhead),
   weapons: list(nullable(weaponId), 2, 2),
+  levels: list(int(0, WEAPON_UPGRADE.max), 2, 2),
   slot: among([0, 1]),
   buffer: nullable(shape({ kind: among(['dash', 'skill', 'skill2']), until: timer })),
   dashing: bool,
@@ -435,7 +436,7 @@ const dropShape = variant({
   gold: shape({ ...place, kind: among(['gold']), amount: int(0, L.gold) }),
   energy: shape({ ...place, kind: among(['energy']), amount: int(0, L.count) }),
   health: shape({ ...place, kind: among(['health']), amount: int(0, L.hp) }),
-  weapon: shape({ ...place, kind: among(['weapon']), weapon: weaponId }),
+  weapon: shape({ ...place, kind: among(['weapon']), weapon: weaponId, level: int(0, WEAPON_UPGRADE.max) }),
   form: shape({ ...place, kind: among(['form']), form: keyOf(CHARACTERS) }),
   boon: shape({ ...place, kind: among(['boon']) }),
 }, 'kind');

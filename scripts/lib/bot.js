@@ -6,7 +6,7 @@
 // 난수를 쓰지 않으므로 같은 시드의 판은 언제 돌려도 같은 결과가 나온다.
 
 import { CHARACTERS } from '../../data/characters.js';
-import { WEAPONS } from '../../data/weapons.js';
+import { WEAPONS, WEAPON_UPGRADE } from '../../data/weapons.js';
 import { buyShopItem, chooseBoon, interact, interactTarget, shopPrice, swapWeapons } from '../../src/logic/commands.js';
 import { isReady } from '../../src/logic/combat/abilities.js';
 import { createNavMemory, steerAway, steerToward } from '../../src/logic/combat/ai/steer.js';
@@ -339,8 +339,12 @@ function explore(game, bot, nav, player, input) {
       if (bot.ignored.includes(drop.id)) continue;
       if (drop.kind === 'weapon') {
         const tiers = kit.weapons.filter(Boolean).map((id) => WEAPONS[id].tier);
-        const wanted = kit.weapons.includes(null) || (WEAPONS[drop.weapon].tier > Math.min(...tiers) && keepsMelee(kit, drop.weapon));
-        if (!wanted || kit.weapons.includes(drop.weapon)) {
+        const held = kit.weapons.indexOf(drop.weapon);
+        // 든 무기면 강화(최고 단계가 아닐 때), 아니면 빈 칸이 있거나 더 좋은 무기일 때.
+        const wanted = held !== -1
+          ? kit.levels[held] < WEAPON_UPGRADE.max
+          : kit.weapons.includes(null) || (WEAPONS[drop.weapon].tier > Math.min(...tiers) && keepsMelee(kit, drop.weapon));
+        if (!wanted) {
           bot.ignored.push(drop.id);
           continue;
         }
@@ -368,7 +372,8 @@ function explore(game, bot, nav, player, input) {
     if (want.kind === 'weapon' && target && target.type === 'weapon' && target.dropId === want.id) {
       // 등급이 낮은 쪽을 들고 주우면 그 무기와 바뀐다.
       const other = kit.weapons[1 - kit.slot];
-      if (!kit.weapons.includes(null) && other && WEAPONS[other].tier < WEAPONS[kit.weapons[kit.slot]].tier) swapWeapons(game);
+      const upgrade = kit.weapons.includes(want.weapon);
+      if (!upgrade && !kit.weapons.includes(null) && other && WEAPONS[other].tier < WEAPONS[kit.weapons[kit.slot]].tier) swapWeapons(game);
       interact(game);
       return;
     }

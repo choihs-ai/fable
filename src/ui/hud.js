@@ -40,6 +40,10 @@ export function createHud({ root, on }) {
   const slotOff = h('div', { class: 'slot off', 'data-tap': '', onclick: () => on.swap() }, swapCool, slotOffBody);
   const boons = h('div', { class: 'boons' });
   const banner = h('div', { class: 'banner hidden' });
+  // 이야기 자막: 장 제목·보스의 한 마디. 큰 글자(banner)와 같은 자리라 한쪽이 뜨면 다른 쪽을 감춘다.
+  const captionHead = h('b', { class: 'head' });
+  const captionText = h('span', { class: 'line' });
+  const caption = h('div', { class: 'caption hidden' }, captionHead, captionText);
   const toasts = h('div', { class: 'toasts' });
   const side = h('div', { class: 'side' });
   const hud = h('div', { class: 'hud hidden' },
@@ -55,6 +59,7 @@ export function createHud({ root, on }) {
         h('div', { class: 'purse' }, icon('coin'), gold),
         h('button', { class: 'btn icon-only', 'data-hud': 'pause', 'aria-label': '일시정지', onclick: () => on.pause() }, icon('pause')),
         side)),
+    caption,
     banner);
   root.append(hud, toasts);
   const minimap = createMinimap(side);
@@ -67,6 +72,7 @@ export function createHud({ root, on }) {
     fn(value);
   };
   let bannerTimer = null;
+  let captionTimer = null;
 
   return {
     setVisible(visible) {
@@ -82,10 +88,20 @@ export function createHud({ root, on }) {
     },
     /** 화면 가운데의 큰 글자(방 깨기, 웨이브). */
     banner(text, kind = '') {
+      caption.classList.add('hidden');
       banner.textContent = text;
       banner.className = `banner ${kind}`;
       clearTimeout(bannerTimer);
       bannerTimer = setTimeout(() => banner.classList.add('hidden'), 1300);
+    },
+    /** 이야기 자막(장 제목, 보스의 말). kind: 'chapter' | 'boss' | 'defeat'. */
+    say(head, text, kind = '', ms = UI.captionMs) {
+      banner.classList.add('hidden');
+      captionHead.textContent = head;
+      captionText.textContent = text;
+      caption.className = `caption ${kind}`;
+      clearTimeout(captionTimer);
+      captionTimer = setTimeout(() => caption.classList.add('hidden'), ms);
     },
     /**
      * 상태를 그린다. @returns {object} 조작부에 넘길 표시(재사용 대기, 대시 충전, 상호작용 글자)
@@ -105,19 +121,21 @@ export function createHud({ root, on }) {
         setText(enText, v);
       });
       changed('gold', state.run.gold, (v) => setText(gold, `${v}`));
-      changed('slots', `${kit.weapons.join(',')}|${kit.forms.join(',')}|${kit.character}|${kit.slot}|${kit.dualUntil > state.tick}`, () => {
+      changed('slots', `${kit.weapons.join(',')}|${kit.levels.join(',')}|${kit.forms.join(',')}|${kit.character}|${kit.slot}|${kit.dualUntil > state.tick}`, () => {
         const main = kit.weapons[kit.slot];
         const off = kit.weapons[1 - kit.slot];
         const offForm = kit.forms[1 - kit.slot];
         const cost = main && WEAPONS[main].kind !== 'melee' ? WEAPONS[main].energy : null;
+        // 강화 단계는 이름 뒤에 +N 으로.
+        const named = (id, slot) => (id ? `${weaponName(id)}${kit.levels[slot] > 0 ? ` +${kit.levels[slot]}` : ''}` : '빈 칸');
         slotMain.replaceChildren(
           maskPortrait(kit.character),
           h('div', { class: 'names' },
             h('b', { text: characterName(kit.character) }),
-            h('span', { class: 'weapon' }, icon(cost === null ? 'blade' : 'bolt'), h('span', { text: cost === null ? weaponName(main) : `${weaponName(main)} ${cost}` }))));
+            h('span', { class: 'weapon' }, icon(cost === null ? 'blade' : 'bolt'), h('span', { text: cost === null ? named(main, kit.slot) : `${named(main, kit.slot)} ${cost}` }))));
         slotOffBody.replaceChildren(
           offForm && offForm !== kit.character ? maskPortrait(offForm) : icon('swap'),
-          h('span', { class: 'weapon', text: off ? weaponName(off) : '빈 칸' }));
+          h('span', { class: 'weapon', text: named(off, 1 - kit.slot) }));
         slotOff.classList.toggle('empty', !off);
         slotOff.classList.toggle('has-mask', Boolean(offForm && offForm !== kit.character));
         hud.classList.toggle('dual', kit.dualUntil > state.tick);
@@ -169,7 +187,7 @@ export function createHud({ root, on }) {
       });
       const target = interactTarget(state);
       let interact = null;
-      if (target) interact = target.type === 'weapon' ? weaponName(target.weapon) : target.type === 'form' ? `${characterName(target.form)}의 탈` : target.type === 'shop' ? '상점' : '포털';
+      if (target) interact = target.type === 'weapon' ? (kit.weapons.includes(target.weapon) ? `${weaponName(target.weapon)} 강화` : weaponName(target.weapon)) : target.type === 'form' ? `${characterName(target.form)}의 탈` : target.type === 'shop' ? '상점' : '포털';
       const recharge = kit.chargeAt > 0 ? Math.max(0, kit.chargeAt - state.tick) / kit.rechargeTicks : 0;
       cooling.dash = kit.charges === 0 ? recharge : 0;
       return {

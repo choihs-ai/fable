@@ -18,6 +18,7 @@ import { addShake, decayShake, distanceScale, followStep, shakeOffset } from './
 import { createAssets } from './assets.js';
 import { createEffects } from './effects/effects.js';
 import { createActorViews } from './entities/actor-views.js';
+import { createAura } from './entities/aura.js';
 import { createFloorView } from './world/floor-view.js';
 
 /**
@@ -59,6 +60,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
   const rng = Rng.fromSeed('render:cosmetic');
   const assets = createAssets();
   const actors = createActorViews({ scene, assets });
+  const aura = createAura({ scene, assets });
   const effects = createEffects({ scene, assets, rng });
 
   let floorView = null;
@@ -100,6 +102,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     floorView = null;
     shownTiles = null;
     actors.clear();
+    aura.clear();
     effects.clear();
     hasFocus = false;
   }
@@ -108,11 +111,13 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
   function precompile() {
     const started = performance.now();
     const restoreActors = actors.prewarm();
+    const restoreAura = aura.prewarm();
     const restoreEffects = effects.prewarm();
     const restoreFloor = floorView ? floorView.prewarm() : () => {};
     renderer.compile(scene, camera);
     restoreFloor();
     restoreEffects();
+    restoreAura();
     restoreActors();
     lastCompileMs = performance.now() - started;
     compiles++;
@@ -155,6 +160,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
       const player = state.playerId !== null ? state.entities.byId[state.playerId] : null;
       const shown = player ? actors.positionOf(player.id) : null;
       floorView.update(state, shown, dtSec, clock);
+      aura.update(state, shown, clock);
       effects.update(state, alpha, dtSec, clock);
 
       if (shown) {
@@ -338,6 +344,7 @@ export function createRenderer({ canvas, config, quality = 'medium' }) {
     dispose() {
       leaveFloor();
       actors.dispose();
+      aura.dispose();
       effects.dispose();
       assets.dispose();
       veilGeometry.dispose();

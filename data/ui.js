@@ -34,5 +34,5 @@ export const INPUT = deepFreeze({
   },
 });
 
-/** 알림 문구가 떠 있는 시간(ms). */
-export const UI = deepFreeze({ toastMs: 2600 });
+/** 알림 문구(toastMs)와 이야기 자막 — 장 제목·보스의 말(captionMs) — 이 떠 있는 시간(ms). */
+export const UI = deepFreeze({ toastMs: 2600, captionMs: 3200 });

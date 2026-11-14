@@ -1,4 +1,4 @@
-// 화면들: 타이틀, 캐릭터 고르기, 거점(영구 강화·캐릭터 해금), 축복 3택1, 상점, 일시정지, 설정, 결과(사망·승리).
+// 화면들: 타이틀, 캐릭터 고르기, 거점(탈방 — 영구 강화·캐릭터 해금·저주), 축복 3택1, 상점, 일시정지, 설정, 결과(사망·승리), 이야기(쪽 넘기기).
 // 화면은 상태를 읽어 그리고, 바꾸는 일은 명령(logic/commands.js)과 main.js 가 준 actions 로만 한다.
 
 import { BOONS, BOON_RULES } from '../../data/boons.js';
@@ -6,6 +6,7 @@ import { CHARACTERS, CHARACTER_ORDER } from '../../data/characters.js';
 import { ZONES } from '../../data/zones.js';
 import { CURSE, UPGRADES } from '../../data/meta.js';
 import { SETTINGS } from '../../data/settings.js';
+import { STORY } from '../../data/story.js';
 import { WEAPONS } from '../../data/weapons.js';
 import {
   boonRerollCost, buyMetaUpgrade, buyShopItem, chooseBoon, rerollBoons, rerollShop, setMetaCurse, shopPrice, unlockMetaCharacter,
@@ -32,6 +33,8 @@ export function createScreens({ layer, ctx }) {
   let returnTo = null;
   /** 진행 중인 런이 있을 때 "새 게임"은 두 번 눌러야 한다. */
   let confirmNew = false;
+  /** 이야기 화면: 쪽 목록, 지금 쪽, 다 보면 할 일. */
+  let story = null;
 
   const game = () => ctx.getGame();
   const state = () => game().state;
@@ -67,7 +70,7 @@ export function createScreens({ layer, ctx }) {
     return h('div', { class: 'title' },
       h('div', { class: 'parade' }, CHARACTER_ORDER.map((id) => maskPortrait(id, state().meta.characters[id] === true ? '' : 'locked'))),
       h('h1', { class: 'logo', text: 'FABLE' }),
-      h('p', { class: 'strip', text: '탈을 바꿔 쓰고, 여섯 층을 뚫고 내려간다' }),
+      h('p', { class: 'strip', text: '도둑맞은 탈을 되찾으러, 여섯 층 아래로' }),
       ...session.notices.map((n) => h('p', { class: 'notice', text: n })),
       h('div', { class: 'menu' },
         cont ? button([maskPortrait(cont.character), h('span', { text: `이어하기 · ${cont.floor}층 ${ZONES[cont.floor - 1]?.name ?? ''}` })], () => ctx.actions.continueGame(), { class: 'primary', action: 'continue' }) : null,
@@ -77,9 +80,11 @@ export function createScreens({ layer, ctx }) {
             render();
             return;
           }
-          open('characters', 'title');
+          // 아직 한 판도 끝내지 않았으면 이야기의 시작을 먼저 보여 준다.
+          if (state().meta.runs === 0) showStory(STORY.prologue, () => open('characters', 'title'));
+          else open('characters', 'title');
         }, { class: cont ? (confirmNew ? 'danger' : '') : 'primary', action: 'new' }),
-        button('거점', () => open('hub', 'title'), { action: 'hub' }),
+        button('탈방', () => open('hub', 'title'), { action: 'hub' }),
         button('설정', () => open('settings', 'title'), { action: 'settings' })),
       souls());
   }
@@ -93,6 +98,7 @@ export function createScreens({ layer, ctx }) {
       const owned = meta.characters[id] === true;
       return h('div', { class: `card mask-card ${owned ? '' : 'locked'}`, 'data-character': id },
         h('div', { class: 'head' }, maskPortrait(id), h('div', {}, h('h3', { text: c.name }), h('p', { text: c.desc }))),
+        STORY.masks[id] ? h('p', { class: 'lore', text: STORY.masks[id] }) : null,
         h('div', { class: 'gauges' },
           gauge('체력', c.hp, all.map((x) => x.hp)), gauge('속도', c.speed, all.map((x) => x.speed)), gauge('에너지', c.energy, all.map((x) => x.energy))),
         h('p', { class: 'line' }, icon('blade'), h('span', { text: c.weapons.map(weaponName).join(' · ') })),
@@ -144,10 +150,17 @@ export function createScreens({ layer, ctx }) {
         button('+', () => { run(setMetaCurse(game(), meta.curse + 1)); ctx.actions.metaChanged(); }, { class: 'toggle', disabled: meta.curse >= meta.curseMax, action: 'curse-up' }))
       : h('p', { class: 'meta', text: '여섯 층을 모두 뚫으면 저주가 열린다.' });
     const stats = h('p', { class: 'meta', text: `${meta.runs}판 · ${meta.victories}번 탈출 · 한 판에 방 ${meta.bestRooms}개까지 · ${meta.totalKills}마리 처치` });
-    return panel('거점', souls(), curse, h('div', { class: 'list scroll' }, rows), stats,
+    const keeper = h('div', { class: 'keeper' }, maskPortrait('shaman'), h('p', {}, h('b', { text: '탈방지기 ' }), keeperLine(meta)));
+    // 이야기 다시 보기: 시작, 그리고 한 번 깼으면 끝까지.
+    const replay = () => {
+      const back = returnTo;
+      showStory(meta.victories > 0 ? [...STORY.prologue, ...STORY.ending] : STORY.prologue, () => open('hub', back));
+    };
+    return panel('탈방', keeper, souls(), curse, h('div', { class: 'list scroll' }, rows), stats,
       h('div', { class: 'pair' },
         button('탈 고르기', () => open('characters', 'hub'), { action: 'characters' }),
-        button('돌아가기', () => close(), { class: 'primary', action: 'back' })));
+        button('이야기', replay, { action: 'story' })),
+      button('돌아가기', () => close(), { class: 'primary', action: 'back' }));
   }
 
   // ── 축복 3택1 ──
@@ -263,15 +276,64 @@ export function createScreens({ layer, ctx }) {
       h('div', { class: 'tallies' },
         tally('door', '닿은 곳', `${last.floor}층 ${ZONES[last.floor - 1]?.name ?? ''}`), tally('check', '정리한 방', last.roomsCleared), tally('blade', '처치', last.kills), tally('skull', '정예 · 보스', last.eliteKills + last.bossKills)),
       h('div', { class: 'reward' }, icon('soul'), h('span', { class: 'num', text: `+${last.souls}` })),
+      h('p', { class: 'story-line', text: resultLine(last) }),
       last.curseUnlocked ? h('p', { class: 'unlock', text: `저주 ${last.curseUnlocked}단계가 열렸다` }) : null,
-      h('p', { class: 'meta', text: `영혼석 ${s.meta.souls}개. 거점에서 강화를 사거나 새 탈을 푼다.` }),
+      h('p', { class: 'meta', text: `영혼석 ${s.meta.souls}개. 탈방에서 강화를 사거나 새 탈을 푼다.` }),
       button('한 판 더', () => ctx.actions.retry(), { class: 'primary', action: 'retry' }),
       h('div', { class: 'pair' },
-        button('거점', () => ctx.actions.toHub(), { action: 'hub' }),
+        button('탈방', () => ctx.actions.toHub(), { action: 'hub' }),
         button('처음으로', () => ctx.actions.toTitle(), { action: 'title' })));
   }
 
-  const BUILDERS = { title, characters, hub, boon, shop, pause, settings, result };
+  /** 탈방지기의 말: 처음 / 아직 못 깸 / 깬 뒤. 판 수로 돌려 가며 고른다. */
+  function keeperLine(meta) {
+    if (meta.runs === 0) return STORY.keeper.first;
+    const lines = meta.victories > 0 ? STORY.keeper.after : STORY.keeper.early;
+    return lines[meta.runs % lines.length];
+  }
+
+  /** 결과 화면의 한 줄: 쓰러진 곳 또는 저주 단계에 따라. */
+  function resultLine(last) {
+    if (last.victory) return STORY.victoryLines[Math.min(last.curse ?? 0, STORY.victoryLines.length - 1)];
+    const zone = ZONES[last.floor - 1];
+    return (zone && STORY.deathLines[zone.id]) || STORY.deathLines.crypt;
+  }
+
+  // ── 이야기: 한 쪽에 한 줄, 누르면 다음 쪽 ──
+  function storyScreen() {
+    if (!story) return null;
+    const { pages, index } = story;
+    const last = index >= pages.length - 1;
+    return h('div', { class: 'story', onclick: (e) => { if (!e.target.closest('button')) nextPage(); } },
+      h('div', { class: 'parade' }, CHARACTER_ORDER.map((id) => maskPortrait(id))),
+      h('p', { class: 'page', 'data-page': String(index), text: pages[index] }),
+      h('p', { class: 'dots' }, pages.map((_, i) => h('i', { class: i === index ? 'on' : '' }))),
+      h('div', { class: 'pair' },
+        button('건너뛰기', () => endStory(), { action: 'story-skip' }),
+        button(last ? '내려간다' : '다음', () => nextPage(), { class: 'primary', action: 'story-next' })));
+  }
+  function nextPage() {
+    if (!story) return;
+    if (story.index >= story.pages.length - 1) return endStory();
+    story.index += 1;
+    ctx.actions.feedback('click');
+    render();
+    return undefined;
+  }
+  function endStory() {
+    const then = story ? story.then : null;
+    story = null;
+    if (then) then();
+    else close();
+  }
+  /** 이야기를 띄운다. 다 보거나 건너뛰면 then 을 부른다(없으면 닫는다). */
+  function showStory(pages, then = null) {
+    if (!Array.isArray(pages) || pages.length === 0) throw new RangeError('showStory: 쪽이 없다');
+    story = { pages, index: 0, then };
+    open('story', null);
+  }
+
+  const BUILDERS = { title, characters, hub, boon, shop, pause, settings, result, story: storyScreen };
 
   function render() {
     layer.replaceChildren();
@@ -317,6 +379,7 @@ export function createScreens({ layer, ctx }) {
       returnTo = null;
       close();
     },
+    story: showStory,
     /** 지금 화면을 다시 그린다(금화가 바뀌었을 때 등). */
     refresh: render,
     get current() {

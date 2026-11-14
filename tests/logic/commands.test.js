@@ -7,18 +7,20 @@ import { BOONS, BOON_RULES } from '../../data/boons.js';
 import { CHARACTERS } from '../../data/characters.js';
 import { UPGRADES } from '../../data/meta.js';
 import { SHOP } from '../../data/shop.js';
-import { WEAPONS } from '../../data/weapons.js';
+import { WEAPONS, WEAPON_UPGRADE } from '../../data/weapons.js';
 import {
   boonRerollCost, buyMetaUpgrade, buyShopItem, chooseBoon, interact, interactTarget, rerollBoons, rerollShop, shopPrice, swapWeapons,
   unlockMetaCharacter, usePortal,
 } from '../../src/logic/commands.js';
 import { addDrop, offerBoons } from '../../src/logic/combat/loot.js';
 import { EVENTS } from '../../src/logic/core/events.js';
-import { PHASE } from '../../src/logic/core/state.js';
+import { PHASE, STATE_VERSION } from '../../src/logic/core/state.js';
+import { migrate } from '../../src/logic/save/migrate.js';
 import { createGame, enterFloor, setPhase } from '../../src/logic/game.js';
 import { ROOM_KIND } from '../../src/logic/world/floors.js';
 import { validateRunState } from '../../src/logic/save/validate.js';
 import { createStage } from '../helpers/stage.js';
+import { refreshPlayerStats } from '../../src/logic/entities/stats.js';
 
 const withShop = () => createStage({ seed: 'cmd-shop', need: (map) => map.rooms.some((r) => r.kind === ROOM_KIND.SHOP) });
 function inShop() {
@@ -35,7 +37,7 @@ test('무기 줍기: 빈 칸이 있으면 그 칸에 들고, 없으면 든 무�
   kit.weapons = ['sword', null];
   const drop = addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'bow' });
   assert.deepEqual(interactTarget(s.state), { type: 'weapon', dropId: drop.id, weapon: 'bow' });
-  assert.deepEqual(interact(s.game), { ok: true, type: 'weapon', weapon: 'bow', dropped: null });
+  assert.deepEqual(interact(s.game), { ok: true, type: 'weapon', weapon: 'bow', dropped: null, upgraded: false });
   assert.deepEqual(kit.weapons, ['sword', 'bow']);
   assert.equal(kit.slot, 1, '주운 무기를 든다');
   assert.equal(s.state.drops.length, 0);
@@ -50,6 +52,60 @@ test('무기 줍기: 빈 칸이 있으면 그 칸에 들고, 없으면 든 무�
   interact(s.game);
   assert.deepEqual(kit.weapons, ['sword', 'bow']);
   assert.deepEqual(validateRunState(s.state), []);
+});
+
+test('무기 강화: 든 무기를 또 주우면 그 칸이 한 단계 오르고(주운 무기의 단계도 더함), 든 동안 공격 배율이 오른다', () => {
+  const s = createStage({ seed: 'cmd-upgrade' });
+  const kit = s.player.kit;
+  kit.weapons = ['sword', 'bow'];
+  kit.levels = [0, 0];
+  kit.slot = 0;
+  refreshPlayerStats(s.state);
+  const base = s.player.power;
+  addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'sword' });
+  assert.deepEqual(interact(s.game), { ok: true, type: 'weapon', weapon: 'sword', dropped: null, upgraded: true });
+  assert.deepEqual(kit.levels, [1, 0]);
+  assert.deepEqual(kit.weapons, ['sword', 'bow'], '무기는 그대로');
+  assert.equal(s.state.drops.length, 0, '주운 무기는 사라진다');
+  assert.ok(Math.abs(s.player.power - base * (1 + WEAPON_UPGRADE.power)) < 1e-9, '든 무기의 단계만큼 세진다');
+  assert.deepEqual(s.events(EVENTS.WEAPON_UPGRADED).map(({ weapon, slot, level }) => ({ weapon, slot, level })), [{ weapon: 'sword', slot: 0, level: 1 }]);
+  // 다른 칸의 무기를 강화해도 지금 든 무기의 배율은 그대로, 바꿔 들면 그 칸의 단계를 따른다.
+  addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'bow', level: 1 });
+  interact(s.game);
+  assert.deepEqual(kit.levels, [1, 2], '주운 무기의 단계도 더한다');
+  swapWeapons(s.game);
+  assert.ok(Math.abs(s.player.power - base * (1 + 2 * WEAPON_UPGRADE.power)) < 1e-9);
+  // 최고 단계를 넘지 않고, 최고 단계면 줍지 않는다.
+  addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'bow', level: 3 });
+  interact(s.game);
+  assert.equal(kit.levels[1], WEAPON_UPGRADE.max);
+  addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'bow' });
+  assert.equal(interact(s.game).reason, 'max-level');
+  assert.equal(s.state.drops.length, 1, '최고 단계면 바닥에 그대로');
+  // 다른 무기와 바꾸면 강화된 무기는 단계를 지닌 채 바닥에 놓인다.
+  s.state.drops.length = 0;
+  addDrop(s.state, s.bus, s.player.x + 0.5, s.player.y, { kind: 'weapon', weapon: 'hammer' });
+  interact(s.game);
+  assert.deepEqual(kit.weapons, ['sword', 'hammer']);
+  assert.deepEqual(kit.levels, [1, 0]);
+  assert.deepEqual(s.state.drops.map((d) => [d.weapon, d.level]), [['bow', 3]]);
+  assert.deepEqual(validateRunState(s.state), []);
+});
+
+test('v8 세이브(무기 강화 이전)는 v9 로 올라온다: 무기 칸과 바닥 무기의 단계가 0 이 된다', () => {
+  const s = createStage({ seed: 'cmd-upgrade-migrate' });
+  addDrop(s.state, s.bus, s.player.x + 3, s.player.y, { kind: 'weapon', weapon: 'bow' });
+  const old = JSON.parse(JSON.stringify(s.state));
+  delete old.meta;
+  old.version = 8;
+  delete old.entities.byId[old.playerId].kit.levels;
+  for (const d of old.drops) if (d.kind === 'weapon') delete d.level;
+  const moved = migrate('run', old, 8);
+  assert.equal(moved.ok, true);
+  assert.equal(moved.data.version, STATE_VERSION);
+  assert.deepEqual(moved.data.entities.byId[old.playerId].kit.levels, [0, 0]);
+  assert.ok(moved.data.drops.filter((d) => d.kind === 'weapon').every((d) => d.level === 0));
+  assert.deepEqual(validateRunState({ ...moved.data, meta: s.state.meta }), []);
 });
 
 test('무기 줍기: 멀리 있는 무기는 줍지 못하고, 가장 가까운 것부터 줍는다', () => {

@@ -7,7 +7,7 @@
 import { BOONS } from '../../data/boons.js';
 import { ENCOUNTERS } from '../../data/encounters.js';
 import { SHOP } from '../../data/shop.js';
-import { WEAPONS } from '../../data/weapons.js';
+import { WEAPONS, WEAPON_UPGRADE } from '../../data/weapons.js';
 import { EVENTS } from './core/events.js';
 import { PHASE, rngOf } from './core/state.js';
 import { heal } from './combat/damage.js';
@@ -73,21 +73,40 @@ export function interactTarget(state) {
   return null;
 }
 
-/** 무기를 쥔다: 빈 칸이 있으면 거기에, 없으면 든 무기와 바꾸고 원래 무기는 그 자리에 놓는다. */
-function takeWeapon(game, player, weaponId, x, y) {
+/** 이 무기를 주우면 강화가 되는가(같은 무기를 들고 있다): 그 칸, 없으면 -1. */
+function upgradeSlot(kit, weaponId) {
+  return kit.weapons.indexOf(weaponId);
+}
+
+/**
+ * 무기를 쥔다. 같은 무기를 들고 있으면 그 칸의 무기가 강해진다(주운 무기의 단계도 더한다, 최고 단계까지).
+ * 아니면 빈 칸이 있으면 거기에, 없으면 든 무기와 바꾸고 원래 무기는(그 단계 그대로) 그 자리에 놓는다.
+ * @returns {string|null} 바닥에 놓인 무기
+ */
+function takeWeapon(game, player, weaponId, level, x, y) {
   const kit = player.kit;
+  const same = upgradeSlot(kit, weaponId);
+  if (same !== -1) {
+    kit.levels[same] = Math.min(WEAPON_UPGRADE.max, kit.levels[same] + 1 + level);
+    refreshPlayerStats(game.state);
+    game.bus.emit(EVENTS.WEAPON_UPGRADED, { weapon: weaponId, slot: same, level: kit.levels[same] });
+    return null;
+  }
   const empty = kit.weapons.indexOf(null);
   let dropped = null;
   if (empty !== -1) {
     kit.weapons[empty] = weaponId;
+    kit.levels[empty] = level;
     kit.slot = empty;
   } else {
     dropped = kit.weapons[kit.slot];
+    addDrop(game.state, game.bus, x, y, { kind: 'weapon', weapon: dropped, level: kit.levels[kit.slot] });
     kit.weapons[kit.slot] = weaponId;
-    addDrop(game.state, game.bus, x, y, { kind: 'weapon', weapon: dropped });
+    kit.levels[kit.slot] = level;
   }
   kit.dashAttackUntil = 0;
-  game.bus.emit(EVENTS.WEAPON_PICKED, { weapon: weaponId, dropped });
+  refreshPlayerStats(game.state);
+  game.bus.emit(EVENTS.WEAPON_PICKED, { weapon: weaponId, dropped, level });
   return dropped;
 }
 
@@ -128,10 +147,12 @@ export function interact(game) {
   if (target.type === 'weapon') {
     const { state } = game;
     const drop = state.drops.find((d) => d.id === target.dropId);
+    const same = upgradeSlot(player.kit, drop.weapon);
+    if (same !== -1 && player.kit.levels[same] >= WEAPON_UPGRADE.max) return fail('max-level');
     state.drops = state.drops.filter((d) => d !== drop);
     game.bus.emit(EVENTS.DROP_COLLECTED, { id: drop.id, kind: drop.kind, x: drop.x, y: drop.y });
-    const dropped = takeWeapon(game, player, drop.weapon, drop.x, drop.y);
-    return { ok: true, type: 'weapon', weapon: drop.weapon, dropped };
+    const dropped = takeWeapon(game, player, drop.weapon, drop.level, drop.x, drop.y);
+    return { ok: true, type: 'weapon', weapon: drop.weapon, dropped, upgraded: same !== -1 };
   }
   if (target.type === 'form') {
     const { state } = game;
@@ -251,7 +272,7 @@ export function buyShopItem(game, index) {
   addGold(state, bus, -price);
   if (item.kind === 'weapon') {
     item.sold = true;
-    takeWeapon(game, player, item.weapon, player.x, player.y);
+    takeWeapon(game, player, item.weapon, 0, player.x, player.y);
   } else if (item.kind === 'boon') {
     item.sold = true;
     grantBoon(game, item.boon);

@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { RENDER } from '../../../data/config.js';
 import { FEEL } from '../../../data/feel.js';
+import { DECOR } from '../../../data/decor.js';
 import { ZONES } from '../../../data/zones.js';
 import { REWARD, ROOM_KIND } from '../../logic/world/floors.js';
 import { readStructure } from '../../logic/world/structure.js';
@@ -27,16 +28,37 @@ const color = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0);
 const ICONS = 24;
 
-/** 그 층의 바닥 무늬: 작은 돌판 텍스처(구역 색은 인스턴스 색으로 입힌다). */
-function makeFloorTexture(rng) {
+/** 바닥 무늬 한 칸(32×32, 회색 — 구역 색은 인스턴스 색으로 입힌다). 칸마다 되풀이되므로 가장자리가 이어지게 그린다. */
+const FLOOR_PATTERNS = {
+  /** 돌판: 칸 둘레의 홈과, 칸을 넷으로 나눈 얕은 홈. */
+  flagstone: (x, y, n) => (x === 0 || y === 0 ? 0.62 : x === 16 || y === 16 ? 0.86 : 1) * (0.88 + n * 0.12),
+  /** 벽돌: 8칸 높이의 줄, 줄마다 반 장씩 어긋난다. */
+  brick: (x, y, n) => {
+    const row = y >> 3;
+    const bx = (x + (row % 2) * 8) % 16;
+    return (y % 8 === 0 || bx === 0 ? 0.55 : 1) * (0.84 + n * 0.16);
+  },
+  /** 흙: 줄 없이 얼룩덜룩. */
+  soil: (x, y, n) => 0.8 + 0.1 * ((((x >> 2) * 7 + (y >> 2) * 11) % 5) / 5) + n * 0.07 - ((x * 7 + y * 13) % 29 === 0 ? 0.22 : 0),
+  /** 널빤지: 세로로 8칸 폭, 판 사이 틈과 나뭇결. */
+  planks: (x, y, n) => (x % 8 === 0 ? 0.5 : 1) * (0.86 + 0.1 * (((y + (x >> 3) * 5) % 6) / 6) + n * 0.06) - (x % 8 === 4 && y % 16 === 3 ? 0.3 : 0),
+  /** 갈라진 현무암: 어두운 바탕에 굵은 금. */
+  basalt: (x, y, n) => {
+    const crack = Math.abs(((x * 3 + y * 5) % 32) - 16) < 1 || Math.abs(((x * 5 - y * 2 + 64) % 32) - 9) < 1;
+    return (x === 0 || y === 0 ? 0.7 : 1) * (crack ? 0.45 : 0.82 + n * 0.14);
+  },
+  /** 바둑판: 16칸 네모 넷, 두 가지 밝기. */
+  tiles: (x, y, n) => ((x === 0 || y === 0 || x === 16 || y === 16) ? 0.6 : ((x >> 4) + (y >> 4)) % 2 === 0 ? 1 : 0.8) * (0.94 + n * 0.06),
+};
+
+function makeFloorTexture(rng, pattern) {
+  const shade = FLOOR_PATTERNS[pattern] ?? FLOOR_PATTERNS.flagstone;
   const size = 32;
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const i = y * size + x;
-      // 칸 둘레의 홈과, 칸을 넷으로 나눈 돌판의 얕은 홈.
-      const edge = x === 0 || y === 0 ? 0.62 : x === 16 || y === 16 ? 0.86 : 1;
-      const v = Math.round(255 * edge * (0.88 + rng.float() * 0.12));
+      const v = Math.round(255 * Math.max(0, Math.min(1, shade(x, y, rng.float()))));
       data[i * 4] = v;
       data[i * 4 + 1] = v;
       data[i * 4 + 2] = v;
@@ -48,6 +70,14 @@ function makeFloorTexture(rng) {
   texture.magFilter = THREE.NearestFilter;
   texture.needsUpdate = true;
   return texture;
+}
+
+/** 꾸밈 부품 하나의 행렬(칸 안의 위치·회전·크기). 회전 값은 반 바퀴 단위. */
+function partMatrix(part) {
+  const [sx, sy, sz] = part.s;
+  const [ox, oy, oz] = part.o;
+  const euler = new THREE.Euler((part.tilt ?? 0) * Math.PI, (part.r ?? 0) * Math.PI, (part.roll ?? 0) * Math.PI);
+  return new THREE.Matrix4().compose(new THREE.Vector3(ox, oy, oz), new THREE.Quaternion().setFromEuler(euler), new THREE.Vector3(sx, sy, sz));
 }
 
 /** 보상 아이콘 하나(여러 모양을 미리 달아 두고 하나만 켠다). */
@@ -97,7 +127,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
   const zone = ZONES.find((z) => z.id === world.zoneId) ?? ZONES[0];
   const floorTint = new THREE.Color(zone.palette.floor).multiplyScalar(1.7);
   const wallTint = new THREE.Color(zone.palette.wall).multiplyScalar(2.4);
-  const accent = new THREE.Color(zone.palette.accent);
+  const decor = DECOR[zone.id] ?? DECOR.crypt;
   const { regionAt } = readStructure(tiles, width, height, rooms);
   const regionCount = rooms.length + links.length;
   const added = [];
@@ -136,7 +166,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
     }
   }
 
-  const texture = makeFloorTexture(rng);
+  const texture = makeFloorTexture(rng, decor.floor.pattern);
   assets.materials.floor.map = texture;
   assets.materials.floor.needsUpdate = true;
 
@@ -152,6 +182,26 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
   walls.frustumCulled = false;
 
   const floorRegion = floorCells.map((c) => regionAt[c]);
+  // 칸마다의 바닥 색: 구역 색을 조금씩 흔들고, 방마다 얼룩(이끼·물웅덩이·용암 자국…)을 몇 군데 섞는다.
+  const floorColors = new Float32Array(floorCells.length * 3);
+  {
+    const patchColor = new THREE.Color(decor.floor.patch.color).multiplyScalar(1.7);
+    const patches = [];
+    for (const room of rooms) {
+      const count = Math.round(room.w * room.h * decor.floor.patch.chance);
+      for (let k = 0; k < count; k++) patches.push({ x: room.x + rng.float() * room.w, y: room.y + rng.float() * room.h, r: decor.floor.patch.radius * (0.6 + rng.float() * 0.8) });
+    }
+    floorCells.forEach((cell, i) => {
+      const cx = (cell % width) + 0.5;
+      const cy = Math.floor(cell / width) + 0.5;
+      color.copy(floorTint).multiplyScalar(1 - decor.floor.jitter + rng.float() * decor.floor.jitter * 2);
+      for (const p of patches) {
+        const d2 = (cx - p.x) * (cx - p.x) + (cy - p.y) * (cy - p.y);
+        if (d2 < p.r * p.r) color.lerp(patchColor, 0.6 * (1 - Math.sqrt(d2) / p.r));
+      }
+      color.toArray(floorColors, i * 3);
+    });
+  }
   const wallIndex = new Int32Array(width * height).fill(-1);
   const wallHeight = new Float32Array(wallCells.length).fill(RENDER.wall.height);
   const wallTarget = new Float32Array(wallCells.length).fill(RENDER.wall.height);
@@ -216,11 +266,72 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
   doorBars.forEach((_, i) => setDoor(i));
   addToScene(doorMesh);
 
-  // ── 소품: 북쪽 벽의 횃불·깃발, 바닥의 잔해(밟아도 되는 낮은 것만 — 충돌과 헷갈리지 않게) ──
+  // ── 꾸밈(data/decor.js): 북쪽 벽의 등불과 거는 것, 바닥의 소품, 보스 방의 문양 ──
+  // 모두 밟아도 되는 그림이다(로직은 모른다). 키 큰 소품은 방 둘레 띠에만, 문과 표식(포털·상인) 옆은 비운다.
   const torches = [];
-  const banners = [];
-  const debris = [];
+  /** 꾸밈 종류마다: 놓을 자리 목록과 부품. */
+  const kinds = decor.props.map((kind) => ({ kind, parts: kind.parts, spots: [] }));
+  const wallKind = { kind: { id: 'wall' }, parts: decor.wall.parts, spots: [] };
+  const sigilKind = {
+    kind: { id: 'sigil' },
+    parts: [
+      // 적의 공격 예고(붉게 차오르는 바닥)와 헷갈리지 않게 아주 흐리게.
+      { geo: 'ring', glow: true, color: decor.sigil, s: [2.6, 1, 2.6], o: [0, 0.015, 0], dim: 0.12 },
+      { geo: 'ring', glow: true, color: decor.sigil, s: [1.5, 1, 1.5], o: [0, 0.015, 0], dim: 0.12 },
+      { geo: 'disc', glow: true, color: decor.sigil, s: [1.3, 1, 1.3], o: [0, 0.01, 0], dim: 0.05 },
+    ],
+    spots: [],
+  };
+  const totalWeight = decor.props.reduce((a, k) => a + k.weight, 0);
+  const pickKind = () => {
+    let roll = rng.float() * totalWeight;
+    for (const k of kinds) {
+      roll -= k.kind.weight;
+      if (roll < 0) return k;
+    }
+    return kinds[kinds.length - 1];
+  };
+  /** 문 칸이 둘레 8칸(키 큰 것은 둘레 두 칸) 안에 있는가. */
+  const nearDoor = (x, y, reach) => {
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < width && ny < height && doorCell[ny * width + nx]) return true;
+      }
+    }
+    return false;
+  };
   for (const room of rooms) {
+    const feature = room.feature;
+    const taken = new Set();
+    // 바닥 소품.
+    const n = Math.round(((room.w * room.h) / 22) * decor.density * quality.props);
+    for (let k = 0; k < n * 2 && taken.size < n; k++) {
+      const pick = pickKind();
+      const tall = pick.kind.tall === true;
+      let x;
+      let y;
+      if (tall || rng.float() < 0.55) {
+        // 방 둘레 띠(늘 비어 있는 곳).
+        const edge = rng.float() < 0.5;
+        x = edge ? room.x + (rng.float() < 0.5 ? 0 : room.w - 1) : room.x + Math.floor(rng.float() * room.w);
+        y = edge ? room.y + Math.floor(rng.float() * room.h) : room.y + (rng.float() < 0.5 ? 0 : room.h - 1);
+      } else {
+        x = room.x + Math.floor(rng.float() * room.w);
+        y = room.y + Math.floor(rng.float() * room.h);
+      }
+      const cell = y * width + x;
+      if (taken.has(cell) || regionAt[cell] !== room.id || tiles[cell] === TILE.WALL) continue;
+      if (nearDoor(x, y, tall ? 2 : 1)) continue;
+      if (feature && Math.abs(feature.x - x) <= 1.5 && Math.abs(feature.y - y) <= 1.5) continue;
+      taken.add(cell);
+      const j = tall ? 0.25 : 0.5;
+      pick.spots.push({ x: x + 0.5 + (rng.float() - 0.5) * j, y: y + 0.5 + (rng.float() - 0.5) * j, region: room.id, rot: rng.float() * 2, s: (decor.scale ?? 1) * (0.85 + rng.float() * 0.35) });
+    }
+    // 보스 방: 가운데 바닥의 문양.
+    if (room.kind === ROOM_KIND.BOSS) sigilKind.spots.push({ x: room.x + room.w / 2, y: room.y + room.h / 2, region: room.id, rot: 0, s: 1 });
+    // 북쪽 벽: 등불(양 끝 쪽)과 거는 것(그 사이).
     if (room.shape !== 'rect') continue;
     const north = room.y - 1;
     const spots = [];
@@ -228,24 +339,14 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
       const cell = north * width + x;
       if (tiles[cell] === TILE.WALL && !doorCell[cell] && regionAt[(north + 1) * width + x] === room.id) spots.push(x);
     }
-    // 횃불은 벽의 양 끝 쪽에, 깃발은 그 사이에 드문드문.
     const want = Math.round((room.kind === ROOM_KIND.BOSS ? 4 : 2) * quality.props);
     for (let k = 0; k < Math.min(want, spots.length); k++) {
       const x = spots[Math.floor(((k + 0.5) / want) * spots.length)];
       torches.push({ x: x + 0.5, y: north + 0.92, region: room.id });
     }
-    if (rng.float() < 0.6 * quality.props && spots.length > 4) {
+    if (rng.float() < decor.wall.rate * quality.props && spots.length > 4) {
       const x = spots[Math.floor(spots.length / 2)];
-      banners.push({ x: x + 0.5, y: north + 0.95, region: room.id, color: rng.float() < 0.5 ? accent.getHex() : 0x8a2a2a });
-    }
-    const n = Math.round((room.w * room.h) / 22 * quality.props);
-    for (let k = 0; k < n; k++) {
-      // 벽 둘레 띠(늘 비어 있는 곳)에만 놓는다.
-      const edge = rng.float() < 0.5;
-      const x = edge ? room.x + (rng.float() < 0.5 ? 0 : room.w - 1) : room.x + Math.floor(rng.float() * room.w);
-      const y = edge ? room.y + Math.floor(rng.float() * room.h) : room.y + (rng.float() < 0.5 ? 0 : room.h - 1);
-      if (regionAt[y * width + x] !== room.id) continue;
-      debris.push({ x: x + 0.2 + rng.float() * 0.6, y: y + 0.2 + rng.float() * 0.6, region: room.id, s: 0.08 + rng.float() * 0.1, r: rng.float() * Math.PI, bone: rng.float() < 0.5 });
+      wallKind.spots.push({ x: x + 0.5, y: north + 0.95, region: room.id, rot: 0, s: 1 });
     }
   }
   const instanced = (geometry, material, count) => {
@@ -255,24 +356,39 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
     addToScene(mesh);
     return mesh;
   };
+  const glowWhite = assets.glow(0xffffff, 0.9);
   const torchPost = instanced(assets.geometries.box, assets.materials.prop, torches.length);
-  const torchFlame = instanced(assets.geometries.star, assets.glow(0xffa23a, 0.95), torches.length);
-  const bannerMesh = instanced(assets.geometries.limb, assets.materials.prop, banners.length);
-  const debrisMesh = instanced(assets.geometries.cube, assets.materials.prop, debris.length);
+  const torchFlame = instanced(assets.geometries.star, glowWhite, torches.length);
+  const flameSize = decor.lamp.size;
   torches.forEach((t, i) => {
     torchPost.setMatrixAt(i, matrix.compose(pos.set(t.x, 0.9, t.y), quat.identity(), scale.set(0.08, 0.32, 0.08)));
-    torchFlame.setMatrixAt(i, matrix.compose(pos.set(t.x, 1.32, t.y), quat.identity(), scale.set(0.1, 0.16, 0.1)));
+    torchFlame.setMatrixAt(i, matrix.compose(pos.set(t.x, 1.22 + 0.1 * flameSize, t.y), quat.identity(), scale.set(0.1 * flameSize, 0.16 * flameSize, 0.1 * flameSize)));
   });
-  banners.forEach((b, i) => bannerMesh.setMatrixAt(i, matrix.compose(pos.set(b.x, 1.55, b.y), quat.identity(), scale.set(0.5, 0.95, 0.04))));
-  debris.forEach((d, i) => {
-    quat.setFromAxisAngle(UP, d.r);
-    debrisMesh.setMatrixAt(i, matrix.compose(pos.set(d.x, d.s * 0.3, d.y), quat, scale.set(d.bone ? d.s * 2.4 : d.s, d.s * 0.6, d.s)));
-  });
+  /** 부품마다 InstancedMesh 하나: { mesh, part, spots }. */
+  const decorMeshes = [];
+  const place = new THREE.Matrix4();
+  for (const k of [...kinds, wallKind, sigilKind]) {
+    for (const part of k.parts) {
+      if (!assets.geometries[part.geo]) throw new Error(`floor-view: 꾸밈 "${k.kind.id}" 의 지오메트리 "${part.geo}" 가 없다`);
+      const mesh = instanced(assets.geometries[part.geo], part.glow ? glowWhite : assets.materials.prop, k.spots.length);
+      if (!part.glow) {
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+      }
+      const local = partMatrix(part);
+      k.spots.forEach((spot, i) => {
+        quat.setFromAxisAngle(UP, spot.rot * Math.PI);
+        place.compose(pos.set(spot.x, 0, spot.y), quat, scale.setScalar(spot.s));
+        mesh.setMatrixAt(i, matrix.multiplyMatrices(place, local));
+      });
+      decorMeshes.push({ mesh, part, spots: k.spots });
+    }
+  }
 
   // ── 횃불 빛: 플레이어에게 가까운 것부터 몇 개만 켠다(빛은 비싸다) ──
   const lights = [];
   for (let i = 0; i < quality.lights; i++) {
-    const light = new THREE.PointLight(0xffa25a, 0, 7, 1.6);
+    const light = new THREE.PointLight(decor.lamp.light, 0, 7, 1.6);
     light.position.set(0, -10, 0);
     addToScene(light);
     lights.push(light);
@@ -325,11 +441,10 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
   const target = regionTargets(world);
   // 처음 층에 들어선 순간 이미 드러난 곳(시작 방)은 곧바로 보인다. 화면 페이드가 덮고 있다.
   brightness.set(target);
-  const prop = new THREE.Color(0x6a5a4a);
   function paintRegion(r) {
     const b = brightness[r];
     for (const i of regionFloors[r]) {
-      color.copy(floorTint).multiplyScalar(b);
+      color.fromArray(floorColors, i * 3).multiplyScalar(b);
       floor.setColorAt(i, color);
     }
     for (const i of regionWalls[r]) {
@@ -352,17 +467,16 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
     if (walls.instanceColor) walls.instanceColor.needsUpdate = true;
   }
   function paintProps() {
-    const tint = (mesh, list, base) => {
+    const tint = (mesh, list, base, dim = 1) => {
       list.forEach((item, i) => {
-        color.set(base ?? item.color ?? 0xffffff).multiplyScalar(brightness[item.region] ?? 0);
+        color.set(base ?? item.color ?? 0xffffff).multiplyScalar((brightness[item.region] ?? 0) * dim);
         mesh.setColorAt(i, color);
       });
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     };
-    tint(torchPost, torches, 0x4a3a2a);
-    tint(torchFlame, torches, 0xffffff);
-    tint(bannerMesh, banners);
-    tint(debrisMesh, debris, prop.getHex());
+    tint(torchPost, torches, decor.lamp.post);
+    tint(torchFlame, torches, decor.lamp.flame);
+    for (const d of decorMeshes) tint(d.mesh, d.spots, d.part.color, d.part.dim ?? 1);
     doorBars.forEach((bar, i) => {
       const locked = !bar.door.open && rooms[bar.door.room].state === 'active';
       const base = bar.door.secret && !bar.door.open ? C.secretWall : locked ? C.doorLocked : C.door;
@@ -566,7 +680,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
         else if (brightness[r] > 0) fading++;
       }
       return {
-        floors: floorCells.length, walls: wallCells.length, doors: doorBars.length, torches: torches.length, props: banners.length + debris.length,
+        floors: floorCells.length, walls: wallCells.length, doors: doorBars.length, torches: torches.length, props: decorMeshes.reduce((a, d) => a + d.spots.length, 0), decorMeshes: decorMeshes.length,
         lights: lights.length, lowered: lowered.filter((c) => wallIndex[c] >= 0).length, movingWalls: moving.size,
         regions: { total: regionCount, seen, fading },
         icons: icons.filter((i) => i.group.visible).length,
@@ -580,7 +694,7 @@ export function createFloorView({ scene, assets, world, rng, quality }) {
     /** 이 층에서 만든 것을 모두 버린다: 인스턴스 버퍼, 바닥 텍스처, 빛, 이 층의 메시. */
     dispose() {
       for (const o of added) scene.remove(o);
-      for (const mesh of [floor, walls, doorMesh, torchPost, torchFlame, bannerMesh, debrisMesh]) mesh.dispose();
+      for (const mesh of [floor, walls, doorMesh, torchPost, torchFlame, ...decorMeshes.map((d) => d.mesh)]) mesh.dispose();
       for (const light of lights) light.dispose();
       added.length = 0;
       if (assets.materials.floor.map === texture) {

@@ -125,6 +125,7 @@ function rebuildGame(core, meta, bus) {
   const player = getPlayer(state);
   if (core.kit) {
     player.kit.weapons = [...core.kit.weapons];
+    player.kit.levels = core.kit.levels ? [...core.kit.levels] : [0, 0];
     player.kit.slot = core.kit.slot;
     // 들고 있던 탈을 되돌리고, 든 칸의 탈을 쓴다.
     if (core.kit.forms) {

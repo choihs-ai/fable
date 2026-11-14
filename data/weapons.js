@@ -22,6 +22,13 @@ const R6N = [0.9945, -0.1045];
 export const JITTER = deepFreeze([[1, 0], [0.9986, 0.0523], [0.9986, -0.0523], [0.9945, 0.1045], [0.9945, -0.1045], [0.9877, 0.1564], [0.9877, -0.1564]]);
 
 /** 대시 공격을 따로 정하지 않은 무기에 쓰는 배율. */
+/**
+ * 무기 강화: 이미 든 무기를 또 주우면 그 칸의 무기가 한 단계 오른다(주운 무기의 단계도 더한다).
+ * max 최고 단계, power 단계마다 그 무기를 든 동안의 공격 배율 증가,
+ * offerChance 무기 보상 방이 새 무기 대신 든 무기(최고 단계가 아닌 것)를 내놓을 확률.
+ */
+export const WEAPON_UPGRADE = deepFreeze({ max: 3, power: 0.25, offerChance: 0.35 });
+
 export const DASH_ATTACK = deepFreeze({ damage: 1.7, knockback: 1.6, knockbackAdd: 3, arcRange: 0.6, pierce: 2, radius: 1.3 });
 
 export const WEAPON_ORDER = Object.freeze([
