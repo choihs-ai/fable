@@ -178,10 +178,10 @@ export function createScreens({ layer, ctx }) {
       h('h3', { text: boonName(id) }),
       h('p', { text: b.desc }));
     });
-    return panel('축복 하나',
+    return panel('축복',
       h('div', { class: 'cards' }, cards),
       h('div', { class: 'pair' },
-        button(cost === 0 ? `다시 뽑기 · 공짜 ${state().run.freeRerolls}번` : ['다시 뽑기', ...price('coin', cost)], () => run(rerollBoons(game())), { disabled: state().run.gold < cost, action: 'reroll' }),
+        button(cost === 0 ? `다시 뽑기 (공짜 ${state().run.freeRerolls}번)` : ['다시 뽑기', ...price('coin', cost)], () => run(rerollBoons(game())), { disabled: state().run.gold < cost, action: 'reroll' }),
         h('div', { class: 'purse' }, icon('coin'), h('span', { class: 'num', text: String(state().run.gold) }))),
       h('p', { class: 'meta', text: '계열 둘을 가지면 합성 축복이 섞여 나온다' }));
   }
@@ -197,11 +197,11 @@ export function createScreens({ layer, ctx }) {
       let glyph;
       if (item.kind === 'weapon') {
         name = weaponName(item.weapon);
-        desc = `${weaponMeta(item.weapon)} — ${WEAPONS[item.weapon].desc}`;
+        desc = `${weaponMeta(item.weapon)}. ${WEAPONS[item.weapon].desc}`;
         glyph = WEAPONS[item.weapon].kind === 'melee' ? 'blade' : 'bolt';
       } else if (item.kind === 'boon') {
         name = boonName(item.boon);
-        desc = `${boonFamily(item.boon) || '무계열'} — ${BOONS[item.boon].desc}`;
+        desc = `${boonFamily(item.boon) || '무계열'}. ${BOONS[item.boon].desc}`;
         glyph = familyIcon(BOONS[item.boon].family, BOONS[item.boon].duo);
       } else {
         name = '붕대';
@@ -305,7 +305,6 @@ export function createScreens({ layer, ctx }) {
     const { pages, index } = story;
     const last = index >= pages.length - 1;
     return h('div', { class: 'story', onclick: (e) => { if (!e.target.closest('button')) nextPage(); } },
-      h('div', { class: 'parade' }, CHARACTER_ORDER.map((id) => maskPortrait(id))),
       h('p', { class: 'page', 'data-page': String(index), text: pages[index] }),
       h('p', { class: 'dots' }, pages.map((_, i) => h('i', { class: i === index ? 'on' : '' }))),
       h('div', { class: 'pair' },

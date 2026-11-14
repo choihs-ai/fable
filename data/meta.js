@@ -36,9 +36,9 @@ export const SOULS = deepFreeze({
 export const UPGRADES = deepFreeze({
   gift: { name: '첫 선물', kind: 'rule', desc: '판을 시작하자마자 축복 3택1', cost: [45], effect: { startBoons: 1 } },
   breath: { name: '여분의 숨', kind: 'rule', desc: '대시를 한 번 더 모아 둔다', cost: [90], effect: { dashCharges: 1 } },
-  oath: { name: '불사의 서약', kind: 'rule', desc: '쓰러져도 판마다 한 번 되살아난다(체력 25% → 50%)', cost: [70, 150], effect: { reviveHp: 25 } },
-  haggle: { name: '단골', kind: 'rule', desc: '상점 값 -15% → -30%', cost: [30, 70], effect: { shopDiscount: 15 } },
-  mend: { name: '응급 처치', kind: 'rule', desc: '방을 깰 때마다 체력 4% → 8% 회복', cost: [35, 90], effect: { roomHeal: 4 } },
+  oath: { name: '불사의 서약', kind: 'rule', desc: '쓰러져도 판마다 한 번 되살아난다. 체력 25%로, 두 단계면 50%로', cost: [70, 150], effect: { reviveHp: 25 } },
+  haggle: { name: '단골', kind: 'rule', desc: '상점 값을 15% 깎는다. 두 단계면 30%', cost: [30, 70], effect: { shopDiscount: 15 } },
+  mend: { name: '응급 처치', kind: 'rule', desc: '방을 깰 때마다 체력을 4% 채운다. 두 단계면 8%', cost: [35, 90], effect: { roomHeal: 4 } },
   vigor: { name: '단련', kind: 'stat', desc: '최대 체력 +10', cost: [20, 45, 90], effect: { maxHp: 10 } },
   capacitor: { name: '축전', kind: 'stat', desc: '최대 에너지 +25', cost: [15, 35, 70], effect: { maxEnergy: 25 } },
   might: { name: '완력', kind: 'stat', desc: '주는 피해 +6%', cost: [25, 55, 110], effect: { power: 0.06 } },

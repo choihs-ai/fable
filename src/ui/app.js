@@ -163,7 +163,7 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
           if (picked) hud.toast(`${characterName(to)}의 탈을 썼다`);
           else if (burst) hud.banner(CHARACTERS[to].swap.name, 'swap');
         }),
-        bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 없다 — 바꿔 들거나 구슬을 주워라')),
+        bus.on(EVENTS.ENERGY_EMPTY, () => hud.toast('에너지가 없다. 바꿔 들거나 구슬을 주워라')),
         bus.on(EVENTS.SECRET_FOUND, () => hud.banner('숨은 길', 'clear')),
         bus.on(EVENTS.FLOOR_ENTERED, ({ floor, zoneId }) => {
           const chapter = STORY.chapters[zoneId];

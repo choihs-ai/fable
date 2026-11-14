@@ -43,7 +43,7 @@ export function characterName(id) {
 
 export function upgradeText(id, level) {
   const u = UPGRADES[id];
-  return `${u.name} ${level}/${u.cost.length} — ${u.desc}`;
+  return `${u.name} ${level}/${u.cost.length}. ${u.desc}`;
 }
 
 const REASONS = {
