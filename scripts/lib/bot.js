@@ -190,18 +190,19 @@ function pickRoom(state, bot, room) {
 }
 
 /**
- * 무기 하나를 얻으면 바뀌는 칸(등급이 낮은 쪽)을 빼고, 그래도 근접 무기가 남는가.
- * 에너지는 저절로 차지 않으므로 원거리 둘만 들면 여섯 층을 가는 동안 개머리판만 휘두르게 된다.
+ * 무기 하나를 얻으면 바뀌는 칸(등급이 낮은 쪽)을 빼고, 근접과 원거리를 하나씩 들고 있었다면 그대로 하나씩 남는가.
+ * - 원거리 둘만 들면 에너지가 저절로 차지 않아 여섯 층을 가는 동안 개머리판만 휘두르게 된다(B-029).
+ * - 근접 둘만 들면 치고 빠지는 적(시궁쥐)을 쫓다가 피하기를 되풀이하며 방을 끝내지 못한다(B-030).
  */
-function keepsMelee(kit, weaponId) {
-  if (WEAPONS[weaponId].kind === 'melee' || kit.weapons.includes(null)) return true;
-  const hadMelee = kit.weapons.some((id) => WEAPONS[id].kind === 'melee');
-  if (!hadMelee) return true;
+function keepsMix(kit, weaponId) {
+  if (kit.weapons.includes(null)) return true;
+  const kinds = new Set(kit.weapons.map((id) => WEAPONS[id].kind));
+  if (kinds.size < 2) return true;
   const current = kit.weapons[kit.slot];
   const other = kit.weapons[1 - kit.slot];
   const replaced = WEAPONS[other].tier < WEAPONS[current].tier ? other : current;
   const kept = replaced === other ? current : other;
-  return WEAPONS[kept].kind === 'melee';
+  return WEAPONS[kept].kind !== WEAPONS[weaponId].kind;
 }
 
 /** 상점에서 살 만한 것을 산다. */
@@ -213,7 +214,7 @@ function shopping(game, player) {
     if (item.sold || state.run.gold < shopPrice(state, item)) return;
     if (item.kind === 'heal' && player.hp < player.maxHp * 0.65) buyShopItem(game, index);
     else if (item.kind === 'boon') buyShopItem(game, index);
-    else if (item.kind === 'weapon' && WEAPONS[item.weapon].tier > minTier && keepsMelee(player.kit, item.weapon)) {
+    else if (item.kind === 'weapon' && WEAPONS[item.weapon].tier > minTier && keepsMix(player.kit, item.weapon)) {
       // 등급이 낮은 쪽을 들고 사면 그 무기와 바뀐다.
       const kit = player.kit;
       const other = kit.weapons[1 - kit.slot];
@@ -343,7 +344,7 @@ function explore(game, bot, nav, player, input) {
         // 든 무기면 강화(최고 단계가 아닐 때), 아니면 빈 칸이 있거나 더 좋은 무기일 때.
         const wanted = held !== -1
           ? kit.levels[held] < WEAPON_UPGRADE.max
-          : kit.weapons.includes(null) || (WEAPONS[drop.weapon].tier > Math.min(...tiers) && keepsMelee(kit, drop.weapon));
+          : kit.weapons.includes(null) || (WEAPONS[drop.weapon].tier > Math.min(...tiers) && keepsMix(kit, drop.weapon));
         if (!wanted) {
           bot.ignored.push(drop.id);
           continue;
