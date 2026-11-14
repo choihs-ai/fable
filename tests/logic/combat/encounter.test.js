@@ -362,3 +362,57 @@ test('처치 보상: 금화·에너지·체력 구슬이 떨어지고 가까이 
   assert.ok(!s.state.drops.includes(orb));
   assert.equal(s.player.kit.energy >= ENCOUNTERS.kill.energy.amount, true);
 });
+
+test('연쇄 폭발이 꼬리를 물어도 한 틱 안에 모든 죽음(분열 포함)을 치르고 나서 방을 깬다(B-031)', async () => {
+  const { processDeaths } = await import('../../../src/logic/combat/deaths.js');
+  const { spawnEnemy } = await import('../../../src/logic/entities/actors.js');
+  const s = createStage();
+  const room = combatRoom(s);
+  s.moveTo(room);
+  s.step(1 + WARN);
+  // 마지막 웨이브까지 건너뛴다.
+  room.wave = room.waves.length - 1;
+  s.state.encounter.pending = [];
+  s.killAll();
+  s.step(1);
+  s.state.run.boons.push('blast_kill');
+  // 방 안에 슬라임(죽으면 둘로 쪼개짐)을 줄지어 세우고 첫째를 쓰러뜨린다: 폭발이 다음 것을 잡고, 그 폭발이 또 다음 것을 잡는다.
+  const line = [];
+  for (let i = 0; i < 14; i++) {
+    const x = room.x + 1.5 + ((i * 1.4) % (room.w - 3));
+    const y = room.y + 1.5 + Math.floor((i * 1.4) / (room.w - 3)) * 1.4;
+    const e = spawnEnemy(s.state, s.bus, i % 2 === 0 ? 'slime' : 'rat', x, y, { alerted: true });
+    e.hp = 1;
+    line.push(e);
+  }
+  dealDamage(s.state, s.bus, line[0], 1e9, { sourceId: s.player.id });
+  processDeaths(s.state, s.bus);
+  assert.deepEqual(Object.values(s.state.entities.byId).filter((a) => a.dead && !a.reaped).map((a) => a.id), [], '죽었는데 치르지 않은 적이 없다');
+  // 쪼개져 나온 것까지 다 잡으면 방이 끝난다(방이 먼저 끝나고 나서 쪼개지지 않는다).
+  for (let k = 0; k < 6 && s.enemies().length > 0; k++) {
+    s.killAll();
+    s.step(1);
+  }
+  s.step(2);
+  assert.equal(room.state, 'cleared');
+  assert.equal(s.enemies().length, 0, '방이 끝난 뒤에 남은 적이 없다');
+});
+
+test('잠긴 방 밖의 적은 그 방의 전투를 붙잡지 않는다(B-031)', async () => {
+  const { spawnEnemy } = await import('../../../src/logic/entities/actors.js');
+  const s = createStage();
+  const room = combatRoom(s);
+  s.moveTo(room);
+  s.step(1 + WARN);
+  room.wave = room.waves.length - 1;
+  s.state.encounter.pending = [];
+  // 시작 방에 길 잃은 적 하나.
+  const start = s.room(ROOM_KIND.START);
+  const stray = spawnEnemy(s.state, s.bus, 'rat', start.x + start.w / 2, start.y + start.h / 2, { alerted: true });
+  stray.speed = 0;
+  for (const e of s.enemies()) if (e !== stray) dealDamage(s.state, s.bus, e, 1e9, { sourceId: s.player.id });
+  s.player.invulnUntil = s.state.tick + 600;
+  s.step(3);
+  assert.equal(room.state, 'cleared', '방 안의 적을 다 잡으면 끝난다');
+  assert.equal(stray.dead, false);
+});

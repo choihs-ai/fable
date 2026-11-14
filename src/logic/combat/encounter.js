@@ -6,7 +6,7 @@ import { ENCOUNTERS } from '../../../data/encounters.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
 import { ticksOf } from '../core/time.js';
-import { getPlayer, opponentsOf, spawnEnemy } from '../entities/actors.js';
+import { allActors, getPlayer, opponentsOf, spawnEnemy } from '../entities/actors.js';
 import { metaBonuses } from '../items/meta.js';
 import { ROOM_KIND, isFightRoom } from '../world/floors.js';
 import { navOf, regionAt, setTiles } from '../world/nav.js';
@@ -129,7 +129,11 @@ function runEncounter(state, bus, player) {
     }
     enc.pending = waiting;
   }
-  if (enc.pending.length > 0 || opponentsOf(state, player.faction).length > 0) return;
+  // 남은 적은 이 방 안(벽 줄 포함)의 것만 센다. 잠긴 방 밖의 적은 들어올 수도, 플레이어가 닿을 수도 없다 —
+  // 세면 방이 영영 끝나지 않는다(B-031). 죽었지만 아직 사망 효과(분열)를 치르지 않은 적이 있으면 기다린다.
+  const inside = (a) => a.x >= room.x - 1 && a.x < room.x + room.w + 1 && a.y >= room.y - 1 && a.y < room.y + room.h + 1;
+  const left = opponentsOf(state, player.faction).some(inside) || allActors(state).some((a) => a.dead && !a.reaped && a.faction !== player.faction);
+  if (enc.pending.length > 0 || left) return;
   if (room.wave + 1 < room.waves.length) {
     // 다음 웨이브까지 잠깐 숨을 돌린다.
     if (enc.nextWaveAt === 0) {

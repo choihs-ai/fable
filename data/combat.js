@@ -32,6 +32,8 @@ export const COMBAT = deepFreeze({
   allySeparation: 0.3,
   /** 소환물이 나타나는 범위(칸). */
   summonRadius: 3,
+  /** 한 틱의 죽음 처리를 되풀이하는 상한(연쇄 폭발·분열이 새 죽음을 만든다). 무한 루프 방지용 — 실제로는 훨씬 전에 끝난다. */
+  maxDeathPasses: 256,
   /** 돌진이 닿았다고 보는 여유 거리(칸). */
   contactSlop: 0.05,
   /** 보스가 죽으면 그 보스가 소환한 적도 함께 죽는다. */

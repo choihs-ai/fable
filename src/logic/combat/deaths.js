@@ -13,8 +13,10 @@ import { rewardKill } from './loot.js';
  */
 export function processDeaths(state, bus) {
   const result = { playerDied: false };
-  // 사망 효과(분열)·보스 사망·처치 폭발이 새 죽음을 만들 수 있으므로 더 죽는 것이 없을 때까지 돈다. 상한은 무한 루프 방지용.
-  for (let pass = 0; pass < 8; pass++) {
+  // 사망 효과(분열)·보스 사망·처치 폭발이 새 죽음을 만들 수 있으므로 더 죽는 것이 없을 때까지 돈다.
+  // 연쇄 폭발이 꼬리를 물면 여러 바퀴가 필요하다(B-031 — 8바퀴에서 끊겨 죽은 슬라임이 방을 깬 뒤에 쪼개졌다).
+  // 죽음은 행동체마다 한 번뿐이고 분열도 유한하므로 끝난다. 상한은 무한 루프 방지용.
+  for (let pass = 0; pass < COMBAT.maxDeathPasses; pass++) {
     const dead = allActors(state).filter((a) => a.dead && !a.reaped);
     if (dead.length === 0) break;
     for (const actor of dead) {
