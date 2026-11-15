@@ -371,7 +371,7 @@ export function createEffects({ scene, assets, rng }) {
     },
     /** 폭발: 퍼지는 고리 + 섬광 + 입자. */
     explosion(x, y, radius, faction, proc) {
-      const color = proc === 'ice' ? 0x8ae4ff : proc === 'bolt' ? 0xfff27a : proc === 'steam' ? 0xf0f0ff : faction === 'player' ? 0xffa23a : C.enemyShot;
+      const color = proc === 'ice' ? 0x8ae4ff : proc === 'bolt' ? 0xfff27a : proc === 'steam' ? 0xf0f0ff : proc === 'slam' ? 0xf1e4c8 : faction === 'player' ? 0xffa23a : C.enemyShot;
       flash('ring', 0.28, (mesh) => {
         mesh.geometry = assets.geometries.ring;
         mesh.material = assets.glow(color, 0.8);

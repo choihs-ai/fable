@@ -4,12 +4,13 @@
 // 투사체·장판은 만들어질 때의 공격 배율을 spec.power 에 담아 온다(쏜 뒤에 가해자가 죽어도 같은 피해).
 // 치명타·흡혈·공격 시 상태이상·축복은 가해자가 살아 있을 때만 적용된다.
 
+import { BOONS } from '../../../data/boons.js';
 import { FEEL } from '../../../data/feel.js';
 import { PLAYER } from '../../../data/player.js';
 import { rngOf } from '../core/state.js';
 import { ticksOf } from '../core/time.js';
 import { getActor } from '../entities/actors.js';
-import { afterHit, onHurt, outgoingMul } from './boons.js';
+import { afterHit, onDodge, onHurt, outgoingMul } from './boons.js';
 import { dealDamage, heal, knockback } from './damage.js';
 import { applyStatus } from './statuses.js';
 
@@ -24,7 +25,11 @@ import { applyStatus } from './statuses.js';
  * @returns {number} 준 피해
  */
 export function applyHit(state, bus, target, spec, sourceId, fromX, fromY, melee = false) {
-  if (target.dead || target.invulnUntil > state.tick) return 0;
+  if (target.dead || target.invulnUntil > state.tick) {
+    // 대시 중이라 몸을 지나갔다(축복 "아슬아슬").
+    if (!target.dead && target.kit && target.dash) onDodge(state, bus, target);
+    return 0;
+  }
   const found = getActor(state, sourceId);
   const source = found && !found.dead ? found : null;
   const player = source && source.kit ? source : null;
@@ -40,11 +45,18 @@ export function applyHit(state, bus, target, spec, sourceId, fromX, fromY, melee
       player.kit.critUntil = 0;
       amount *= player.critDamage;
       crit = true;
+    } else if (procs && state.run.boonState.critHits > 0) {
+      // 축복 "탈놀이": 무기를 바꿔 든 뒤 몇 번은 반드시 치명타.
+      state.run.boonState.critHits -= 1;
+      amount *= player.critDamage;
+      crit = true;
     } else if (source && source.critChance > 0 && rngOf(state, 'combat').chance(source.critChance)) {
       // 치명타 확률이 있는 가해자만 난수를 쓴다.
       amount *= source.critDamage;
       crit = true;
     }
+    // 축복 "노름꾼": 치명타가 아니면 약하다.
+    if (player && !crit && state.run.boons.includes('gambler')) amount *= BOONS.gambler.plainMul;
   }
   const dealt = amount > 0 ? dealDamage(state, bus, target, amount, { sourceId, kind: 'hit', fromX, fromY, crit }) : 0;
   if (dealt > 0) {
@@ -74,7 +86,7 @@ export function applyHit(state, bus, target, spec, sourceId, fromX, fromY, melee
   if (target.kit && dealt > 0) {
     // 플레이어는 맞은 뒤 잠깐 무적이다(여러 탄을 한꺼번에 맞아 즉사하지 않도록). 이번 공격의 상태이상은 이미 걸린 뒤다.
     if (!target.dead) target.invulnUntil = Math.max(target.invulnUntil, state.tick + ticksOf(PLAYER.hurtInvuln));
-    onHurt(state, bus, target);
+    onHurt(state, bus, target, sourceId);
   }
   return dealt;
 }

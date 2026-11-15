@@ -195,6 +195,8 @@ export function usePortal(game) {
 
 function grantBoon(game, id) {
   game.state.run.boons.push(id);
+  // 축복 "외상": 금화를 곧바로 받는다(대신 최대 체력이 준다 — stats.js).
+  if (id === 'loan') addGold(game.state, game.bus, BOONS.loan.gold);
   refreshPlayerStats(game.state);
   game.bus.emit(EVENTS.BOON_CHOSEN, { boon: id });
 }

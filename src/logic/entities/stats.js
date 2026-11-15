@@ -21,7 +21,7 @@ export function refreshPlayerStats(state) {
   const has = (id) => state.run.boons.includes(id);
   const kit = player.kit;
 
-  let maxHp = character.hp + bonus.maxHp + (has('iron_skin') ? BOONS.iron_skin.maxHp : 0);
+  let maxHp = character.hp + bonus.maxHp + (has('iron_skin') ? BOONS.iron_skin.maxHp : 0) + (has('loan') ? BOONS.loan.maxHp : 0);
   if (has('glass_cannon')) maxHp = Math.round(maxHp * BOONS.glass_cannon.hpMul);
   maxHp = Math.max(10, maxHp);
   if (maxHp > player.maxHp && !player.dead) player.hp += maxHp - player.maxHp; // 늘어난 만큼 현재 체력도 는다.
@@ -32,7 +32,7 @@ export function refreshPlayerStats(state) {
   // 든 무기의 강화 단계만큼 공격 배율이 오른다(바꿔 들면 다시 합산한다).
   const level = kit.levels ? kit.levels[kit.slot] : 0;
   player.power = (1 + bonus.power + (has('glass_cannon') ? BOONS.glass_cannon.power : 0)) * (1 + level * WEAPON_UPGRADE.power);
-  player.critChance = PLAYER.critChance + (has('conduct') ? BOONS.conduct.critChance : 0) + (has('keen_eye') ? BOONS.keen_eye.critChance : 0);
+  player.critChance = PLAYER.critChance + (has('conduct') ? BOONS.conduct.critChance : 0) + (has('keen_eye') ? BOONS.keen_eye.critChance : 0) + (has('gambler') ? BOONS.gambler.critChance : 0);
   player.critDamage = PLAYER.critDamage + (has('keen_current') ? BOONS.keen_current.critDamage : 0);
 
   const maxEnergy = character.energy + bonus.maxEnergy + (has('quick_charge') ? BOONS.quick_charge.maxEnergy : 0);

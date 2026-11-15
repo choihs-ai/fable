@@ -13,6 +13,7 @@ import { PHASE } from '../../../src/logic/core/state.js';
 import { dealDamage } from '../../../src/logic/combat/damage.js';
 import { outgoingMul } from '../../../src/logic/combat/boons.js';
 import { applyHit } from '../../../src/logic/combat/hit.js';
+import { swapWeapon } from '../../../src/logic/combat/player.js';
 import { spawnProjectile } from '../../../src/logic/combat/projectiles.js';
 import { applyStatus } from '../../../src/logic/combat/statuses.js';
 import { refreshPlayerStats } from '../../../src/logic/entities/stats.js';
@@ -476,4 +477,178 @@ test('능력치 축복: 무쇠 살갗·날랜 발·예리함·날 선 전류·�
   assert.ok(Math.abs(a.player.critChance - (base.player.critChance + BOONS.keen_eye.critChance)) < 1e-9);
   assert.ok(Math.abs(a.player.critDamage - (base.player.critDamage + BOONS.keen_current.critDamage)) < 1e-9);
   assert.equal(a.player.kit.maxEnergy - base.player.kit.maxEnergy, BOONS.quick_charge.maxEnergy);
+});
+
+// ── 무계열: 싸우는 방식이 바뀌는 것(13종) ──
+
+test('아슬아슬: 대시 중에 적의 공격이 몸을 지나가면 둘레에 시간 왜곡이 깔리고, 재사용 대기 동안은 다시 깔리지 않는다', () => {
+  const a = arena(['dodge_slow']);
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  a.step(1, { moveX: 1, moveY: 0, dash: true });
+  assert.ok(a.player.dash, '대시 중');
+  applyHit(a.state, a.bus, a.player, { damage: 30 }, z.id, z.x, z.y);
+  const warps = () => a.state.hazards.filter((h) => h.kind === 'warp' && h.faction === 'player');
+  assert.equal(warps().length, 1, '왜곡이 깔렸다');
+  assert.equal(a.player.hp, a.player.maxHp, '맞지 않았다');
+  applyHit(a.state, a.bus, a.player, { damage: 30 }, z.id, z.x, z.y);
+  assert.equal(warps().length, 1, '재사용 대기 중에는 하나뿐');
+});
+
+test('벽꿍: 세게 밀려나 벽에 부딪힌 적은 피해와 기절, 약하게 밀린 적은 그대로', () => {
+  const a = arena(['wall_slam']);
+  const z = dummy(a, 28.2, 7.5);
+  z.mass = 1;
+  z.kbX = BOONS.wall_slam.speed * 3;
+  a.step(2);
+  assert.equal(hits(a, z, 'slam').length, 1, '벽에 부딪혀 다쳤다');
+  assert.ok(z.statuses.stun, '기절');
+  const y = dummy(a, 28.2, 4.5);
+  y.mass = 1;
+  y.kbX = BOONS.wall_slam.speed * 0.5;
+  a.step(2);
+  assert.equal(hits(a, y, 'slam').length, 0, '약하게 밀리면 그대로');
+});
+
+test('끊어치기: 근접 공격이 적의 준비 동작을 끊지만, 원거리와 보스는 끊지 않는다', () => {
+  const a = arena(['heavy_hand']);
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  z.action = { ability: 'bite', phase: 'windup', until: a.state.tick + 60, aimX: -1, aimY: 0, targetX: a.player.x, targetY: a.player.y };
+  applyHit(a.state, a.bus, z, { damage: 1 }, a.player.id, a.player.x, a.player.y, false);
+  assert.ok(z.action, '원거리는 끊지 않는다');
+  strike(a, z, 1);
+  assert.equal(z.action, null, '근접은 끊는다');
+  assert.equal(a.events(EVENTS.ABILITY_INTERRUPTED).length, 1);
+});
+
+test('되돌이탄: 탄이 끝까지 날아가면 되돌아오며 그 길의 적을 맞히고, 적을 맞히면 그 자리에서 되돌아온다', () => {
+  const a = arena(['boomerang']);
+  // 빗나간 탄: 끝까지 갔다가 되돌아온다. 되돌아오는 길에 나타난 적을 맞힌다.
+  spawnProjectile(a.state, a.bus, a.player, { speed: 12, radius: 0.2, range: 4, damage: 10 }, 1, 0);
+  a.step(sec(0.4));
+  assert.ok(a.state.projectiles[0].vx < 0, '되돌아온다');
+  const behind = dummy(a, a.player.x + 1.5, a.player.y);
+  a.step(sec(0.8));
+  assert.equal(hits(a, behind).length, 1, '돌아오는 길의 적을 맞힌다');
+  // 맞힌 탄: 그 자리에서 돌아오고, 방금 맞힌 적은 다시 맞히지 않는다.
+  const b = arena(['boomerang']);
+  const z = dummy(b, b.player.x + 2, b.player.y);
+  spawnProjectile(b.state, b.bus, b.player, { speed: 12, radius: 0.2, range: 6, damage: 10 }, 1, 0);
+  b.step(sec(0.3));
+  assert.equal(hits(b, z).length, 1);
+  assert.ok(b.state.projectiles.length === 1 && b.state.projectiles[0].vx < 0, '맞힌 자리에서 되돌아온다');
+  b.step(sec(1.5));
+  assert.equal(hits(b, z).length, 1, '같은 적을 두 번 맞히지 않는다');
+  assert.equal(b.state.projectiles.length, 0, '다 돌아오면 사라진다');
+});
+
+test('덫 대시: 대시를 시작한 자리에 덫이 남고, 잠시 뒤 터져 둘레의 적을 기절시킨다', () => {
+  const a = arena(['trap_dash']);
+  const z = dummy(a, a.player.x - 0.8, a.player.y);
+  const startX = a.player.x;
+  a.step(1, { moveX: 1, moveY: 0, dash: true });
+  const trap = a.state.hazards.find((h) => h.faction === 'player' && h.kind === 'blast');
+  assert.ok(trap && Math.abs(trap.x - startX) < 1e-9, '시작한 자리');
+  a.step(sec(BOONS.trap_dash.delay) + 2, { moveX: 0, moveY: 0 });
+  assert.equal(hits(a, z).length, 1);
+  assert.ok(z.statuses.stun, '기절');
+});
+
+test('숨 고르기: 오래 쉬었다가 친 공격만 세다', () => {
+  const a = arena(['focus']);
+  arm(a, 'sword');
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  a.step(sec(BOONS.focus.idle) + 2);
+  a.step(1, { attack: true });
+  const strong = outgoingMul(a.state, a.player, z);
+  assert.ok(Math.abs(strong - (1 + BOONS.focus.bonus)) < 1e-9, `배율 ${strong}`);
+  a.step(sec(BOONS.focus.holdSec) + 1, { attack: true });
+  assert.equal(outgoingMul(a.state, a.player, z), 1, '이어 치면 보통');
+});
+
+test('연타: 이어 맞힐수록 세지고(상한 있음), 끊기거나 맞으면 처음부터', () => {
+  const a = arena(['combo']);
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  for (let i = 0; i < 5; i++) strike(a, z, 1);
+  assert.ok(Math.abs(outgoingMul(a.state, a.player, z) - (1 + 5 * BOONS.combo.per)) < 1e-9);
+  for (let i = 0; i < 100; i++) strike(a, z, 1);
+  assert.ok(Math.abs(outgoingMul(a.state, a.player, z) - (1 + BOONS.combo.max)) < 1e-9, '상한');
+  a.step(sec(BOONS.combo.gapSec) + 2);
+  assert.equal(outgoingMul(a.state, a.player, z), 1, '끊기면 처음부터');
+  strike(a, z, 1);
+  applyHit(a.state, a.bus, a.player, { damage: 1 }, z.id, z.x, z.y);
+  assert.equal(outgoingMul(a.state, a.player, z), 1, '맞으면 처음부터');
+});
+
+test('앙갚음: 나를 때린 적에게만, 정해진 시간 동안 세다', () => {
+  const a = arena(['grudge']);
+  // 멀리 세워 둔다(가까우면 스스로 다시 때려 앙갚음이 새로 걸린다).
+  const z = dummy(a, a.player.x + 15, a.player.y);
+  const other = dummy(a, a.player.x + 15, a.player.y + 3);
+  applyHit(a.state, a.bus, a.player, { damage: 1 }, z.id, z.x, z.y);
+  assert.ok(Math.abs(outgoingMul(a.state, a.player, z) - (1 + BOONS.grudge.bonus)) < 1e-9);
+  assert.equal(outgoingMul(a.state, a.player, other), 1);
+  a.step(sec(BOONS.grudge.duration) + 1);
+  assert.equal(outgoingMul(a.state, a.player, z), 1, '시간이 지나면 끝');
+});
+
+test('탈놀이: 무기를 바꿔 들면 다음 공격 몇 번이 치명타, 재사용 대기 동안 다시 바꿔도 새로 차지 않는다', () => {
+  const a = arena(['masquerade']);
+  arm(a, 'sword', 'bow');
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  swapWeapon(a.state, a.bus);
+  for (let i = 0; i < BOONS.masquerade.hits; i++) strike(a, z, 10);
+  strike(a, z, 10);
+  const crits = hits(a, z).map((e) => e.crit);
+  assert.deepEqual(crits, [...Array(BOONS.masquerade.hits).fill(true), false]);
+  swapWeapon(a.state, a.bus);
+  assert.equal(a.state.run.boonState.critHits, 0, '재사용 대기 중');
+});
+
+test('탈바꿈: 탈이 하나뿐이어도 무기를 바꿔 들 때 교체 기술이 나가고, 재사용 대기가 있다', () => {
+  const a = arena(['quick_change']);
+  arm(a, 'sword', 'bow');
+  dummy(a, a.player.x + 1, a.player.y);
+  swapWeapon(a.state, a.bus);
+  const bursts = () => a.events(EVENTS.FORM_CHANGED).filter((e) => e.burst);
+  assert.equal(bursts().length, 1);
+  assert.ok(a.player.invulnUntil > a.state.tick, '교체 기술의 무적');
+  swapWeapon(a.state, a.bus);
+  assert.equal(bursts().length, 1, '재사용 대기 중');
+});
+
+test('노름꾼: 치명타 확률이 오르고, 치명타가 아닌 공격은 약하다', () => {
+  const base = arena([]);
+  const a = arena(['gambler']);
+  refreshPlayerStats(base.state);
+  refreshPlayerStats(a.state);
+  assert.ok(Math.abs(a.player.critChance - (base.player.critChance + BOONS.gambler.critChance)) < 1e-9);
+  a.player.critChance = 0;
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  strike(a, z, 10);
+  assert.equal(hits(a, z)[0].amount, 10 * BOONS.gambler.plainMul);
+});
+
+test('외상: 고르는 순간 금화를 받고 최대 체력이 준다', async () => {
+  const { createGame, enterFloor, setPhase } = await import('../../../src/logic/game.js');
+  const { chooseBoon } = await import('../../../src/logic/commands.js');
+  const game = createGame({ seed: 'loan' });
+  enterFloor(game, 1);
+  setPhase(game, PHASE.PLAYING);
+  const player = game.state.entities.byId[game.state.playerId];
+  const hp = player.maxHp;
+  const gold = game.state.run.gold;
+  game.state.run.choice = { kind: 'boon', options: ['loan', 'combo', 'grudge'], rerolls: 0 };
+  assert.equal(chooseBoon(game, 0).ok, true);
+  assert.equal(game.state.run.gold, gold + BOONS.loan.gold);
+  assert.equal(player.maxHp, hp + BOONS.loan.maxHp);
+});
+
+test('전리품: 얻은 뒤 깬 방마다 쌓이고 상한이 있다', () => {
+  const a = arena(['trophy']);
+  const z = dummy(a, a.player.x + 1, a.player.y);
+  assert.equal(outgoingMul(a.state, a.player, z), 1);
+  a.state.run.boonState.trophies = 3;
+  assert.ok(Math.abs(outgoingMul(a.state, a.player, z) - (1 + 3 * BOONS.trophy.per)) < 1e-9);
+  a.state.run.boonState.trophies = 999;
+  assert.ok(Math.abs(outgoingMul(a.state, a.player, z) - (1 + BOONS.trophy.max)) < 1e-9);
 });

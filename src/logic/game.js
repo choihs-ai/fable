@@ -8,6 +8,7 @@ import { EVENTS } from './core/events.js';
 import { PHASE, createInitialState, rngOf } from './core/state.js';
 import { resolveDashes, updateActions } from './combat/abilities.js';
 import { runAI } from './combat/ai/brain.js';
+import { wallSlams } from './combat/boons.js';
 import { heal } from './combat/damage.js';
 import { processDeaths } from './combat/deaths.js';
 import { updateEncounter } from './combat/encounter.js';
@@ -203,6 +204,7 @@ export function tick(game, dtSec) {
   runAI(state, bus); //            3) 적: 이동 의도, 기술 시작
   updateActions(state, bus); //    4) 준비가 끝난 기술 발동, 경직 종료
   integrateMovement(state, dtSec); // 5) 이동·돌진·넉백, 벽 충돌, 서로 밀어내기
+  wallSlams(state, bus); //          (축복 "벽꿍": 밀려나 벽에 부딪힌 적)
   resolveDashes(state, bus); //    6) 돌진 명중과 뒷처리
   updateProjectiles(state, bus, dtSec); // 7) 투사체
   updateHazards(state, bus); //    8) 장판

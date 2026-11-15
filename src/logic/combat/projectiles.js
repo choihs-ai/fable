@@ -6,7 +6,7 @@ import { EVENTS } from '../core/events.js';
 import { getActor, opponentsOf } from '../entities/actors.js';
 import { lineOfSight } from '../world/los.js';
 import { isWall, navOf } from '../world/nav.js';
-import { hasBoon, projectileMods } from './boons.js';
+import { hasBoon, onDodge, projectileMods } from './boons.js';
 import { applyHit } from './hit.js';
 
 /** 갈라진 탄이 나가는 방향(맞은 탄의 진행 방향 기준 ±35도). */
@@ -19,7 +19,7 @@ const SPLIT_DIRS = [[0.8192, 0.5736], [0.8192, -0.5736]];
  */
 export function spawnProjectile(state, bus, owner, effect, dirX, dirY, options = {}) {
   // 플레이어의 탄에는 축복이 붙는다. 갈라진 탄은 다시 갈라지지 않는다.
-  const mods = owner.kit && !options.child ? projectileMods(state) : { pierce: 0, split: false, bounces: 0 };
+  const mods = owner.kit && !options.child ? projectileMods(state) : { pierce: 0, split: false, bounces: 0, returns: false };
   const projectile = {
     id: state.entities.nextId++,
     ownerId: owner.id,
@@ -45,6 +45,8 @@ export function spawnProjectile(state, bus, owner, effect, dirX, dirY, options =
       : null,
     bounces: mods.bounces,
     split: mods.split,
+    /** 축복 "되돌이탄": 다 날아간 뒤 되돌아올 거리(0 이면 되돌아오지 않는다). */
+    back: mods.returns ? effect.range : 0,
     /** false 면 맞아도 축복을 부르지 않는다(갈라진 탄). */
     proc: options.child !== true,
   };
@@ -130,6 +132,16 @@ export function updateProjectiles(state, bus, dtSec) {
       continue;
     }
     if (p.left <= 0) {
+      if (p.back > 0 && !p.explode) {
+        // 되돌아온다: 방향을 뒤집고, 이미 맞힌 대상도 다시 맞힐 수 있다.
+        p.vx = -p.vx;
+        p.vy = -p.vy;
+        p.left = p.back;
+        p.back = 0;
+        p.hit = [];
+        alive.push(p);
+        continue;
+      }
       if (p.explode) explode(state, bus, nav, p);
       continue;
     }
@@ -142,6 +154,7 @@ export function updateProjectiles(state, bus, dtSec) {
       const reach = target.radius + p.radius;
       if (dx * dx + dy * dy > reach * reach) continue;
       if (target.invulnUntil > state.tick) {
+        if (target.kit && target.dash) onDodge(state, bus, target);
         // 무적(대시 중)인 대상은 그냥 지나간다. 축복 "탄 가르기"가 있으면 대시 중인 플레이어가 탄을 지우고 에너지를 얻는다.
         if (target.kit && target.dash && hasBoon(state, 'deflect')) {
           target.kit.energy = Math.min(target.kit.maxEnergy, target.kit.energy + BOONS.deflect.energy);
@@ -171,6 +184,14 @@ export function updateProjectiles(state, bus, dtSec) {
       if (p.pierce > 0 && !p.explode) {
         p.pierce -= 1;
         continue;
+      }
+      if (p.back > 0 && !p.explode) {
+        // 축복 "되돌이탄": 맞힌 자리에서 한 번 되돌아온다(방금 맞힌 대상은 다시 맞히지 않는다).
+        p.vx = -p.vx;
+        p.vy = -p.vy;
+        p.left = p.back;
+        p.back = 0;
+        break;
       }
       gone = true;
       break;

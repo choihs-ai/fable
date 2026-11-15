@@ -11,6 +11,7 @@ import { metaBonuses } from '../items/meta.js';
 import { ROOM_KIND, isFightRoom } from '../world/floors.js';
 import { navOf, regionAt, setTiles } from '../world/nav.js';
 import { TILE } from '../world/tiles.js';
+import { onRoomCleared } from './boons.js';
 import { heal } from './damage.js';
 import { grantRoomReward } from './loot.js';
 
@@ -107,6 +108,7 @@ function clearRoom(state, bus, room) {
   state.hazards = state.hazards.filter((hz) => hz.faction === 'player');
   bus.emit(EVENTS.DOORS_OPENED, { roomId: room.id, doors: opened });
   bus.emit(EVENTS.ROOM_CLEARED, { roomId: room.id, kind: room.kind, reward: room.reward });
+  onRoomCleared(state);
   grantRoomReward(state, bus, room);
   // 영구 강화 "응급 처치": 방을 깰 때마다 조금 회복한다.
   const player = getPlayer(state);

@@ -11,7 +11,8 @@ import { opponentsOf } from '../entities/actors.js';
 import { ACTOR_KIND } from '../entities/defs.js';
 import { lineOfSight } from '../world/los.js';
 import { navOf } from '../world/nav.js';
-import { dealDamage, heal, knockback } from './damage.js';
+import { dealDamage, heal, interrupt, knockback } from './damage.js';
+import { spawnWarpField } from './fields.js';
 import { applyStatus } from './statuses.js';
 
 export function hasBoon(state, id) {
@@ -107,6 +108,15 @@ export function outgoingMul(state, player, target) {
   if (hasBoon(state, 'first_strike') && target.hp >= target.maxHp) mul *= 1 + BOONS.first_strike.bonus;
   if (hasBoon(state, 'fury') && state.tick < state.run.boonState.furyUntil) mul *= 1 + BOONS.fury.bonus;
   if (hasBoon(state, 'duelist') && opponentsOf(state, player.faction).length === 1) mul *= 1 + BOONS.duelist.bonus;
+  const bs = state.run.boonState;
+  // 축복 "숨 고르기": 쉬었다 친 공격.
+  if (hasBoon(state, 'focus') && state.tick < bs.focusUntil) mul *= 1 + BOONS.focus.bonus;
+  // 축복 "연타": 이어 맞힌 수만큼.
+  if (hasBoon(state, 'combo') && state.tick <= bs.comboUntil) mul *= 1 + Math.min(BOONS.combo.max, bs.comboCount * BOONS.combo.per);
+  // 축복 "앙갚음": 나를 때린 적.
+  if (hasBoon(state, 'grudge') && target.id === bs.grudgeId && state.tick < bs.grudgeUntil) mul *= 1 + BOONS.grudge.bonus;
+  // 축복 "전리품": 얻은 뒤 깬 방의 수만큼.
+  if (hasBoon(state, 'trophy')) mul *= 1 + Math.min(BOONS.trophy.max, bs.trophies * BOONS.trophy.per);
   return mul;
 }
 
@@ -130,6 +140,15 @@ export function afterHit(state, bus, player, target, dealt, info) {
     dealDamage(state, bus, target, BOONS.brittle.damage * player.power, { sourceId: player.id, fromX: player.x, fromY: player.y, proc: 'ice' });
   }
   if (owned.includes('ember_shot') && info.crit) blast(state, bus, player, target.x, target.y, BOONS.ember_shot, 'blast', target.id);
+  // 축복 "연타": 2초 안에 이어 맞히면 쌓이고, 끊기면 처음부터.
+  if (owned.includes('combo')) {
+    boonState.comboCount = state.tick <= boonState.comboUntil ? boonState.comboCount + 1 : 1;
+    boonState.comboUntil = state.tick + ticksOf(BOONS.combo.gapSec);
+  }
+  // 축복 "끊어치기": 근접 공격이 준비 동작을 끊는다(보스는 빼고).
+  if (owned.includes('heavy_hand') && info.melee && !target.dead && target.kind !== ACTOR_KIND.BOSS && target.action && target.action.phase === 'windup') {
+    interrupt(state, bus, target);
+  }
   if (owned.includes('battery') && info.melee) {
     player.kit.energy = Math.min(player.kit.maxEnergy, player.kit.energy + BOONS.battery.energy);
   }
@@ -256,9 +275,18 @@ export function onDashEnd(state, bus, player) {
   bus.emit(EVENTS.EXPLOSION, { x: player.x, y: player.y, radius: cfg.radius, faction: player.faction, proc: 'ice' });
 }
 
-/** 플레이어가 맞은 뒤. */
-export function onHurt(state, bus, player) {
+/** 플레이어가 맞은 뒤. sourceId 는 때린 쪽(없으면 null). */
+export function onHurt(state, bus, player, sourceId = null) {
   if (player.dead) return;
+  const bs = state.run.boonState;
+  // 축복 "연타"는 맞으면 끊긴다.
+  bs.comboCount = 0;
+  bs.comboUntil = 0;
+  // 축복 "앙갚음": 나를 때린 적을 기억한다.
+  if (hasBoon(state, 'grudge') && sourceId !== null && sourceId !== player.id) {
+    bs.grudgeId = sourceId;
+    bs.grudgeUntil = state.tick + ticksOf(BOONS.grudge.duration);
+  }
   // 축복 "가시 갑옷": 둘레의 적을 다치게 하고 밀쳐 낸다.
   if (hasBoon(state, 'thorns')) blast(state, bus, player, player.x, player.y, BOONS.thorns, 'blast');
   // 축복 "반격 전류": 둘레의 적이 감전된다.
@@ -282,6 +310,66 @@ export function onHurt(state, bus, player) {
     applyCold(state, bus, player, other, 'freeze', cfg.freeze);
   }
   bus.emit(EVENTS.EXPLOSION, { x: player.x, y: player.y, radius: cfg.radius, faction: player.faction, proc: 'ice' });
+}
+
+/** 대시 중이라 적의 공격(탄·근접·장판)이 몸을 지나갔다. 축복 "아슬아슬": 둘레의 시간이 느려진다. */
+export function onDodge(state, bus, player) {
+  if (!hasBoon(state, 'dodge_slow') || player.dead) return;
+  const bs = state.run.boonState;
+  if (state.tick < bs.dodgeAt) return;
+  const cfg = BOONS.dodge_slow;
+  bs.dodgeAt = state.tick + ticksOf(cfg.cooldown);
+  spawnWarpField(state, bus, player, player.x, player.y, cfg);
+}
+
+/** 플레이어가 무기 공격을 시작했다(맞기 전). 축복 "숨 고르기": 오래 쉬었으면 이번 공격이 세다. */
+export function onAttackStart(state, player) {
+  const bs = state.run.boonState;
+  if (hasBoon(state, 'focus') && state.tick - bs.lastAttack >= ticksOf(BOONS.focus.idle)) bs.focusUntil = state.tick + ticksOf(BOONS.focus.holdSec);
+  bs.lastAttack = state.tick;
+}
+
+/**
+ * 밀려나던 적이 벽에 부딪혔다(이동 단계 뒤에 부른다). 축복 "벽꿍": 피해와 기절.
+ * 기절해 있는 동안은 다시 부딪혀도 터지지 않는다(한 번 밀려 여러 번 터지지 않게).
+ */
+export function wallSlams(state, bus) {
+  if (!hasBoon(state, 'wall_slam')) return;
+  const player = state.playerId !== null ? state.entities.byId[state.playerId] : null;
+  if (!player || player.dead) return;
+  const cfg = BOONS.wall_slam;
+  for (const target of opponentsOf(state, player.faction)) {
+    if (!target.hitWall || target.statuses.stun) continue;
+    if (target.kbX * target.kbX + target.kbY * target.kbY < cfg.speed * cfg.speed) continue;
+    target.kbX = 0;
+    target.kbY = 0;
+    dealDamage(state, bus, target, cfg.damage * player.power, { sourceId: player.id, fromX: target.x, fromY: target.y, proc: 'slam' });
+    if (!target.dead) applyStatus(state, bus, target, 'stun', { duration: cfg.stun, sourceId: player.id });
+    bus.emit(EVENTS.EXPLOSION, { x: target.x, y: target.y, radius: 0.9, faction: player.faction, proc: 'slam' });
+  }
+}
+
+/** 방을 깼다. 축복 "전리품": 쌓인다. */
+export function onRoomCleared(state) {
+  if (hasBoon(state, 'trophy')) state.run.boonState.trophies += 1;
+}
+
+/**
+ * 무기를 바꿔 들었다. formChanged 면 탈도 바뀐 것이다.
+ * 축복 "탈놀이": 다음 공격 몇 번이 치명타. 축복 "탈바꿈": 탈이 그대로여도 교체 기술이 나간다(그 대기는 따로).
+ * @returns {boolean} "탈바꿈"으로 교체 기술을 내야 하면 true(실행은 부른 쪽이 한다)
+ */
+export function onWeaponSwap(state, player, formChanged) {
+  const bs = state.run.boonState;
+  if (hasBoon(state, 'masquerade') && state.tick >= bs.masqAt) {
+    bs.masqAt = state.tick + ticksOf(BOONS.masquerade.cooldown);
+    bs.critHits = BOONS.masquerade.hits;
+  }
+  if (!formChanged && hasBoon(state, 'quick_change') && (player.cooldowns.quickChange ?? 0) <= state.tick) {
+    player.cooldowns.quickChange = state.tick + ticksOf(BOONS.quick_change.cooldown);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -309,5 +397,6 @@ export function projectileMods(state) {
     pierce: owned.includes('pierce') ? BOONS.pierce.extra : 0,
     split: owned.includes('split'),
     bounces: owned.includes('ricochet') ? BOONS.ricochet.bounces : 0,
+    returns: owned.includes('boomerang'),
   };
 }

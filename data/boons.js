@@ -4,7 +4,8 @@
 //   duo     [계열, 계열] — 합성 축복. 두 계열의 축복을 하나씩 가지고 있어야 후보에 나온다
 //   weight  후보에 뽑힐 가중치
 // 나머지 값은 그 축복의 수치이고, 효과는 src/logic/combat/boons.js 가 id 로 찾아 실행한다.
-// 한 축복은 한 번만 가질 수 있다. 여섯 층 동안 고를 것이 남도록 넉넉히 둔다(지금 55종).
+// 한 축복은 한 번만 가질 수 있다. 여섯 층 동안 고를 것이 남도록 넉넉히 둔다(지금 68종 — 계열 셋 24, 무계열 38, 합성 6).
+// 무계열은 수치를 올리기보다 싸우는 방식을 바꾸는 것(회피·벽꿍·되돌이탄·연타·앙갚음·탈놀이…)이 많다.
 
 import { deepFreeze } from './freeze.js';
 
@@ -85,6 +86,21 @@ export const BOONS = deepFreeze({
   iron_skin: { name: '무쇠 살갗', family: null, weight: 3, desc: '최대 체력이 는다.', maxHp: 25 },
   fleet: { name: '날랜 발', family: null, weight: 2, desc: '더 빨리 움직인다.', speedMul: 1.12 },
   ghost_step: { name: '유령 걸음', family: null, weight: 2, desc: '대시의 무적 시간이 길어진다.', invuln: 0.2 },
+
+  // ── 무계열: 싸우는 방식이 바뀌는 것 ──
+  dodge_slow: { name: '아슬아슬', family: null, weight: 2, desc: '대시로 적의 공격을 흘리면 둘레의 시간이 2초 동안 느려진다.', radius: 4.5, duration: 2, slow: 0.3, cooldown: 6 },
+  wall_slam: { name: '벽꿍', family: null, weight: 2, desc: '밀려난 적이 벽에 부딪히면 크게 다치고 잠깐 기절한다.', speed: 5, damage: 18, stun: 0.8 },
+  heavy_hand: { name: '끊어치기', family: null, weight: 2, desc: '근접 공격이 적의 준비 동작을 끊는다. 보스는 끊기지 않는다.' },
+  boomerang: { name: '되돌이탄', family: null, weight: 2, desc: '쏜 탄이 적을 맞히거나 끝까지 날아가면 한 번 되돌아오며 그 길의 적을 또 맞힌다.' },
+  trap_dash: { name: '덫 대시', family: null, weight: 2, desc: '대시를 시작한 자리에 덫이 남는다. 잠시 뒤 터져 둘레의 적을 기절시킨다.', radius: 1.8, damage: 14, delay: 0.6, stun: 1 },
+  focus: { name: '숨 고르기', family: null, weight: 2, desc: '1.5초 동안 공격하지 않으면 다음 공격이 2.5배로 들어간다.', idle: 1.5, bonus: 1.5, holdSec: 0.9 },
+  combo: { name: '연타', family: null, weight: 2, desc: '2초 안에 이어 맞힐 때마다 피해가 2%씩 오른다(최대 40%). 맞으면 끊긴다.', gapSec: 2, per: 0.02, max: 0.4 },
+  grudge: { name: '앙갚음', family: null, weight: 2, desc: '나를 때린 적에게 5초 동안 피해가 80% 더 들어간다.', duration: 5, bonus: 0.8 },
+  masquerade: { name: '탈놀이', family: null, weight: 2, desc: '무기를 바꿔 들면 다음 공격 세 번이 치명타다. 5초에 한 번.', hits: 3, cooldown: 5 },
+  quick_change: { name: '탈바꿈', family: null, weight: 2, desc: '탈이 하나뿐이어도 무기를 바꿔 들 때 교체 기술이 나간다. 8초에 한 번.', cooldown: 8 },
+  gambler: { name: '노름꾼', family: null, weight: 2, desc: '치명타 확률이 25% 오른다. 대신 치명타가 아니면 피해가 20% 준다.', critChance: 0.25, plainMul: 0.8 },
+  loan: { name: '외상', family: null, weight: 1, desc: '금화 150을 지금 받는다. 대신 최대 체력이 15 준다.', gold: 150, maxHp: -15 },
+  trophy: { name: '전리품', family: null, weight: 2, desc: '이 축복을 얻은 뒤 방을 깰 때마다 주는 피해가 2%씩 쌓인다(최대 40%).', per: 0.02, max: 0.4 },
 
   // ── 합성 ──
   steam: {

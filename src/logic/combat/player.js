@@ -18,7 +18,7 @@ import { navOf } from '../world/nav.js';
 import { abilityOf, cooldownTicks, isReady, runEffects, startAbility } from './abilities.js';
 import { heal } from './damage.js';
 import { refreshPlayerStats } from '../entities/stats.js';
-import { hasBoon, onDashEnd } from './boons.js';
+import { hasBoon, onAttackStart, onDashEnd, onWeaponSwap } from './boons.js';
 import { spawnHazard, spawnWarpField } from './hazards.js';
 import { clearBullets } from './projectiles.js';
 
@@ -97,6 +97,11 @@ function startDash(state, bus, player, input, moveLen) {
   kit.dashAttackUntil = tick + dashTicks + ticksOf(cfg.attackWindow);
   if (hasBoon(state, 'afterimage')) kit.critUntil = tick + dashTicks + ticksOf(BOONS.afterimage.windowSec);
   kit.trailAt = tick;
+  // 축복 "덫 대시": 대시를 시작한 자리에 덫(잠시 뒤 터지는 장판)을 남긴다.
+  if (hasBoon(state, 'trap_dash')) {
+    const trap = BOONS.trap_dash;
+    spawnHazard(state, bus, player, { radius: trap.radius, damage: trap.damage, delay: trap.delay, status: { id: 'stun', duration: trap.stun }, proc: false }, player.x, player.y);
+  }
   bus.emit(EVENTS.PLAYER_DASHED, { id: player.id, dirX, dirY, charges: kit.charges });
 }
 
@@ -187,6 +192,7 @@ function attack(state, bus, player, input) {
       aim = aimDirection(state, player, input);
       if (startAbility(state, bus, player, abilityId, aim.x, aim.y, aim.tx, aim.ty)) {
         kit.energy -= cost;
+        onAttackStart(state, player);
         if (dashAttack) {
           // 대시 공격은 한 번뿐이고, 기본 공격의 재사용 대기도 함께 돈다.
           kit.dashAttackUntil = 0;
@@ -250,25 +256,37 @@ export function swapWeapon(state, bus) {
   refreshPlayerStats(state);
   bus.emit(EVENTS.WEAPON_SWAPPED, { slot: kit.slot, weapon: kit.weapons[kit.slot] });
   const form = kit.forms[kit.slot];
-  if (form !== null && form !== kit.character) {
+  const formChanged = form !== null && form !== kit.character;
+  // 축복 "탈놀이"·"탈바꿈".
+  const quickBurst = onWeaponSwap(state, player, formChanged);
+  if (formChanged) {
     const from = kit.character;
     wearForm(state, player, form);
     let burst = false;
     if ((player.cooldowns.swap ?? 0) <= state.tick) {
       burst = true;
-      const swap = CHARACTERS[form].swap;
       player.cooldowns.swap = state.tick + ticksOf(PLAYER.swap.cooldown);
-      player.invulnUntil = Math.max(player.invulnUntil, state.tick + ticksOf(PLAYER.swap.invuln));
-      const aim = aimDirection(state, player, state.input);
-      if (swap.clearBullets) {
-        const r2 = swap.clearBullets * swap.clearBullets;
-        clearBullets(state, bus, player.faction, (p) => (p.x - player.x) * (p.x - player.x) + (p.y - player.y) * (p.y - player.y) <= r2, player.x, player.y);
-      }
-      runEffects(state, bus, player, swap.effects, { dirX: aim.x, dirY: aim.y, targetX: aim.tx, targetY: aim.ty });
+      swapBurst(state, bus, player, form);
     }
     bus.emit(EVENTS.FORM_CHANGED, { id: player.id, from, to: form, burst, picked: false, x: player.x, y: player.y });
+  } else if (quickBurst) {
+    // 축복 "탈바꿈": 탈은 그대로지만 그 탈의 교체 기술이 나간다.
+    swapBurst(state, bus, player, kit.character);
+    bus.emit(EVENTS.FORM_CHANGED, { id: player.id, from: kit.character, to: kit.character, burst: true, picked: false, x: player.x, y: player.y });
   }
   return true;
+}
+
+/** 교체 기술: 잠깐 무적, (있으면) 둘레의 탄 지우기, 효과 실행. */
+function swapBurst(state, bus, player, form) {
+  const swap = CHARACTERS[form].swap;
+  player.invulnUntil = Math.max(player.invulnUntil, state.tick + ticksOf(PLAYER.swap.invuln));
+  const aim = aimDirection(state, player, state.input);
+  if (swap.clearBullets) {
+    const r2 = swap.clearBullets * swap.clearBullets;
+    clearBullets(state, bus, player.faction, (p) => (p.x - player.x) * (p.x - player.x) + (p.y - player.y) * (p.y - player.y) <= r2, player.x, player.y);
+  }
+  runEffects(state, bus, player, swap.effects, { dirX: aim.x, dirY: aim.y, targetX: aim.tx, targetY: aim.ty });
 }
 
 export function controlPlayer(state, bus) {

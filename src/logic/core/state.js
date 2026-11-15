@@ -7,7 +7,7 @@ import { Rng } from './prng.js';
  * 상태 스키마 버전. 구조를 바꾸면 올리고 logic/save 에 마이그레이션을 추가한다.
  * 5: 방 단위 액션 로그라이트로 바꾸면서 런의 구조가 통째로 달라졌다(4 이하의 런은 이어할 수 없다).
  */
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 export const PHASE = Object.freeze({
   TITLE: 'title',
@@ -51,7 +51,7 @@ export function createInitialState({ seed }) {
       /** 가진 축복의 id(얻은 순서). 효과는 logic/combat/boons.js. */
       boons: [],
       /** 축복이 쓰는 값: 과충전의 공격 횟수, 얼음 갑옷·증기 폭발을 다시 쓸 수 있는 틱, 광기가 끝나는 틱, 되살아났는가. */
-      boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, furyUntil: 0, revived: false },
+      boonState: { shots: 0, iceArmorAt: 0, steamAt: 0, furyUntil: 0, revived: false, dodgeAt: 0, comboCount: 0, comboUntil: 0, grudgeId: 0, grudgeUntil: 0, critHits: 0, masqAt: 0, lastAttack: 0, focusUntil: 0, trophies: 0 },
       /** 지금 제시된 3택1({ kind:'boon', options:[id…], rerolls }) 또는 null. 제시돼 있는 동안 ui 가 게임을 멈춘다. */
       choice: null,
       /** 이번 런에 남은 무료 다시 뽑기. */

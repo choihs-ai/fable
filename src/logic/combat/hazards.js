@@ -41,17 +41,8 @@ export function spawnHazard(state, bus, owner, effect, x, y) {
   return hazard;
 }
 
-/** 시간 왜곡 장판을 깐다. */
-export function spawnWarpField(state, bus, owner, x, y, { radius, duration, slow }) {
-  const lasts = ticksOf(duration);
-  const hazard = {
-    id: state.entities.nextId++, kind: 'warp', ownerId: owner.id, faction: owner.faction, x, y, radius, damage: 0, power: 1, status: null,
-    nextAt: state.tick, interval: 0, endAt: state.tick + lasts, slow, proc: false,
-  };
-  state.hazards.push(hazard);
-  bus.emit(EVENTS.HAZARD_SPAWNED, { id: hazard.id, kind: hazard.kind, ownerId: owner.id, faction: owner.faction, x, y, radius, armTicks: 0, lastsTicks: lasts });
-  return hazard;
-}
+// 시간 왜곡 장판은 fields.js 에 있다(축복 "아슬아슬"이 hit.js 를 거치지 않고 쓸 수 있게). 여기서는 다시 내보내기만 한다.
+export { spawnWarpField } from './fields.js';
 
 export function updateHazards(state, bus) {
   if (state.hazards.length === 0) return;

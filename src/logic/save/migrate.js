@@ -79,6 +79,17 @@ const RUN_MIGRATIONS = {
     }
     return run;
   },
+  // v9 → v10(새 무계열 축복 13종): 축복의 진행 값이 늘었고, 탄에 되돌아올 거리(back)가 생겼다.
+  9(run) {
+    run.version = 10;
+    if (isObject(run.run) && isObject(run.run.boonState)) {
+      fill(run.run.boonState, { dodgeAt: 0, comboCount: 0, comboUntil: 0, grudgeId: 0, grudgeUntil: 0, critHits: 0, masqAt: 0, lastAttack: 0, focusUntil: 0, trophies: 0 });
+    }
+    if (Array.isArray(run.projectiles)) {
+      for (const p of run.projectiles) if (isObject(p)) fill(p, { back: 0 });
+    }
+    return run;
+  },
 };
 
 const META_MIGRATIONS = {

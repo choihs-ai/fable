@@ -138,7 +138,7 @@ export function createUI({ root, getGame, getSettings, getSession, actions }) {
           else hud.banner('문이 잠겼다', 'lock');
         }),
         bus.on(EVENTS.WAVE_STARTED, ({ wave, waves }) => {
-          if (wave > 0) hud.banner(`${wave + 1}/${waves} 물결`, 'wave');
+          if (wave > 0) hud.banner(`웨이브 ${wave + 1}/${waves}`, 'wave');
         }),
         bus.on(EVENTS.ROOM_CLEARED, ({ roomId, kind, reward }) => {
           haptics.pulse('clear');

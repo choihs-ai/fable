@@ -74,7 +74,11 @@ export const runFields = Object.freeze({
   curse: int(0, CURSE.max),
   gold: int(0, L.gold),
   boons: boonList,
-  boonState: shape({ shots: count, iceArmorAt: timer, steamAt: timer, furyUntil: timer, revived: bool }),
+  boonState: shape({
+    shots: count, iceArmorAt: timer, steamAt: timer, furyUntil: timer, revived: bool,
+    dodgeAt: timer, comboCount: count, comboUntil: timer, grudgeId: int(0, L.id), grudgeUntil: timer, critHits: int(0, 16), masqAt: timer,
+    lastAttack: timer, focusUntil: timer, trophies: int(0, 4096),
+  }),
   choice: nullable(shape({ kind: among(['boon']), options: list(boonId, 16, 1), rerolls: count })),
   freeRerolls: count,
   depth: int(0, 4096),
@@ -416,7 +420,7 @@ const projectileShape = shape({
   damage: num(0, L.hp), power: num(0, 10000), knockback: num(0, 1000), status: nullable(statusSpec), left: num(-1000, 1000),
   pierce: int(0, 64), hit: list(id, L.listLength),
   explode: nullable(shape({ radius: num(0.01, 16), damage: num(0, L.hp), knockback: num(0, 1000), status: nullable(statusSpec) })),
-  bounces: int(0, 16), split: bool, proc: bool,
+  bounces: int(0, 16), split: bool, proc: bool, back: num(0, 1000),
 });
 const hazardShape = shape({
   id, kind: among(['blast', 'warp']), ownerId: id, faction, x: coord, y: coord, radius: num(0.01, 16), damage: num(0, L.hp), power: num(0, 10000),

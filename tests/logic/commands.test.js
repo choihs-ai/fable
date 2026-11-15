@@ -108,6 +108,22 @@ test('v8 세이브(무기 강화 이전)는 v9 로 올라온다: 무기 칸과 �
   assert.deepEqual(validateRunState({ ...moved.data, meta: s.state.meta }), []);
 });
 
+test('v9 세이브(새 무계열 축복 이전)는 v10 으로 올라온다: 축복의 진행 값과 탄의 되돌아올 거리가 기본값이 된다', () => {
+  const s = createStage({ seed: 'cmd-boons-migrate' });
+  const old = JSON.parse(JSON.stringify(s.state));
+  delete old.meta;
+  old.version = 9;
+  const added = ['dodgeAt', 'comboCount', 'comboUntil', 'grudgeId', 'grudgeUntil', 'critHits', 'masqAt', 'lastAttack', 'focusUntil', 'trophies'];
+  for (const key of added) delete old.run.boonState[key];
+  old.projectiles = [{ ...JSON.parse(JSON.stringify(s.state.projectiles[0] ?? null)) }].filter((p) => p && p.id);
+  for (const p of old.projectiles) delete p.back;
+  const moved = migrate('run', old, 9);
+  assert.equal(moved.ok, true);
+  assert.equal(moved.data.version, STATE_VERSION);
+  for (const key of added) assert.equal(moved.data.run.boonState[key], 0, key);
+  assert.deepEqual(validateRunState({ ...moved.data, meta: s.state.meta }), []);
+});
+
 test('무기 줍기: 멀리 있는 무기는 줍지 못하고, 가장 가까운 것부터 줍는다', () => {
   const s = createStage({ seed: 'cmd-weapon-far' });
   addDrop(s.state, s.bus, s.player.x + 3, s.player.y, { kind: 'weapon', weapon: 'bow' });

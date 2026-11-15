@@ -156,7 +156,7 @@ export function createHud({ root, on }) {
       if (enc) {
         const r = state.world.rooms[enc.room];
         const alive = Object.values(state.entities.byId).filter((a) => a.faction === 'enemy' && !a.dead).length + enc.pending.length;
-        info = r.kind === 'boss' ? '보스' : `${r.wave + 1}/${r.waves.length} 물결 · 적 ${alive}`;
+        info = r.kind === 'boss' ? '보스' : `웨이브 ${r.wave + 1}/${r.waves.length} · 적 ${alive}`;
       } else if (here) {
         info = { start: '첫 방', shop: '상점', reward: '보상 방', exit: '출구', bonus: '숨은 방' }[here.kind] ?? (here.state === 'cleared' ? '정리한 방' : '');
       }
