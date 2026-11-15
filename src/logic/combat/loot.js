@@ -7,6 +7,7 @@ import { ENCOUNTERS } from '../../../data/encounters.js';
 import { WEAPON_UPGRADE } from '../../../data/weapons.js';
 import { EVENTS } from '../core/events.js';
 import { rngOf } from '../core/state.js';
+import { TICK_RATE } from '../core/time.js';
 import { getActor, getPlayer } from '../entities/actors.js';
 import { ACTOR_KIND } from '../entities/defs.js';
 import { rollBoonChoices } from '../items/boons.js';
@@ -118,8 +119,23 @@ export function collectDrops(state, bus) {
   if (!player || player.dead) return;
   const kit = player.kit;
   const near = ENCOUNTERS.pickupRadius * ENCOUNTERS.pickupRadius;
+  const step = ENCOUNTERS.magnetSpeed / TICK_RATE;
   const left = [];
   for (const drop of state.drops) {
+    // 금화·에너지·체력은 저절로 날아온다(에너지·체력은 모자랄 때만). 벽은 신경 쓰지 않는다 — 그림일 뿐 길을 막지 않는다.
+    const wanted = drop.kind === 'gold' || (drop.kind === 'energy' && kit.energy < kit.maxEnergy) || (drop.kind === 'health' && player.hp < player.maxHp);
+    if (wanted) {
+      const mx = player.x - drop.x;
+      const my = player.y - drop.y;
+      const dist = Math.sqrt(mx * mx + my * my);
+      if (dist <= step) {
+        drop.x = player.x;
+        drop.y = player.y;
+      } else {
+        drop.x += (mx / dist) * step;
+        drop.y += (my / dist) * step;
+      }
+    }
     const dx = drop.x - player.x;
     const dy = drop.y - player.y;
     const d2 = dx * dx + dy * dy;

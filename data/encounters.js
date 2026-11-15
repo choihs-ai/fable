@@ -61,7 +61,12 @@ export const ENCOUNTERS = deepFreeze({
     eliteGold: [8, 12],
   },
 
-  /** 줍기: 금화·에너지·체력은 이 거리(칸) 안에 들어오면 끌려와 주워진다. 무기·축복·상자·상인·포털은 상호작용 거리 안에서 버튼을 누른다. */
-  pickupRadius: 1.6,
+  /**
+   * 줍기: 금화·에너지·체력은 어디에 있든 저절로 날아와 주워진다(magnetSpeed 칸/초). 에너지·체력은 모자랄 때만 날아오고,
+   * 가득 차 있으면 그 자리에서 기다린다. pickupRadius 안에 들어오면 주운 것이다.
+   * 무기·축복·상자·상인·포털은 상호작용 거리 안에서 버튼을 누른다.
+   */
+  pickupRadius: 1.0,
+  magnetSpeed: 14,
   interactRadius: 1.5,
 });

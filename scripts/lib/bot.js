@@ -355,8 +355,7 @@ function explore(game, bot, nav, player, input) {
           bot.ignored.push(drop.id);
           continue;
         }
-      } else if (drop.kind === 'health' && player.hp >= player.maxHp) continue;
-      else if (drop.kind === 'energy' && kit.energy >= kit.maxEnergy) continue;
+      } else if (drop.kind === 'gold' || drop.kind === 'health' || drop.kind === 'energy') continue; // 저절로 날아온다
       const d2 = dist2(drop, player);
       if (d2 < wantD2 && lineOfSight(nav, player.x, player.y, drop.x, drop.y)) {
         want = drop;

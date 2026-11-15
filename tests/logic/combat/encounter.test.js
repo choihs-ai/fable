@@ -416,3 +416,27 @@ test('잠긴 방 밖의 적은 그 방의 전투를 붙잡지 않는다(B-031)',
   assert.equal(room.state, 'cleared', '방 안의 적을 다 잡으면 끝난다');
   assert.equal(stray.dead, false);
 });
+
+test('금화·에너지·체력은 멀리 있어도 저절로 날아와 주워지고, 에너지·체력은 가득 차 있으면 그 자리에서 기다린다', async () => {
+  const { addDrop } = await import('../../../src/logic/combat/loot.js');
+  const s = createStage();
+  const start = s.room(ROOM_KIND.START);
+  const far = { x: start.x + 1.5, y: start.y + 1.5 };
+  s.player.x = start.x + start.w - 1.5;
+  s.player.y = start.y + start.h - 1.5;
+  const gold = s.state.run.gold;
+  s.player.kit.energy = s.player.kit.maxEnergy;
+  s.player.hp = s.player.maxHp;
+  addDrop(s.state, s.bus, far.x, far.y, { kind: 'gold', amount: 7 });
+  addDrop(s.state, s.bus, far.x, far.y, { kind: 'energy', amount: 8 });
+  addDrop(s.state, s.bus, far.x, far.y, { kind: 'health', amount: 6 });
+  s.step(ticksOf(3));
+  assert.equal(s.state.run.gold, gold + 7, '금화는 날아와 주워졌다');
+  assert.deepEqual(s.state.drops.map((d) => d.kind).sort(), ['energy', 'health'], '가득 차 있으면 기다린다');
+  assert.ok(s.state.drops.every((d) => d.x === far.x && d.y === far.y), '움직이지 않았다');
+  s.player.kit.energy = 0;
+  s.player.hp = Math.max(1, s.player.hp - 20);
+  s.step(ticksOf(3));
+  assert.equal(s.state.drops.length, 0, '모자라면 날아와 주워진다');
+  assert.deepEqual(validateRunState(s.state), []);
+});

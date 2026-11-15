@@ -201,6 +201,7 @@ core(0) ◀ world(1), items(1) ◀ entities(2) ◀ combat(3) ◀ save(4) ◀ gam
 - **방의 종류**: 시작(보스에서 가장 먼 방) / 전투 / 정예 / 보상 / 상점 / 보스(결투장) / 출구(보스 뒤, 포털) / 숨은 방(동굴, 닫힌 숨은 문 하나로만 이어짐). **깊이** = 시작 방에서 건너는 방의 수(출구·숨은 방 제외 경로).
 - **엄폐물**: 전투방 안에 결투장의 기둥 무늬를 작게 돌린다. 벽에서 2칸 안쪽에만 놓아 문 앞과 벽 둘레는 항상 비고, 방이 갈라지지 않는다.
 - **웨이브**: 전투방 2~3회, 정예방은 웨이브마다 정예 하나. 예산 = 깊이와 층에 따라 커진다(`ENCOUNTERS.budget`, `ENCOUNTERS.stage`). 적은 구역의 풀에서 `minDepth` 를 넘은 것만. **스폰 자리** = 방 안의, 둘레 8칸이 바닥이고 모든 문에서 2칸 넘게 떨어진 칸.
+- **줍기**: 금화·에너지·체력은 어디에 있든 저절로 날아와 주워진다(`ENCOUNTERS.magnetSpeed`, 에너지·체력은 모자랄 때만 — 가득 차 있으면 그 자리에서 기다린다). 무기·탈은 상호작용, 축복은 닿으면 3택1.
 - **보상**: 전투방마다 축복/무기/금화/체력 가운데 하나(한 층에 축복 방 둘·무기 방 하나 이상). 정예·보스는 축복. 다음 방의 보상은 문 위에 아이콘으로 보인다.
 - 맵 객체: `{ floor, zoneId, kind:'stage', algorithm, width, height, tiles, start, rooms, doors, links, gen }`. `tiles` 는 0 벽 / 1 바닥 / 2 닫힌 문. 방: `{ id, kind, x, y, w, h, shape, depth, reward, cover, feature, doors, waves, spawnCells, state, wave, seen }`, 문: `{ id, room, to, link, cells, x, y, open, secret }`, 복도: `{ id, rooms, doors, secret, seen }`. 방의 `state·wave·seen`, 문의 `open`, 복도의 `seen` 은 실행 중에 바뀐다(세이브에 들어간다).
 - **구역 번호**(`world/structure.js`): 방은 방 번호, 복도는 (방의 수 + 복도 번호). 로직(`navOf(map).region`)·렌더·검증기가 같은 번호를 타일에서 다시 읽어 쓴다.
